@@ -1,0 +1,13 @@
+# Unreal build artifacts
+Binaries/
+Intermediate/
+DerivedDataCache/
+
+# IDE / OS
+.vs/
+*.sln
+*.suo
+*.user
+*.userosscache
+.DS_Store
+Thumbs.db
