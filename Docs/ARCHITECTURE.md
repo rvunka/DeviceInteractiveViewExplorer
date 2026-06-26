@@ -4,13 +4,14 @@
 
 ```text
 ┌─────────────────────────────────────────┐
-│ ATSEP (game module: ACTS entry, Legacy input) │
+│ ATSEP (game module: ACTS entry, EI)      │
 ├─────────────────────────────────────────┤
 │ DIVERuntimeDev (optional, debug only)   │
-│  UDIVELegacyKbmInputComponent — BindKey   │
+│  UDIVELegacyKbmInputComponent — BindKey │
 ├─────────────────────────────────────────┤
 │ DIVERuntime                             │
 │  UDIVESessionSubsystem — focus stack      │
+│  UDIVEInputComponent — session input      │
 │  UDIVEInspectableComponent              │
 │  UDIVEAnchorComponent (optional)        │
 │  ADIVECameraRig                         │
@@ -19,6 +20,26 @@
 │ DIVECore — FDIVEFocusTarget, DIVEHierarchy, types      │
 └─────────────────────────────────────────┘
 ```
+
+## Input
+
+| Component | Module | Role |
+|-----------|--------|------|
+| **DIVE Input** | `DIVERuntime` | `HandleOrbit*` / `HandleZoom*` / `HandleSelect*` / `HandleNavigateBack` / `HandleExitSession` — target for Enhanced Input |
+| **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** |
+
+Recommended pawn stack: **`UDIVEInputComponent`** (+ optional **Legacy KBM** for PIE).
+
+### Enhanced Input (game module)
+
+| Input Action | Event | Call |
+|--------------|-------|------|
+| `IA_DIVE_Orbit` | Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` (legacy MMB uses tick poll) |
+| `IA_DIVE_Orbit` | Triggered (Axis2D) | `HandleOrbitDelta` — **do not combine** with Pressed/Released on the same action |
+| `IA_DIVE_Zoom` | Triggered | `HandleZoomIn` / `HandleZoomOut` |
+| `IA_DIVE_Select` | Started | `HandleSelectPressed` |
+| `IA_DIVE_Back` | Started | `HandleNavigateBack` |
+| `IA_DIVE_Exit` | Started | `HandleExitSession` |
 
 ## Focus vs semantic
 
@@ -37,7 +58,7 @@ Mesh pick is **primary**. Anchors are **optional**.
 | `Primitive` | Orbit around hit mesh bounds center |
 | `Anchor` | Viewpoint at anchor location + rotation; MMB rotates in place |
 
-Input sensitivity: `UDIVEInspectableComponent` (DIVE \| Camera) or Device Definition asset; optional pawn override via Legacy input component.
+Input sensitivity: `UDIVEInspectableComponent` (DIVE \| Camera) or Device Definition asset; optional override on **DIVE Input** (`bOverrideCameraSensitivity`).
 
 ## Session flow
 

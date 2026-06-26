@@ -1,0 +1,93 @@
+// Copyright (c) 2026. All Rights Reserved.
+
+#pragma once
+
+#include "Components/ActorComponent.h"
+#include "Engine/EngineTypes.h"
+#include "Math/Vector2D.h"
+
+#include "DIVEInputComponent.generated.h"
+
+class APlayerController;
+
+UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Input"))
+class DIVERUNTIME_API UDIVEInputComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	UDIVEInputComponent();
+
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleOrbitPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleOrbitReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleOrbitDelta(FVector2D Delta);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleZoomIn();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleZoomOut();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleSelectPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleNavigateBack();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleExitSession();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleToggleIsolate();
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bShowMouseCursorInSession = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bIgnoreMoveInputInSession = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bOverrideCameraSensitivity = false;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (ClampMin = "0.01", EditCondition = "bOverrideCameraSensitivity"))
+	float OrbitSensitivity = 2.5f;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (ClampMin = "0.01", EditCondition = "bOverrideCameraSensitivity"))
+	float ZoomSensitivity = 40.f;
+
+protected:
+	bool bOrbitKeyHeld = false;
+	bool bSessionPresentationActive = false;
+	bool bApplyPresentationNextTick = false;
+	bool bHasLastOrbitMousePosition = false;
+	FVector2D LastOrbitMousePosition = FVector2D::ZeroVector;
+
+	class UDIVESessionSubsystem* GetSessionSubsystem() const;
+	class APlayerController* GetLocalPlayerController() const;
+	bool IsLocallyControlledOwner() const;
+	void UpdateSessionPresentation();
+	void CapturePreSessionInputState(APlayerController* PlayerController);
+	void RestorePreSessionInputState(APlayerController* PlayerController);
+	void ApplySessionInputMode(APlayerController* PlayerController);
+	void MaintainSessionInputFlags(APlayerController* PlayerController);
+	void ClearSessionPresentation(APlayerController* PlayerController);
+	void ApplyOrbitFromMouseDelta();
+
+	bool bHasPreservedInputState = false;
+	bool bSessionAppliedInputFlags = false;
+	bool bPreservedShowMouseCursor = false;
+	bool bPreservedEnableClickEvents = false;
+	bool bPreservedEnableMouseOverEvents = false;
+	bool bPreservedUsedGameAndUI = false;
+	EMouseCaptureMode PreservedMouseCaptureMode = EMouseCaptureMode::CapturePermanently;
+	EMouseLockMode PreservedMouseLockMode = EMouseLockMode::LockOnCapture;
+};

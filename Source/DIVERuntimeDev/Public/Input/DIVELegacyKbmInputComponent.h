@@ -7,6 +7,8 @@
 
 #include "DIVELegacyKbmInputComponent.generated.h"
 
+class UDIVEInputComponent;
+
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Legacy KBM Input"))
 class DIVERUNTIMEDEV_API UDIVELegacyKbmInputComponent : public UActorComponent
 {
@@ -16,8 +18,6 @@ public:
 	UDIVELegacyKbmInputComponent();
 
 	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void OrbitPressed();
@@ -42,6 +42,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void ToggleIsolatePressed();
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (
+		DisplayName = "Input Component",
+		ToolTip = "Leave empty to auto-find DIVE Input on the owner. Requires UDIVEInputComponent on the pawn."))
+	FName InputComponentName;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindOrbitInput = true;
@@ -76,35 +81,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindExitInput"))
 	FKey ExitKey;
 
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
-	bool bShowMouseCursorInSession = true;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
-	bool bIgnoreMoveInputInSession = true;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
-	bool bOverrideCameraSensitivity = false;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (ClampMin = "0.01", EditCondition = "bOverrideCameraSensitivity"))
-	float OrbitSensitivity = 2.5f;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (ClampMin = "0.01", EditCondition = "bOverrideCameraSensitivity"))
-	float ZoomSensitivity = 40.f;
-
 protected:
-	bool bInputBound = false;
-	bool bOrbitKeyHeld = false;
-	bool bSessionPresentationActive = false;
-	bool bApplyPresentationNextTick = false;
-	bool bHasLastOrbitMousePosition = false;
-	FVector2D LastOrbitMousePosition = FVector2D::ZeroVector;
+	UPROPERTY(Transient)
+	TObjectPtr<UDIVEInputComponent> InputComponent;
 
+	bool bInputBound = false;
+	bool bLoggedMissingInput = false;
+
+	void ResolveComponentReferences();
+	void EnsureInputReady();
 	void BindInput();
-	class UDIVESessionSubsystem* GetSessionSubsystem() const;
-	class APlayerController* GetLocalPlayerController() const;
-	void UpdateSessionPresentation();
-	void ApplySessionInputMode(APlayerController* PlayerController);
-	void MaintainSessionInputFlags(APlayerController* PlayerController);
-	void ClearSessionPresentation(APlayerController* PlayerController);
-	void ApplyOrbitFromMouseDelta();
+	void WarnMissingInputOnce();
 };

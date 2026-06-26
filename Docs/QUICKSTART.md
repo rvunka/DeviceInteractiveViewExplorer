@@ -46,7 +46,7 @@ On `UDIVEInspectableComponent` → **DIVE | Camera**:
 | `DefaultOrbitDistance` | `200` | Initial orbit radius when focusing device root |
 | `bUseDeviceDefinitionSettings` | `false` | Read orbit distance + sensitivity from linked **Device Definition** asset |
 
-Optional pawn override: `UDIVELegacyKbmInputComponent` → enable `bOverrideCameraSensitivity`.
+Optional pawn override: **DIVE Input** → enable `bOverrideCameraSensitivity`.
 
 ## 2. ACTS entry (optional)
 
@@ -57,17 +57,34 @@ On `UACTSInteractableComponent`, add action:
 
 In game code, subscribe to `UACTSInteractionComponent::OnFocusedActionExecuted` and call `UDIVEInspectableComponent::RequestSession()` when `ActionId == OpenDIVE`.
 
-## 3. Debug input — `UDIVELegacyKbmInputComponent` (DIVERuntimeDev)
+## 3. Pawn input
 
 Add to your **pawn**:
 
-| Default key | Action |
-|-------------|--------|
-| Middle mouse (hold + drag) | Orbit (or rotate in anchor viewpoint) |
-| Mouse wheel up / down | Zoom in / out |
-| Left mouse | Focus mesh or anchor marker under cursor |
-| Backspace | Navigate back (focus stack); at device root → end session |
-| Escape | End session |
+- **`UDIVEInputComponent`** (required) — session presentation + `Handle*` API for Enhanced Input.
+
+Optional PIE demo: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — `BindKey` forwards to **DIVE Input**.
+
+### Enhanced Input (production, game module)
+
+| Input Action | Call on **DIVE Input** |
+|--------------|------------------------|
+| `IA_DIVE_Orbit` Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` |
+| `IA_DIVE_Orbit` Triggered (Axis2D) | `HandleOrbitDelta` |
+| `IA_DIVE_Zoom` | `HandleZoomIn` / `HandleZoomOut` |
+| `IA_DIVE_Select` | `HandleSelectPressed` |
+| `IA_DIVE_Back` | `HandleNavigateBack` |
+| `IA_DIVE_Exit` | `HandleExitSession` |
+
+### Default KBM (DIVERuntimeDev, legacy BindKey only)
+
+| Default key | Forwards to **DIVE Input** |
+|-------------|----------------------------|
+| Middle mouse (hold + drag) | `HandleOrbitPressed` / `HandleOrbitReleased` + tick orbit |
+| Mouse wheel up / down | `HandleZoomIn` / `HandleZoomOut` |
+| Left mouse | `HandleSelectPressed` |
+| Backspace | `HandleNavigateBack` |
+| Escape | `HandleExitSession` |
 
 **Isolate** is not bound by default. From Blueprint/UI: `GetGameInstance` → `UDIVESessionSubsystem` → `ToggleIsolateFocused()`.
 

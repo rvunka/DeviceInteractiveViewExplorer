@@ -126,14 +126,28 @@ bool UDIVESessionSubsystem::TryBeginSession(
 	ActiveCameraRig = CameraRig;
 	SessionState = EDIVESessionState::Active;
 
-	const bool bFocusApplied = !Params.InitialAnchorId.IsNone()
-		? FocusAnchor(Params.InitialAnchorId)
-		: ApplyFocusTarget(FocusStack.Last(), false);
-
 	PlayerController->SetViewTargetWithBlend(CameraRig, 0.f);
 	Inspectable->NotifySessionLifecycle(true);
 
-	return bFocusApplied;
+	if (!Params.InitialAnchorId.IsNone())
+	{
+		if (!FocusAnchor(Params.InitialAnchorId))
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("DIVE: InitialAnchorId '%s' not found on '%s'; falling back to device root."),
+				*Params.InitialAnchorId.ToString(),
+				*GetNameSafe(DeviceHost));
+			ApplyFocusTarget(FocusStack.Last(), false);
+		}
+	}
+	else
+	{
+		ApplyFocusTarget(FocusStack.Last(), false);
+	}
+
+	return true;
 }
 
 void UDIVESessionSubsystem::EndSession()
