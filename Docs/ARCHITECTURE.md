@@ -1,4 +1,4 @@
-# DIVE Architecture (v0.2)
+# DIVE Architecture (v0.3)
 
 ## Layers
 
@@ -9,9 +9,13 @@
 │ DIVERuntimeDev (optional, debug only)   │
 │  UDIVELegacyKbmInputComponent — BindKey │
 ├─────────────────────────────────────────┤
+│ DIVEUnrealEditor (editor only)          │
+│  DIVE Scan Device · validation reports  │
+├─────────────────────────────────────────┤
 │ DIVERuntime                             │
 │  UDIVESessionSubsystem — focus stack      │
 │  UDIVEInputComponent — session input      │
+│  UDIVEOperationsUIComponent — ops list  │
 │  UDIVEInspectableComponent              │
 │  UDIVEAnchorComponent (optional)        │
 │  ADIVECameraRig                         │
@@ -21,60 +25,79 @@
 └─────────────────────────────────────────┘
 ```
 
+## Subsystem scope (decision)
+
+**Current:** `UGameInstanceSubsystem` (`UDIVESessionSubsystem`).
+
+**Rationale:** ATSEP v0.2 is single-player / one local modal session per game instance. One active DIVE session matches training-sim UX. Input components already guard with `IsLocallyControlled()`.
+
+**Future:** migrate to `ULocalPlayerSubsystem` if split-screen or multiple independent DIVE viewports are required (roadmap v0.5+).
+
 ## Input
 
 | Component | Module | Role |
 |-----------|--------|------|
-| **DIVE Input** | `DIVERuntime` | `HandleOrbit*` / `HandleZoom*` / `HandleSelect*` / `HandleNavigateBack` / `HandleExitSession` — target for Enhanced Input |
+| **DIVE Input** | `DIVERuntime` | Orbit / zoom / select / back / exit / isolate / operation execute |
+| **DIVE Operations UI** | `DIVERuntime` | Operation list + Hold progress during session |
 | **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** |
 
-Recommended pawn stack: **`UDIVEInputComponent`** (+ optional **Legacy KBM** for PIE).
+Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponent`** (+ optional **Legacy KBM** for PIE).
 
 ### Enhanced Input (game module)
 
 | Input Action | Event | Call |
 |--------------|-------|------|
-| `IA_DIVE_Orbit` | Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` (legacy MMB uses tick poll) |
+| `IA_DIVE_Orbit` | Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` |
 | `IA_DIVE_Orbit` | Triggered (Axis2D) | `HandleOrbitDelta` — **do not combine** with Pressed/Released on the same action |
 | `IA_DIVE_Zoom` | Triggered | `HandleZoomIn` / `HandleZoomOut` |
-| `IA_DIVE_Select` | Started | `HandleSelectPressed` |
-| `IA_DIVE_Back` | Started | `HandleNavigateBack` |
+| `IA_DIVE_Select` | Started / Completed | `HandleSelectPressed` / `HandleSelectReleased` (hinge drag when focused) |
+| `IA_DIVE_ExecuteOperation` | Started / Completed | `HandleOperationExecutePressed` / `HandleOperationExecuteReleased` |
+| `IA_DIVE_Back` | Started | `HandleNavigateBack` (camera / focus undo) |
 | `IA_DIVE_Exit` | Started | `HandleExitSession` |
 
-## Focus vs semantic
+Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = select / hinge drag.
 
-| Layer | Responsibility |
-|-------|----------------|
-| **Focus** | Camera pivot / viewpoint, hover/focus highlight, focus stack, isolate |
-| **Semantic** | Anchor registry, `PartId`, operations, optional `SemanticPartId` on mesh pick |
+## Operations (v0.2)
 
-Mesh pick is **primary**. Anchors are **optional**.
+- Anchors expose `OperationIds`; metadata lives in `UDIVEDeviceDefinitionAsset::OperationCatalog`.
+- `EDIVEOperationInputMode`: **Press** (instant) or **Hold** (timer, ACTS-compatible UX).
+- `ValidationRules` on device definition gate operations by `RequiredCompletedOperationIds`.
+- `UDIVEOperationsUIComponent` shows the list; `RequestFocusedOperation` validates, dispatches `OnOperationRequested`, marks success in session state.
 
-## Camera modes
+## Manipulators (v0.2)
 
-| Focus kind | Camera behaviour |
-|------------|------------------|
-| `DeviceRoot` | Orbit around device bounds center |
-| `Primitive` | Orbit around hit mesh bounds center |
-| `Anchor` | Viewpoint at anchor location + rotation; MMB rotates in place |
+- `EDIVEManipulationKind` on `UDIVEAnchorComponent` — **Hinge only** (v0.3).
+- MMB orbit does not conflict with LMB hinge drag on focused hinged anchor.
 
-Input sensitivity: `UDIVEInspectableComponent` (DIVE \| Camera) or Device Definition asset; optional override on **DIVE Input** (`bOverrideCameraSensitivity`).
+## World dim (v0.3)
+
+`EDIVEWorldDimPolicy` on `UDIVEInspectableComponent`:
+
+| Policy | Behaviour |
+|--------|-----------|
+| `None` | No actor hiding during session |
+| `HideNonDeviceActors` | Hide other level actors during session (includes player pawn) |
+
+Device mesh isolate remains **`ToggleIsolateFocused()`** (explicit, separate from world dim).
 
 ## Session flow
 
 1. `RequestSession()` → `TryBeginSession` → `BuildSemanticRegistry()` (anchors only).
-2. Focus stack initialized with `DeviceRoot`; camera orbits device bounds.
-3. LMB → pick: marker tag → `Anchor` viewpoint; otherwise `Primitive` orbit (+ optional semantic id).
-4. Backspace → pop focus stack; at root → `EndSession`.
-5. `ToggleIsolateFocused()` — explicit; not tied to LMB.
+2. Camera rig spawns at the player view, then blends to `InitialFocusId` / `DefaultStartFocusId` (anchor PartId or mesh component name) or device root.
+3. Optional world dim applied; focus stack initialized with `DeviceRoot`.
+4. LMB → pick; focused anchor → operations list; **F** → execute / hold.
+5. Focused hinged anchor + LMB drag → hinge manipulator.
+6. Ctrl+Z → pop focus stack; at root → no-op.
+7. Backspace → `EndSession`.
+
+## Editor
+
+Context menu on selected actor: **DIVE Scan Device** — logs anchors, operations, catalog warnings.
+
+Automation smoke tests: `ATSEP.DIVE.Operations.ValidationRules`, `ATSEP.DIVE.Manipulation.HingeSnap`.
 
 ## Dependencies
 
 DIVE **must not** link ACTS, GRIP, or MESS in **DIVERuntime**. No Enhanced Input in plugin modules.
-
-## TBD
-
-- World dim (whole level, not device mesh isolate)
-- Auto-discovery modes (`TaggedChildren`, `AutoWithRules`)
 
 Full contract: `Project_docs/DIVE_Plugin_Design.md`

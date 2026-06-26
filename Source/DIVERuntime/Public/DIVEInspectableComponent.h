@@ -6,6 +6,12 @@
 #include "Components/ActorComponent.h"
 #include "DIVEConvention.h"
 #include "DIVETypes.h"
+#include "Engine/EngineTypes.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
 #include "DIVEInspectableComponent.generated.h"
 
 class UDIVEDeviceDefinitionAsset;
@@ -32,8 +38,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (ClampMin = "0.0"))
 	float MinPickBoundsRadius = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|View")
-	FName DefaultViewAnchorId = NAME_None;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick")
+	TEnumAsByte<ECollisionChannel> PickTraceChannel = ECC_Visibility;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|View", meta = (
+		DisplayName = "Default Start Focus Id",
+		ToolTip = "Anchor PartId or pickable mesh component name to focus when the session starts."))
+	FName DefaultStartFocusId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
 	bool bUseDeviceDefinitionSettings = false;
@@ -46,6 +57,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|View", meta = (ClampMin = "50.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float DefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	float FocusBlendDuration = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Presentation")
+	EDIVEWorldDimPolicy WorldDimPolicy = EDIVEWorldDimPolicy::None;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
 	FOnDIVEOperationRequested OnOperationRequested;
@@ -88,8 +105,33 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|View")
 	float GetEffectiveDefaultOrbitDistance() const;
 
+	UFUNCTION(BlueprintPure, Category = "DIVE|Pick")
+	TEnumAsByte<ECollisionChannel> GetEffectivePickTraceChannel() const { return PickTraceChannel; }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float GetEffectiveFocusBlendDuration() const { return FocusBlendDuration; }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|View")
+	bool TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Presentation")
+	EDIVEWorldDimPolicy GetEffectiveWorldDimPolicy() const { return WorldDimPolicy; }
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
+	void GetAvailableOperationsForFocus(const FDIVEFocusTarget& FocusTarget, TArray<FDIVEOperationDescriptor>& OutOperations) const;
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
+	bool ValidateOperation(FName OperationId, FText& OutFailureMessage) const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Operations")
+	bool IsOperationCompleted(FName OperationId) const;
+
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "DIVE")
@@ -98,7 +140,13 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "DIVE")
 	bool bSessionActive = false;
 
+	TSet<FName> CompletedOperationIds;
+
 	friend class UDIVESessionSubsystem;
 
 	void NotifySessionLifecycle(bool bActive);
+	void ResetSessionOperationState();
+	void MarkOperationCompleted(FName OperationId);
+	FDIVEOperationDescriptor ResolveOperationDescriptor(FName OperationId) const;
+	TArray<FName> ResolveOperationIdsForFocus(const FDIVEFocusTarget& FocusTarget) const;
 };

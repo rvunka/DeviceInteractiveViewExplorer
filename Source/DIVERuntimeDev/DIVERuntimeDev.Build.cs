@@ -17,5 +17,10 @@ public class DIVERuntimeDev : ModuleRules
 			"DIVECore",
 			"DIVERuntime"
 		});
+
+		if (Target.Configuration != UnrealTargetConfiguration.Shipping)
+		{
+			PrivateDependencyModuleNames.Add("AutomationController");
+		}
 	}
 }

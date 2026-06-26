@@ -2,9 +2,9 @@
 
 using UnrealBuildTool;
 
-public class DIVERuntime : ModuleRules
+public class DIVEUnrealEditor : ModuleRules
 {
-	public DIVERuntime(ReadOnlyTargetRules Target) : base(Target)
+	public DIVEUnrealEditor(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -13,19 +13,18 @@ public class DIVERuntime : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"DIVECore"
+			"DIVECore",
+			"DIVERuntime"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
-			"UMG",
+			"UnrealEd",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"ToolMenus",
+			"EditorFramework",
+			"DataValidation"
 		});
-
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.Add("DataValidation");
-		}
 	}
 }

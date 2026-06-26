@@ -23,13 +23,17 @@ class DIVERUNTIME_API ADIVECameraRig : public AActor
 public:
 	ADIVECameraRig();
 
-	void SetInputSensitivity(float InOrbitSensitivity, float InZoomSensitivity);
+	virtual void Tick(float DeltaTime) override;
 
-	void SetOrbitTarget(const FVector& WorldLocation);
-	void SetOrbitDistance(float Distance);
-	void SetAnchorViewpoint(const FVector& WorldLocation, const FRotator& WorldRotation);
+	void SetInputSensitivity(float InOrbitSensitivity, float InZoomSensitivity);
+	void SetOrbitTarget(const FVector& WorldLocation, bool bRefreshTransform = false);
+	void SetOrbitDistance(float Distance, bool bRefreshTransform = false);
+	void SetAnchorViewpoint(const FVector& WorldLocation, const FRotator& WorldRotation, bool bRefreshTransform = false);
+	void ApplyFocusPresentation(float BlendDuration);
 	void ApplyOrbitDelta(const FVector2D& Delta);
 	void ApplyZoomDelta(float Delta);
+	void SyncOrbitFromCurrentView();
+	void SyncOrbitOrientationFromCurrentView();
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DIVE")
@@ -40,6 +44,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE")
 	float MaxOrbitDistance = 2000.f;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE", meta = (ClampMin = "1.0", ClampMax = "89.0"))
+	float MaxPitchDegrees = 89.f;
 
 private:
 	EDIVECameraRigMode Mode = EDIVECameraRigMode::Orbit;
@@ -54,7 +61,17 @@ private:
 	FVector AnchorViewLocation = FVector::ZeroVector;
 	FQuat AnchorViewOrientation = FQuat::Identity;
 
+	bool bFocusBlending = false;
+	float FocusBlendElapsed = 0.f;
+	float FocusBlendDuration = 0.f;
+	FVector BlendStartLocation = FVector::ZeroVector;
+	FQuat BlendStartRotation = FQuat::Identity;
+	FVector BlendTargetLocation = FVector::ZeroVector;
+	FQuat BlendTargetRotation = FQuat::Identity;
+
 	static void ApplyFreeLookDelta(FQuat& Orientation, float YawRadians, float PitchRadians);
-	void SyncOrbitFromCurrentView();
+	void ClampOrientationPitch(FQuat& Orientation) const;
+	void ComputeDesiredTransform(FVector& OutLocation, FQuat& OutRotation) const;
 	void RefreshCameraTransform();
+	void CancelFocusBlend();
 };

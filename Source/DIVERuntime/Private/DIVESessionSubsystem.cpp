@@ -4,68 +4,20 @@
 
 #include "DIVEAnchorComponent.h"
 #include "DIVECameraRig.h"
-#include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
-#include "Components/StaticMeshComponent.h"
 #include "DIVEInspectableComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
+#include "Utils/DIVEManipulation.h"
+#include "Utils/DIVEPick.h"
+#include "Utils/DIVEPlayerQuery.h"
 #include "Containers/Set.h"
-
-namespace
-{
-APlayerController* FindLocalPlayerController(UWorld* World)
-{
-	if (!World)
-	{
-		return nullptr;
-	}
-
-	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
-	{
-		if (APlayerController* PlayerController = It->Get())
-		{
-			if (PlayerController->IsLocalController())
-			{
-				return PlayerController;
-			}
-		}
-	}
-
-	return nullptr;
-}
-
-bool IsComponentPartOfDeviceHost(const USceneComponent* Component, const AActor* DeviceHost)
-{
-	if (!Component || !DeviceHost)
-	{
-		return false;
-	}
-
-	if (const AActor* Owner = Component->GetOwner())
-	{
-		if (Owner == DeviceHost || Owner->IsAttachedTo(DeviceHost))
-		{
-			return true;
-		}
-	}
-
-	for (const USceneComponent* Current = Component; Current; Current = Current->GetAttachParent())
-	{
-		if (Current->GetOwner() == DeviceHost)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-}
 
 void UDIVESessionSubsystem::Deinitialize()
 {
-	EndSession();
+	EndSession(EDIVESessionEndReason::Forced);
 	Super::Deinitialize();
 }
 
@@ -79,36 +31,42 @@ bool UDIVESessionSubsystem::TryBeginSession(
 		return false;
 	}
 
-	if (SessionState == EDIVESessionState::Active)
-	{
-		EndSession();
-	}
-
-	Inspectable->BuildSemanticRegistry();
-
 	UWorld* World = GetWorld();
-	APlayerController* PlayerController = FindLocalPlayerController(World);
+	APlayerController* PlayerController = DIVEPlayerQuery::FindLocalPlayerController(World);
 	if (!PlayerController)
 	{
 		return false;
 	}
 
+	if (SessionState == EDIVESessionState::Active)
+	{
+		EndSession(EDIVESessionEndReason::SessionRestart);
+	}
+
+	Inspectable->BuildSemanticRegistry();
+
 	ActiveDeviceHost = DeviceHost;
 	ActiveInspectable = Inspectable;
-	HoveredTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	FocusStack.Reset();
 	FocusStack.Add(FDIVEFocusTarget::MakeDeviceRoot());
+	FocusedTarget = FDIVEFocusTarget::MakeDeviceRoot();
 
 	if (AActor* CurrentViewTarget = PlayerController->GetViewTarget())
 	{
 		PreviousViewTarget = CurrentViewTarget;
 	}
 
-	const FVector FocusLocation = FocusStack.Last().GetPivotLocation(DeviceHost);
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
 
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.ObjectFlags |= RF_Transient;
-	ADIVECameraRig* CameraRig = World->SpawnActor<ADIVECameraRig>(ADIVECameraRig::StaticClass(), FocusLocation, FRotator::ZeroRotator, SpawnParams);
+	ADIVECameraRig* CameraRig = World->SpawnActor<ADIVECameraRig>(
+		ADIVECameraRig::StaticClass(),
+		ViewLocation,
+		ViewRotation,
+		SpawnParams);
 	if (!CameraRig)
 	{
 		ActiveDeviceHost.Reset();
@@ -120,52 +78,48 @@ bool UDIVESessionSubsystem::TryBeginSession(
 
 	const float DefaultDistance = Inspectable->GetEffectiveDefaultOrbitDistance();
 	SessionDefaultOrbitDistance = DefaultDistance;
-	CameraRig->SetOrbitDistance(DefaultDistance);
-	CameraRig->SetOrbitTarget(FocusLocation);
+
+	constexpr bool bRefreshTransform = false;
+	CameraRig->SetOrbitDistance(DefaultDistance, bRefreshTransform);
+	CameraRig->SetOrbitTarget(FocusStack.Last().GetPivotLocation(DeviceHost), bRefreshTransform);
+	CameraRig->SyncOrbitFromCurrentView();
+
 	ApplyCameraInputFromInspectable();
 	ActiveCameraRig = CameraRig;
 	SessionState = EDIVESessionState::Active;
 
 	PlayerController->SetViewTargetWithBlend(CameraRig, 0.f);
 	Inspectable->NotifySessionLifecycle(true);
+	ApplyWorldDim();
 
-	if (!Params.InitialAnchorId.IsNone())
+	if (!ApplyInitialSessionFocus(Params.InitialFocusId))
 	{
-		if (!FocusAnchor(Params.InitialAnchorId))
-		{
-			UE_LOG(
-				LogTemp,
-				Warning,
-				TEXT("DIVE: InitialAnchorId '%s' not found on '%s'; falling back to device root."),
-				*Params.InitialAnchorId.ToString(),
-				*GetNameSafe(DeviceHost));
-			ApplyFocusTarget(FocusStack.Last(), false);
-		}
+		ApplyFocusTarget(FDIVEFocusTarget::MakeDeviceRoot(), false, true);
 	}
-	else
-	{
-		ApplyFocusTarget(FocusStack.Last(), false);
-	}
+
+	OnSessionStarted.Broadcast(DeviceHost, Inspectable);
 
 	return true;
 }
 
-void UDIVESessionSubsystem::EndSession()
+void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 {
 	if (SessionState == EDIVESessionState::Inactive)
 	{
 		return;
 	}
 
+	AActor* EndedDeviceHost = ActiveDeviceHost.Get();
+
+	bManipulatorDragging = false;
+	ActiveManipulatorAnchor.Reset();
+	ClearWorldDim();
 	ClearIsolation();
-	ClearHighlightPrimitives(HighlightedHoverPrimitives);
-	ClearHighlightPrimitives(HighlightedFocusPrimitives);
-	HoveredTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	FocusStack.Reset();
 
 	if (UWorld* World = GetWorld())
 	{
-		if (APlayerController* PlayerController = FindLocalPlayerController(World))
+		if (APlayerController* PlayerController = DIVEPlayerQuery::FindLocalPlayerController(World))
 		{
 			AActor* RestoreTarget = PreviousViewTarget.Get();
 			if (!RestoreTarget)
@@ -196,10 +150,17 @@ void UDIVESessionSubsystem::EndSession()
 	PreviousViewTarget.Reset();
 	FocusedTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	SessionState = EDIVESessionState::Inactive;
+
+	OnSessionEnded.Broadcast(Reason, EndedDeviceHost);
 }
 
 void UDIVESessionSubsystem::ApplyOrbitInput(const FVector2D& Delta)
 {
+	if (!IsSessionActive())
+	{
+		return;
+	}
+
 	if (ADIVECameraRig* CameraRig = ActiveCameraRig.Get())
 	{
 		CameraRig->ApplyOrbitDelta(Delta);
@@ -208,6 +169,11 @@ void UDIVESessionSubsystem::ApplyOrbitInput(const FVector2D& Delta)
 
 void UDIVESessionSubsystem::ApplyZoomInput(float Delta)
 {
+	if (!IsSessionActive())
+	{
+		return;
+	}
+
 	if (ADIVECameraRig* CameraRig = ActiveCameraRig.Get())
 	{
 		CameraRig->ApplyZoomDelta(Delta);
@@ -241,34 +207,6 @@ bool UDIVESessionSubsystem::SelectAtScreenPosition(const FVector2D& ScreenPositi
 	}
 
 	return FocusTarget(SelectedTarget, true);
-}
-
-bool UDIVESessionSubsystem::UpdateHoverAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController)
-{
-	if (!IsSessionActive())
-	{
-		return false;
-	}
-
-	FDIVEFocusTarget NewHoveredTarget;
-	if (ResolveFocusAtScreenPosition(ScreenPosition, PlayerController, NewHoveredTarget))
-	{
-		if (!NewHoveredTarget.Equals(HoveredTarget))
-		{
-			HoveredTarget = NewHoveredTarget;
-			RefreshHighlights();
-		}
-
-		return true;
-	}
-
-	if (HoveredTarget.Kind != EDIVEFocusKind::DeviceRoot)
-	{
-		HoveredTarget = FDIVEFocusTarget::MakeDeviceRoot();
-		RefreshHighlights();
-	}
-
-	return false;
 }
 
 bool UDIVESessionSubsystem::FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack)
@@ -317,14 +255,13 @@ bool UDIVESessionSubsystem::NavigateBack()
 		return false;
 	}
 
-	if (FocusStack.Num() > 1)
+	if (FocusStack.Num() <= 1)
 	{
-		FocusStack.Pop();
-		return ApplyFocusTarget(FocusStack.Last(), false);
+		return false;
 	}
 
-	EndSession();
-	return true;
+	FocusStack.Pop();
+	return ApplyFocusTarget(FocusStack.Last(), false);
 }
 
 bool UDIVESessionSubsystem::ToggleIsolateFocused()
@@ -364,9 +301,10 @@ void UDIVESessionSubsystem::ClearIsolation()
 
 bool UDIVESessionSubsystem::RequestFocusedOperation(FName OperationId, FDIVEOperationResult& OutResult)
 {
+	OutResult = FDIVEOperationResult();
+
 	if (!IsSessionActive())
 	{
-		OutResult.bSuccess = false;
 		OutResult.Message = NSLOCTEXT("DIVE", "NoActiveSession", "No active DIVE session.");
 		return false;
 	}
@@ -374,8 +312,14 @@ bool UDIVESessionSubsystem::RequestFocusedOperation(FName OperationId, FDIVEOper
 	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
 	if (!Inspectable)
 	{
-		OutResult.bSuccess = false;
 		OutResult.Message = NSLOCTEXT("DIVE", "MissingInspectable", "Inspectable component missing.");
+		return false;
+	}
+
+	FText ValidationMessage;
+	if (!ValidateFocusedOperation(OperationId, ValidationMessage))
+	{
+		OutResult.Message = ValidationMessage;
 		return false;
 	}
 
@@ -383,45 +327,131 @@ bool UDIVESessionSubsystem::RequestFocusedOperation(FName OperationId, FDIVEOper
 	Request.OperationId = OperationId;
 	Request.FocusTarget = FocusedTarget;
 	Request.SemanticPartId = FocusedTarget.SemanticPartId;
-	return Inspectable->RequestOperation(Request, OutResult);
+	if (!Inspectable->RequestOperation(Request, OutResult))
+	{
+		return false;
+	}
+
+	if (OutResult.bSuccess)
+	{
+		Inspectable->MarkOperationCompleted(OperationId);
+	}
+
+	return OutResult.bSuccess;
 }
 
-void UDIVESessionSubsystem::Tick(float /*DeltaTime*/)
+void UDIVESessionSubsystem::GetAvailableOperations(TArray<FDIVEOperationDescriptor>& OutOperations) const
+{
+	OutOperations.Reset();
+
+	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
+	{
+		Inspectable->GetAvailableOperationsForFocus(FocusedTarget, OutOperations);
+	}
+}
+
+bool UDIVESessionSubsystem::ValidateFocusedOperation(FName OperationId, FText& OutFailureMessage) const
 {
 	if (!IsSessionActive())
 	{
-		return;
+		OutFailureMessage = NSLOCTEXT("DIVE", "NoActiveSession", "No active DIVE session.");
+		return false;
 	}
 
-	APlayerController* PlayerController = FindLocalPlayerController(GetWorld());
-	if (!PlayerController)
+	const UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	if (!Inspectable)
+	{
+		OutFailureMessage = NSLOCTEXT("DIVE", "MissingInspectable", "Inspectable component missing.");
+		return false;
+	}
+
+	TArray<FDIVEOperationDescriptor> AvailableOperations;
+	Inspectable->GetAvailableOperationsForFocus(FocusedTarget, AvailableOperations);
+	const bool bListed = AvailableOperations.ContainsByPredicate([OperationId](const FDIVEOperationDescriptor& Descriptor)
+	{
+		return Descriptor.OperationId == OperationId;
+	});
+	if (!bListed)
+	{
+		OutFailureMessage = NSLOCTEXT("DIVE", "OperationNotAvailable", "Operation is not available for the current focus.");
+		return false;
+	}
+
+	return Inspectable->ValidateOperation(OperationId, OutFailureMessage);
+}
+
+bool UDIVESessionSubsystem::BeginManipulatorDrag()
+{
+	if (!IsSessionActive() || bManipulatorDragging)
+	{
+		return false;
+	}
+
+	UDIVEAnchorComponent* Anchor = GetFocusedManipulatorAnchor();
+	if (!Anchor)
+	{
+		return false;
+	}
+
+	Anchor->CaptureManipulationBase();
+	ActiveManipulatorAnchor = Anchor;
+	bManipulatorDragging = true;
+	return true;
+}
+
+bool UDIVESessionSubsystem::TryBeginManipulatorDragAtScreenPosition(
+	const FVector2D& ScreenPosition,
+	APlayerController* PlayerController)
+{
+	if (!GetFocusedManipulatorAnchor())
+	{
+		return false;
+	}
+
+	FDIVEFocusTarget PickTarget;
+	if (!ResolveFocusAtScreenPosition(ScreenPosition, PlayerController, PickTarget))
+	{
+		return false;
+	}
+
+	if (!PickTarget.Equals(FocusedTarget))
+	{
+		return false;
+	}
+
+	return BeginManipulatorDrag();
+}
+
+void UDIVESessionSubsystem::UpdateManipulatorDrag(const FVector2D& ScreenDelta)
+{
+	if (!bManipulatorDragging)
 	{
 		return;
 	}
 
-	float MouseX = 0.f;
-	float MouseY = 0.f;
-	if (!PlayerController->GetMousePosition(MouseX, MouseY))
+	UDIVEAnchorComponent* Anchor = ActiveManipulatorAnchor.Get();
+	if (!Anchor || !Anchor->SupportsManipulation())
 	{
 		return;
 	}
 
-	UpdateHoverAtScreenPosition(FVector2D(MouseX, MouseY), PlayerController);
+	DIVEManipulation::ApplyHingeDelta(Anchor, -ScreenDelta.Y * Anchor->HingeDragSensitivity);
 }
 
-TStatId UDIVESessionSubsystem::GetStatId() const
+void UDIVESessionSubsystem::EndManipulatorDrag()
 {
-	RETURN_QUICK_DECLARE_CYCLE_STAT(UDIVESessionSubsystem, STATGROUP_Tickables);
-}
+	if (!bManipulatorDragging)
+	{
+		return;
+	}
 
-bool UDIVESessionSubsystem::IsTickable() const
-{
-	return IsSessionActive();
-}
+	if (UDIVEAnchorComponent* Anchor = ActiveManipulatorAnchor.Get())
+	{
+		DIVEManipulation::CommitHingeSnap(Anchor);
+	}
 
-UWorld* UDIVESessionSubsystem::GetTickableGameObjectWorld() const
-{
-	return GetWorld();
+	bManipulatorDragging = false;
+	ActiveManipulatorAnchor.Reset();
 }
 
 bool UDIVESessionSubsystem::ResolveFocusAtScreenPosition(
@@ -443,51 +473,17 @@ bool UDIVESessionSubsystem::ResolveFocusAtScreenPosition(
 		return false;
 	}
 
-	FVector WorldOrigin;
-	FVector WorldDirection;
-	if (!UGameplayStatics::DeprojectScreenToWorld(PlayerController, ScreenPosition, WorldOrigin, WorldDirection))
-	{
-		return false;
-	}
+	DIVEPick::FSessionPickContext Context;
+	Context.World = GetWorld();
+	Context.DeviceHost = DeviceHost;
+	Context.Inspectable = Inspectable;
+	Context.IgnoredActor = ActiveCameraRig.Get();
+	Context.TraceChannel = Inspectable->GetEffectivePickTraceChannel();
 
-	FHitResult HitResult;
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DIVEPick), false);
-	QueryParams.AddIgnoredActor(ActiveCameraRig.Get());
-
-	if (!GetWorld()->LineTraceSingleByChannel(HitResult, WorldOrigin, WorldOrigin + WorldDirection * 100000.f, ECC_Visibility, QueryParams))
-	{
-		return false;
-	}
-
-	UPrimitiveComponent* HitPrimitive = HitResult.GetComponent();
-	if (!HitPrimitive || !IsComponentPartOfDeviceHost(HitPrimitive, DeviceHost))
-	{
-		return false;
-	}
-
-	const bool bIsAnchorMarker = HitPrimitive->ComponentHasTag(DIVE::kAnchorMarkerTag);
-	if (!bIsAnchorMarker && !Inspectable->IsPrimitivePickable(HitPrimitive))
-	{
-		return false;
-	}
-
-	if (bIsAnchorMarker)
-	{
-		if (UDIVEAnchorComponent* Anchor = DIVE::FindAncestorComponent<UDIVEAnchorComponent>(HitPrimitive))
-		{
-			OutTarget = FDIVEFocusTarget::FromAnchor(Anchor, Anchor->GetResolvedPartId());
-			return true;
-		}
-
-		return false;
-	}
-
-	const FName SemanticPartId = Inspectable->ResolveSemanticPartId(HitPrimitive);
-	OutTarget = FDIVEFocusTarget::FromPrimitive(HitPrimitive, SemanticPartId);
-	return true;
+	return DIVEPick::ResolveFocusAtScreenPosition(Context, ScreenPosition, PlayerController, OutTarget);
 }
 
-bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack)
+bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera, bool bUseDefaultOrbitDistance)
 {
 	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
 	ADIVECameraRig* CameraRig = ActiveCameraRig.Get();
@@ -514,27 +510,43 @@ bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, boo
 
 	FocusedTarget = Target;
 
+	constexpr bool bRefreshTransform = false;
 	if (FocusedTarget.Kind == EDIVEFocusKind::DeviceRoot)
 	{
-		CameraRig->SetOrbitTarget(FocusedTarget.GetPivotLocation(ActiveDeviceHost.Get()));
-		CameraRig->SetOrbitDistance(SessionDefaultOrbitDistance);
+		CameraRig->SetOrbitTarget(FocusedTarget.GetPivotLocation(ActiveDeviceHost.Get()), bRefreshTransform);
 	}
 	else if (FocusedTarget.Kind == EDIVEFocusKind::Primitive)
 	{
-		CameraRig->SetOrbitTarget(FocusedTarget.GetPivotLocation(ActiveDeviceHost.Get()));
+		CameraRig->SetOrbitTarget(FocusedTarget.GetPivotLocation(ActiveDeviceHost.Get()), bRefreshTransform);
 	}
 	else if (FocusedTarget.Kind == EDIVEFocusKind::Anchor)
 	{
 		if (UDIVEAnchorComponent* Anchor = Cast<UDIVEAnchorComponent>(FocusedTarget.Anchor.Get()))
 		{
-			CameraRig->SetAnchorViewpoint(Anchor->GetComponentLocation(), Anchor->GetViewRotation());
+			CameraRig->SetAnchorViewpoint(Anchor->GetComponentLocation(), Anchor->GetViewRotation(), bRefreshTransform);
 		}
 		else
 		{
-			CameraRig->SetOrbitTarget(FocusedTarget.GetPivotLocation(ActiveDeviceHost.Get()));
+			CameraRig->SetOrbitTarget(FocusedTarget.GetPivotLocation(ActiveDeviceHost.Get()), bRefreshTransform);
+			CameraRig->SyncOrbitFromCurrentView();
 		}
 	}
-	RefreshHighlights();
+
+	if (FocusedTarget.Kind == EDIVEFocusKind::DeviceRoot || FocusedTarget.Kind == EDIVEFocusKind::Primitive)
+	{
+		if (bUseDefaultOrbitDistance)
+		{
+			CameraRig->SetOrbitDistance(SessionDefaultOrbitDistance, bRefreshTransform);
+			CameraRig->SyncOrbitOrientationFromCurrentView();
+		}
+		else
+		{
+			CameraRig->SyncOrbitFromCurrentView();
+		}
+	}
+
+	const float BlendDuration = bBlendCamera ? Inspectable->GetEffectiveFocusBlendDuration() : 0.f;
+	CameraRig->ApplyFocusPresentation(BlendDuration);
 
 	Inspectable->UpdateAnchorSessionPresentation(FocusedTarget);
 
@@ -543,63 +555,40 @@ bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, boo
 		ApplyIsolation();
 	}
 
+	OnFocusChanged.Broadcast(FocusedTarget);
 	return true;
 }
 
-void UDIVESessionSubsystem::RefreshHighlights()
+bool UDIVESessionSubsystem::ApplyInitialSessionFocus(FName InitialFocusId)
 {
-	ClearHighlightPrimitives(HighlightedHoverPrimitives);
-	ClearHighlightPrimitives(HighlightedFocusPrimitives);
-
-	if (HoveredTarget.Kind == EDIVEFocusKind::Primitive && HoveredTarget.Primitive
-		&& !HoveredTarget.Equals(FocusedTarget))
+	if (InitialFocusId.IsNone())
 	{
-		ApplyHighlightForPrimitive(HoveredTarget.Primitive, DIVE::kHoverStencilValue, HighlightedHoverPrimitives);
-	}
-	else if (HoveredTarget.Kind == EDIVEFocusKind::Anchor && HoveredTarget.Anchor
-		&& !HoveredTarget.Equals(FocusedTarget))
-	{
-		if (UDIVEAnchorComponent* Anchor = Cast<UDIVEAnchorComponent>(HoveredTarget.Anchor.Get()))
-		{
-			if (UStaticMeshComponent* MarkerMesh = Anchor->GetSessionMarkerMesh())
-			{
-				ApplyHighlightForPrimitive(MarkerMesh, DIVE::kHoverStencilValue, HighlightedHoverPrimitives);
-			}
-		}
+		return false;
 	}
 
-	if (FocusedTarget.Kind == EDIVEFocusKind::Primitive && FocusedTarget.Primitive)
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	AActor* DeviceHost = ActiveDeviceHost.Get();
+	if (!Inspectable || !DeviceHost)
 	{
-		ApplyHighlightForPrimitive(FocusedTarget.Primitive, DIVE::kFocusStencilValue, HighlightedFocusPrimitives);
-	}
-}
-
-void UDIVESessionSubsystem::ClearHighlightPrimitives(TArray<TWeakObjectPtr<UPrimitiveComponent>>& Primitives)
-{
-	for (const TWeakObjectPtr<UPrimitiveComponent>& WeakPrimitive : Primitives)
-	{
-		if (UPrimitiveComponent* Primitive = WeakPrimitive.Get())
-		{
-			Primitive->SetRenderCustomDepth(false);
-		}
+		return false;
 	}
 
-	Primitives.Reset();
-}
-
-void UDIVESessionSubsystem::ApplyHighlightForPrimitive(
-	UPrimitiveComponent* Primitive,
-	int32 StencilValue,
-	TArray<TWeakObjectPtr<UPrimitiveComponent>>& OutTrackedPrimitives)
-{
-	if (!Primitive)
+	FDIVEFocusTarget Target;
+	if (!Inspectable->TryResolveStartFocusTarget(InitialFocusId, Target))
 	{
-		return;
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("DIVE: InitialFocusId '%s' not found on '%s'; falling back to device root."),
+			*InitialFocusId.ToString(),
+			*GetNameSafe(DeviceHost));
+		return false;
 	}
 
-	Primitive->SetRenderCustomDepth(true);
-	Primitive->SetCustomDepthStencilValue(StencilValue);
-	OutTrackedPrimitives.Add(Primitive);
+	FocusStack.Reset();
+	FocusStack.Add(FDIVEFocusTarget::MakeDeviceRoot());
+	const bool bUseDefaultOrbitDistance = Target.Kind == EDIVEFocusKind::Primitive;
+	return ApplyFocusTarget(Target, true, true, bUseDefaultOrbitDistance);
 }
 
 bool UDIVESessionSubsystem::ApplyIsolation()
@@ -617,7 +606,7 @@ bool UDIVESessionSubsystem::ApplyIsolation()
 	}
 
 	TArray<UPrimitiveComponent*> DevicePrimitives;
-	CollectDevicePrimitives(DevicePrimitives);
+	DIVE::CollectDevicePrimitives(ActiveDeviceHost.Get(), DevicePrimitives);
 
 	ClearIsolation();
 
@@ -633,35 +622,6 @@ bool UDIVESessionSubsystem::ApplyIsolation()
 
 	bIsolationActive = !IsolatedHiddenPrimitives.IsEmpty();
 	return bIsolationActive;
-}
-
-void UDIVESessionSubsystem::CollectDevicePrimitives(TArray<UPrimitiveComponent*>& OutPrimitives) const
-{
-	AActor* DeviceHost = ActiveDeviceHost.Get();
-	if (!DeviceHost)
-	{
-		return;
-	}
-
-	TSet<AActor*> ProcessedActors;
-	TArray<AActor*> ActorStack;
-	ActorStack.Add(DeviceHost);
-
-	while (ActorStack.Num() > 0)
-	{
-		AActor* Actor = ActorStack.Pop(EAllowShrinking::No);
-		if (!Actor || ProcessedActors.Contains(Actor))
-		{
-			continue;
-		}
-
-		ProcessedActors.Add(Actor);
-		Actor->GetComponents<UPrimitiveComponent>(OutPrimitives);
-
-		TArray<AActor*> AttachedActors;
-		Actor->GetAttachedActors(AttachedActors);
-		ActorStack.Append(AttachedActors);
-	}
 }
 
 void UDIVESessionSubsystem::CollectIsolationVisiblePrimitives(
@@ -699,4 +659,68 @@ void UDIVESessionSubsystem::CollectIsolationVisiblePrimitives(
 		DIVE::CollectAttachedPrimitives(Target.Anchor.Get(), OutVisible);
 		AddAncestorPrimitives(Target.Anchor.Get());
 	}
+}
+
+void UDIVESessionSubsystem::ApplyWorldDim()
+{
+	ClearWorldDim();
+
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	AActor* DeviceHost = ActiveDeviceHost.Get();
+	UWorld* World = GetWorld();
+	if (!Inspectable || !DeviceHost || !World)
+	{
+		return;
+	}
+
+	if (Inspectable->GetEffectiveWorldDimPolicy() != EDIVEWorldDimPolicy::HideNonDeviceActors)
+	{
+		return;
+	}
+
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (!Actor || Actor->IsHidden())
+		{
+			continue;
+		}
+
+		if (Actor == DeviceHost || Actor == ActiveCameraRig.Get() || DIVE::IsDeviceActor(DeviceHost, Actor))
+		{
+			continue;
+		}
+
+		Actor->SetActorHiddenInGame(true);
+		WorldDimHiddenActors.Add(Actor);
+	}
+}
+
+void UDIVESessionSubsystem::ClearWorldDim()
+{
+	for (const TWeakObjectPtr<AActor>& WeakActor : WorldDimHiddenActors)
+	{
+		if (AActor* Actor = WeakActor.Get())
+		{
+			Actor->SetActorHiddenInGame(false);
+		}
+	}
+
+	WorldDimHiddenActors.Reset();
+}
+
+UDIVEAnchorComponent* UDIVESessionSubsystem::GetFocusedManipulatorAnchor() const
+{
+	if (FocusedTarget.Kind != EDIVEFocusKind::Anchor)
+	{
+		return nullptr;
+	}
+
+	UDIVEAnchorComponent* Anchor = Cast<UDIVEAnchorComponent>(FocusedTarget.Anchor.Get());
+	if (!Anchor || !Anchor->SupportsManipulation())
+	{
+		return nullptr;
+	}
+
+	return Anchor;
 }

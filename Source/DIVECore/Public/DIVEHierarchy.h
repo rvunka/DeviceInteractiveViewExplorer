@@ -2,16 +2,66 @@
 
 #pragma once
 
+#include "CoreMinimal.h"
+#include "Containers/Set.h"
+#include "Templates/Function.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
+#include "GameFramework/Actor.h"
 
 namespace DIVE
 {
-inline bool IsComponentAttachedUnder(const USceneComponent* Component, const USceneComponent* Ancestor)
+inline void ForEachDeviceActor(AActor* DeviceHost, TFunctionRef<void(AActor*)> Visitor)
 {
-	for (const USceneComponent* Current = Component; Current; Current = Current->GetAttachParent())
+	if (!DeviceHost)
 	{
-		if (Current == Ancestor)
+		return;
+	}
+
+	TSet<AActor*> ProcessedActors;
+	TArray<AActor*> ActorStack;
+	ActorStack.Add(DeviceHost);
+
+	while (ActorStack.Num() > 0)
+	{
+		AActor* Actor = ActorStack.Pop(EAllowShrinking::No);
+		if (!Actor || ProcessedActors.Contains(Actor))
+		{
+			continue;
+		}
+
+		ProcessedActors.Add(Actor);
+		Visitor(Actor);
+
+		TArray<AActor*> AttachedActors;
+		Actor->GetAttachedActors(AttachedActors);
+		ActorStack.Append(AttachedActors);
+	}
+}
+
+inline void CollectDevicePrimitives(AActor* DeviceHost, TArray<UPrimitiveComponent*>& OutPrimitives)
+{
+	ForEachDeviceActor(DeviceHost, [&OutPrimitives](AActor* Actor)
+	{
+		Actor->GetComponents<UPrimitiveComponent>(OutPrimitives);
+	});
+}
+
+inline bool IsDeviceActor(const AActor* DeviceHost, const AActor* Actor)
+{
+	if (!DeviceHost || !Actor)
+	{
+		return false;
+	}
+
+	if (Actor == DeviceHost || Actor->IsAttachedTo(DeviceHost))
+	{
+		return true;
+	}
+
+	for (const AActor* Current = Actor; Current; Current = Current->GetAttachParentActor())
+	{
+		if (Current == DeviceHost)
 		{
 			return true;
 		}

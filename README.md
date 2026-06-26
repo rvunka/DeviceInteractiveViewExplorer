@@ -37,4 +37,4 @@ See `Docs/QUICKSTART.md` and `Project_docs/DIVE_Plugin_Design.md`.
 
 ## Version
 
-0.2.0 — focus-first (mesh pick, focus stack, optional anchors, explicit isolate)
+0.3.0 — universal start focus, VFX removed, camera enter blend, mesh-first pick with optional anchors

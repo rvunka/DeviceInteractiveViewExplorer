@@ -5,6 +5,7 @@
 #include "Components/InputComponent.h"
 #include "Input/DIVEInputComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "Utils/DIVEComponentResolve.h"
@@ -17,8 +18,10 @@ UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 	ZoomInKey = EKeys::MouseScrollUp;
 	ZoomOutKey = EKeys::MouseScrollDown;
 	SelectKey = EKeys::LeftMouseButton;
-	BackKey = EKeys::BackSpace;
-	ExitKey = EKeys::Escape;
+	OperationExecuteKey = EKeys::F;
+	CameraUndoKey = EKeys::Z;
+	ExitKey = EKeys::BackSpace;
+	IsolateKey = EKeys::I;
 }
 
 void UDIVELegacyKbmInputComponent::BeginPlay()
@@ -36,6 +39,12 @@ void UDIVELegacyKbmInputComponent::BeginPlay()
 	{
 		GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput));
 	}
+}
+
+void UDIVELegacyKbmInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindInput();
+	Super::EndPlay(EndPlayReason);
 }
 
 void UDIVELegacyKbmInputComponent::ResolveComponentReferences()
@@ -123,6 +132,36 @@ void UDIVELegacyKbmInputComponent::SelectPressed()
 	}
 }
 
+void UDIVELegacyKbmInputComponent::SelectReleased()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleSelectReleased();
+	}
+}
+
+void UDIVELegacyKbmInputComponent::OperationExecutePressed()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleOperationExecutePressed();
+	}
+}
+
+void UDIVELegacyKbmInputComponent::OperationExecuteReleased()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleOperationExecuteReleased();
+	}
+}
+
 void UDIVELegacyKbmInputComponent::NavigateBackPressed()
 {
 	EnsureInputReady();
@@ -153,6 +192,27 @@ void UDIVELegacyKbmInputComponent::ToggleIsolatePressed()
 	}
 }
 
+void UDIVELegacyKbmInputComponent::UnbindInput()
+{
+	if (APawn* Pawn = Cast<APawn>(GetOwner()))
+	{
+		if (LegacyInputComponent && bInputBound)
+		{
+			if (APlayerController* PlayerController = Pawn->GetController<APlayerController>())
+			{
+				PlayerController->PopInputComponent(LegacyInputComponent);
+			}
+		}
+	}
+
+	if (LegacyInputComponent)
+	{
+		LegacyInputComponent->ClearActionBindings();
+	}
+
+	bInputBound = false;
+}
+
 void UDIVELegacyKbmInputComponent::BindInput()
 {
 	if (bInputBound)
@@ -161,12 +221,18 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	}
 
 	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (!Pawn || !Pawn->IsLocallyControlled() || !Pawn->InputComponent)
+	if (!Pawn || !Pawn->IsLocallyControlled())
 	{
 		return;
 	}
 
-	UInputComponent* PawnInputComponent = Pawn->InputComponent;
+	if (!LegacyInputComponent)
+	{
+		LegacyInputComponent = NewObject<UInputComponent>(this, TEXT("DIVE_LegacyInput"));
+		LegacyInputComponent->RegisterComponent();
+	}
+
+	UInputComponent* PawnInputComponent = LegacyInputComponent;
 	bool bBoundAny = false;
 
 	if (bBindOrbitInput && OrbitKey.IsValid())
@@ -194,12 +260,21 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	if (bBindSelectInput && SelectKey.IsValid())
 	{
 		PawnInputComponent->BindKey(SelectKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::SelectPressed);
+		PawnInputComponent->BindKey(SelectKey, IE_Released, this, &UDIVELegacyKbmInputComponent::SelectReleased);
 		bBoundAny = true;
 	}
 
-	if (bBindBackInput && BackKey.IsValid())
+	if (bBindOperationExecuteInput && OperationExecuteKey.IsValid())
 	{
-		PawnInputComponent->BindKey(BackKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::NavigateBackPressed);
+		PawnInputComponent->BindKey(OperationExecuteKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::OperationExecutePressed);
+		PawnInputComponent->BindKey(OperationExecuteKey, IE_Released, this, &UDIVELegacyKbmInputComponent::OperationExecuteReleased);
+		bBoundAny = true;
+	}
+
+	if (bBindCameraUndoInput && CameraUndoKey.IsValid())
+	{
+		const FInputChord UndoChord(CameraUndoKey, false, true, false, false);
+		PawnInputComponent->BindKey(UndoChord, IE_Pressed, this, &UDIVELegacyKbmInputComponent::NavigateBackPressed);
 		bBoundAny = true;
 	}
 
@@ -209,5 +284,22 @@ void UDIVELegacyKbmInputComponent::BindInput()
 		bBoundAny = true;
 	}
 
+	if (bBindIsolateInput && IsolateKey.IsValid())
+	{
+		PawnInputComponent->BindKey(IsolateKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::ToggleIsolatePressed);
+		bBoundAny = true;
+	}
+
 	bInputBound = bBoundAny;
+	if (bInputBound)
+	{
+		if (APlayerController* PlayerController = Pawn->GetController<APlayerController>())
+		{
+			PlayerController->PushInputComponent(LegacyInputComponent);
+		}
+		else
+		{
+			bInputBound = false;
+		}
+	}
 }

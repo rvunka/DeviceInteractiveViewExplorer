@@ -27,7 +27,7 @@ LMB on a **device mesh** (even under an anchor in the hierarchy) → **orbit** a
 
 | Property | Purpose |
 |----------|---------|
-| `PartId` | Semantic id; must match `DefaultViewAnchorId` if used |
+| `PartId` | Semantic id; can match `DefaultStartFocusId` for session start |
 | `DisplayName` | UI label |
 | `OperationIds` | Operation ids for this AOI |
 | `bShowSessionMarker` / `MarkerScale` | Pick sphere while navigating (hidden on the active anchor viewpoint) |
@@ -47,6 +47,14 @@ On `UDIVEInspectableComponent` → **DIVE | Camera**:
 | `bUseDeviceDefinitionSettings` | `false` | Read orbit distance + sensitivity from linked **Device Definition** asset |
 
 Optional pawn override: **DIVE Input** → enable `bOverrideCameraSensitivity`.
+
+### Session start focus
+
+On `UDIVEInspectableComponent` → **DIVE | View**:
+
+| Property | Purpose |
+|----------|---------|
+| `DefaultStartFocusId` | Anchor `PartId` **or** pickable mesh **component name** — camera blends here when the session starts |
 
 ## 2. ACTS entry (optional)
 
@@ -72,9 +80,10 @@ Optional PIE demo: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — `Bi
 | `IA_DIVE_Orbit` Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` |
 | `IA_DIVE_Orbit` Triggered (Axis2D) | `HandleOrbitDelta` |
 | `IA_DIVE_Zoom` | `HandleZoomIn` / `HandleZoomOut` |
-| `IA_DIVE_Select` | `HandleSelectPressed` |
-| `IA_DIVE_Back` | `HandleNavigateBack` |
-| `IA_DIVE_Exit` | `HandleExitSession` |
+| `IA_DIVE_Select` Started / Completed | `HandleSelectPressed` / `HandleSelectReleased` |
+| `IA_DIVE_ExecuteOperation` Started / Completed | `HandleOperationExecutePressed` / `HandleOperationExecuteReleased` |
+| `IA_DIVE_Back` | `HandleNavigateBack` (camera / focus undo; bind Ctrl+Z in IMC) |
+| `IA_DIVE_Exit` | `HandleExitSession` (bind Backspace in IMC) |
 
 ### Default KBM (DIVERuntimeDev, legacy BindKey only)
 
@@ -82,29 +91,23 @@ Optional PIE demo: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — `Bi
 |-------------|----------------------------|
 | Middle mouse (hold + drag) | `HandleOrbitPressed` / `HandleOrbitReleased` + tick orbit |
 | Mouse wheel up / down | `HandleZoomIn` / `HandleZoomOut` |
-| Left mouse | `HandleSelectPressed` |
-| Backspace | `HandleNavigateBack` |
-| Escape | `HandleExitSession` |
+| Left mouse | `HandleSelectPressed` / `HandleSelectReleased` |
+| F | `HandleOperationExecutePressed` / `HandleOperationExecuteReleased` |
+| Ctrl+Z | `HandleNavigateBack` |
+| Backspace | `HandleExitSession` |
+| I | `HandleToggleIsolate` |
 
-**Isolate** is not bound by default. From Blueprint/UI: `GetGameInstance` → `UDIVESessionSubsystem` → `ToggleIsolateFocused()`.
+Enhanced Input: isolate is not bound by default — call `ToggleIsolateFocused()` from UI/Blueprint or map a custom action.
 
 ## 4. Operations wiring
 
 Implement `OnOperationRequested` on `UDIVEInspectableComponent`. Request includes `FocusTarget` (mesh/anchor) and `SemanticPartId` when resolved.
 
-## 5. Highlight (Content)
+## 5. Test in PIE
 
-| Stencil | Meaning |
-|---------|---------|
-| `1` | Hovered mesh / anchor marker |
-| `2` | Focused mesh |
-| `3` | Reserved for anchor markers (custom depth only on hover/focus) |
-
-Add post-process outline reading custom depth.
-
-## 6. Test in PIE
-
-1. Device with meshes only → `RequestSession()` → LMB on mesh → orbit reframes on mesh center.
-2. Add anchors + markers → LMB on marker → camera snaps to anchor viewpoint.
-3. Backspace walks **focus stack**; at root → session ends.
-4. `ToggleIsolateFocused()` hides other device meshes (keeps focused subtree + attach ancestors).
+1. Device with meshes only → `RequestSession()` → camera blends from player view → LMB on mesh → orbit reframes on mesh center.
+2. Set `DefaultStartFocusId` to a mesh component name or anchor `PartId` → session opens focused on that target.
+3. Add anchors + markers → LMB on marker → camera moves to anchor viewpoint.
+4. Ctrl+Z walks **focus stack** (previous camera focus); at root it has no effect.
+5. Backspace exits the session.
+6. `ToggleIsolateFocused()` hides other device meshes (keeps focused subtree + attach ancestors).

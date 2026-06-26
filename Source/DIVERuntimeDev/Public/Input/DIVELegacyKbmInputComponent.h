@@ -8,6 +8,7 @@
 #include "DIVELegacyKbmInputComponent.generated.h"
 
 class UDIVEInputComponent;
+class UInputComponent;
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Legacy KBM Input"))
 class DIVERUNTIMEDEV_API UDIVELegacyKbmInputComponent : public UActorComponent
@@ -18,6 +19,7 @@ public:
 	UDIVELegacyKbmInputComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void OrbitPressed();
@@ -33,6 +35,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void SelectPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void SelectReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void OperationExecutePressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void OperationExecuteReleased();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void NavigateBackPressed();
@@ -70,10 +81,16 @@ public:
 	FKey SelectKey;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
-	bool bBindBackInput = true;
+	bool bBindOperationExecuteInput = true;
 
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindBackInput"))
-	FKey BackKey;
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindOperationExecuteInput"))
+	FKey OperationExecuteKey;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bBindCameraUndoInput = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindCameraUndoInput"))
+	FKey CameraUndoKey;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindExitInput = true;
@@ -81,9 +98,18 @@ public:
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindExitInput"))
 	FKey ExitKey;
 
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bBindIsolateInput = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindIsolateInput"))
+	FKey IsolateKey;
+
 protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UDIVEInputComponent> InputComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputComponent> LegacyInputComponent;
 
 	bool bInputBound = false;
 	bool bLoggedMissingInput = false;
@@ -91,5 +117,6 @@ protected:
 	void ResolveComponentReferences();
 	void EnsureInputReady();
 	void BindInput();
+	void UnbindInput();
 	void WarnMissingInputOnce();
 };

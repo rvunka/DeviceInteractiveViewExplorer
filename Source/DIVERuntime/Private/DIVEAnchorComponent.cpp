@@ -144,7 +144,6 @@ void UDIVEAnchorComponent::ConfigureSessionMarker()
 
 	const float ClampedScale = FMath::Max(MarkerScale, 0.01f);
 	SessionMarkerMesh->SetRelativeScale3D(FVector(ClampedScale));
-	SessionMarkerMesh->SetCustomDepthStencilValue(DIVE::kAnchorMarkerStencilValue);
 }
 
 FRotator UDIVEAnchorComponent::GetViewRotation() const
@@ -155,6 +154,53 @@ FRotator UDIVEAnchorComponent::GetViewRotation() const
 FName UDIVEAnchorComponent::GetResolvedPartId() const
 {
 	return PartId.IsNone() ? GetFName() : PartId;
+}
+
+USceneComponent* UDIVEAnchorComponent::GetManipulatedComponent() const
+{
+	if (USceneComponent* ParentComponent = GetAttachParent())
+	{
+		return ParentComponent;
+	}
+
+	return const_cast<UDIVEAnchorComponent*>(this);
+}
+
+void UDIVEAnchorComponent::CaptureManipulationBase()
+{
+	if (USceneComponent* Target = GetManipulatedComponent())
+	{
+		ManipulationBaseRotation = Target->GetRelativeRotation();
+	}
+
+	CurrentHingeAngleDegrees = FMath::Clamp(CurrentHingeAngleDegrees, HingeMinAngle, HingeMaxAngle);
+	SetHingeAngleDegrees(CurrentHingeAngleDegrees);
+}
+
+void UDIVEAnchorComponent::SetHingeAngleDegrees(float AngleDegrees)
+{
+	if (ManipulationKind != EDIVEManipulationKind::Hinge)
+	{
+		return;
+	}
+
+	CurrentHingeAngleDegrees = FMath::Clamp(AngleDegrees, HingeMinAngle, HingeMaxAngle);
+
+	USceneComponent* Target = GetManipulatedComponent();
+	if (!Target)
+	{
+		return;
+	}
+
+	const FVector Axis = HingeAxisLocal.GetSafeNormal();
+	if (Axis.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FQuat BaseQuat = ManipulationBaseRotation.Quaternion();
+	const FQuat HingeQuat(Axis, FMath::DegreesToRadians(CurrentHingeAngleDegrees));
+	Target->SetRelativeRotation((BaseQuat * HingeQuat).Rotator());
 }
 
 void UDIVEAnchorComponent::SetSessionPresentation(bool bSessionActive, bool bHidePickMarker)
@@ -173,10 +219,6 @@ void UDIVEAnchorComponent::SetSessionPresentation(bool bSessionActive, bool bHid
 		if (bShowMarker)
 		{
 			ConfigureSessionMarker();
-		}
-		else
-		{
-			SessionMarkerMesh->SetRenderCustomDepth(false);
 		}
 	}
 }

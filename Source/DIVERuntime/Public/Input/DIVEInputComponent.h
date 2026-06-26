@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Components/ActorComponent.h"
+#include "DIVETypes.h"
 #include "Engine/EngineTypes.h"
 #include "Math/Vector2D.h"
 
@@ -41,6 +42,15 @@ public:
 	void HandleSelectPressed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleSelectReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleOperationExecutePressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleOperationExecuteReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandleNavigateBack();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
@@ -65,16 +75,29 @@ public:
 	float ZoomSensitivity = 40.f;
 
 protected:
+	UFUNCTION()
+	void HandleSessionStarted(AActor* DeviceHost, class UDIVEInspectableComponent* Inspectable);
+
+	UFUNCTION()
+	void HandleSessionEnded(EDIVESessionEndReason Reason, AActor* DeviceHost);
+
+	void BindSessionDelegates();
+	void UnbindSessionDelegates();
+	void BeginSessionPresentation();
+	class UDIVEOperationsUIComponent* GetOperationsUIComponent() const;
+	void ApplySelectDragFromMouse();
+
 	bool bOrbitKeyHeld = false;
+	bool bSelectKeyHeld = false;
+	bool bSelectDragActive = false;
+	FVector2D SelectDragLastPosition = FVector2D::ZeroVector;
 	bool bSessionPresentationActive = false;
-	bool bApplyPresentationNextTick = false;
 	bool bHasLastOrbitMousePosition = false;
 	FVector2D LastOrbitMousePosition = FVector2D::ZeroVector;
 
 	class UDIVESessionSubsystem* GetSessionSubsystem() const;
 	class APlayerController* GetLocalPlayerController() const;
 	bool IsLocallyControlledOwner() const;
-	void UpdateSessionPresentation();
 	void CapturePreSessionInputState(APlayerController* PlayerController);
 	void RestorePreSessionInputState(APlayerController* PlayerController);
 	void ApplySessionInputMode(APlayerController* PlayerController);

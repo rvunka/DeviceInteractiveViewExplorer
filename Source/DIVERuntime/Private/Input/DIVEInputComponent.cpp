@@ -7,6 +7,7 @@
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "UI/DIVEOperationsUIComponent.h"
 
 UDIVEInputComponent::UDIVEInputComponent()
 {
@@ -17,25 +18,42 @@ UDIVEInputComponent::UDIVEInputComponent()
 void UDIVEInputComponent::BeginPlay()
 {
 	Super::BeginPlay();
-}
+	SetComponentTickEnabled(false);
+	BindSessionDelegates();
 
-void UDIVEInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
 		if (Subsystem->IsSessionActive())
 		{
-			Subsystem->EndSession();
+			HandleSessionStarted(Subsystem->GetActiveDeviceHost(), Subsystem->GetActiveInspectable());
+		}
+	}
+}
+
+void UDIVEInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindSessionDelegates();
+
+	if (IsLocallyControlledOwner())
+	{
+		if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+		{
+			if (Subsystem->IsSessionActive())
+			{
+				Subsystem->EndSession(EDIVESessionEndReason::Forced);
+			}
+		}
+
+		if (APlayerController* PlayerController = GetLocalPlayerController())
+		{
+			ClearSessionPresentation(PlayerController);
 		}
 	}
 
-	if (APlayerController* PlayerController = GetLocalPlayerController())
-	{
-		ClearSessionPresentation(PlayerController);
-	}
-
+	SetComponentTickEnabled(false);
 	bOrbitKeyHeld = false;
-	bApplyPresentationNextTick = false;
+	bSelectKeyHeld = false;
+	bSelectDragActive = false;
 	bHasLastOrbitMousePosition = false;
 	Super::EndPlay(EndPlayReason);
 }
@@ -44,18 +62,97 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn || !OwnerPawn->IsLocallyControlled())
+	if (!IsLocallyControlledOwner())
 	{
 		return;
 	}
-
-	UpdateSessionPresentation();
 
 	if (bOrbitKeyHeld)
 	{
 		ApplyOrbitFromMouseDelta();
 	}
+
+	if (bSelectKeyHeld)
+	{
+		ApplySelectDragFromMouse();
+	}
+}
+
+void UDIVEInputComponent::BindSessionDelegates()
+{
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		Subsystem->OnSessionStarted.AddDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
+		Subsystem->OnSessionEnded.AddDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
+	}
+}
+
+void UDIVEInputComponent::UnbindSessionDelegates()
+{
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		Subsystem->OnSessionStarted.RemoveDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
+		Subsystem->OnSessionEnded.RemoveDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
+	}
+}
+
+void UDIVEInputComponent::HandleSessionStarted(AActor* /*DeviceHost*/, UDIVEInspectableComponent* /*Inspectable*/)
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	SetComponentTickEnabled(true);
+	BeginSessionPresentation();
+}
+
+void UDIVEInputComponent::HandleSessionEnded(EDIVESessionEndReason /*Reason*/, AActor* /*DeviceHost*/)
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (APlayerController* PlayerController = GetLocalPlayerController())
+	{
+		ClearSessionPresentation(PlayerController);
+	}
+
+	bOrbitKeyHeld = false;
+	bSelectKeyHeld = false;
+	bSelectDragActive = false;
+	bHasLastOrbitMousePosition = false;
+	SetComponentTickEnabled(false);
+}
+
+void UDIVEInputComponent::BeginSessionPresentation()
+{
+	if (bSessionPresentationActive)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = GetLocalPlayerController();
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	if (!PlayerController || !Subsystem || !Subsystem->IsSessionActive())
+	{
+		return;
+	}
+
+	CapturePreSessionInputState(PlayerController);
+	ApplySessionInputMode(PlayerController);
+
+	if (bOverrideCameraSensitivity)
+	{
+		Subsystem->ConfigureActiveCameraInput(OrbitSensitivity, ZoomSensitivity);
+	}
+	else
+	{
+		Subsystem->ApplyCameraInputFromInspectable();
+	}
+
+	bSessionPresentationActive = true;
 }
 
 UDIVESessionSubsystem* UDIVEInputComponent::GetSessionSubsystem() const
@@ -83,47 +180,45 @@ bool UDIVEInputComponent::IsLocallyControlledOwner() const
 	return OwnerPawn && OwnerPawn->IsLocallyControlled();
 }
 
-void UDIVEInputComponent::UpdateSessionPresentation()
+UDIVEOperationsUIComponent* UDIVEInputComponent::GetOperationsUIComponent() const
 {
-	APlayerController* PlayerController = GetLocalPlayerController();
+	return GetOwner() ? GetOwner()->FindComponentByClass<UDIVEOperationsUIComponent>() : nullptr;
+}
+
+void UDIVEInputComponent::ApplySelectDragFromMouse()
+{
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
-	const bool bSessionActive = Subsystem && Subsystem->IsSessionActive();
-
-	if (bSessionActive && PlayerController)
+	APlayerController* PlayerController = GetLocalPlayerController();
+	if (!Subsystem || !PlayerController || !Subsystem->IsManipulatorDragging())
 	{
-		if (!bSessionPresentationActive && !bApplyPresentationNextTick)
+		return;
+	}
+
+	float MouseX = 0.f;
+	float MouseY = 0.f;
+	if (!PlayerController->GetMousePosition(MouseX, MouseY))
+	{
+		return;
+	}
+
+	const FVector2D CurrentPosition(MouseX, MouseY);
+	if (!bSelectDragActive)
+	{
+		if (FVector2D::DistSquared(CurrentPosition, SelectDragLastPosition) >= 4.f)
 		{
-			bApplyPresentationNextTick = true;
-			return;
-		}
-
-		bApplyPresentationNextTick = false;
-
-		if (!bSessionPresentationActive)
-		{
-			CapturePreSessionInputState(PlayerController);
-			ApplySessionInputMode(PlayerController);
-
-			if (bOverrideCameraSensitivity)
-			{
-				Subsystem->ConfigureActiveCameraInput(OrbitSensitivity, ZoomSensitivity);
-			}
-			else
-			{
-				Subsystem->ApplyCameraInputFromInspectable();
-			}
-
-			bSessionPresentationActive = true;
+			bSelectDragActive = true;
 		}
 		else
 		{
-			MaintainSessionInputFlags(PlayerController);
+			return;
 		}
 	}
-	else if (bSessionPresentationActive)
+
+	const FVector2D Delta = CurrentPosition - SelectDragLastPosition;
+	SelectDragLastPosition = CurrentPosition;
+	if (!Delta.IsNearlyZero())
 	{
-		bApplyPresentationNextTick = false;
-		ClearSessionPresentation(PlayerController);
+		Subsystem->UpdateManipulatorDrag(Delta);
 	}
 }
 
@@ -181,7 +276,7 @@ void UDIVEInputComponent::RestorePreSessionInputState(APlayerController* PlayerC
 		PlayerController->SetInputMode(FInputModeGameOnly());
 	}
 
-	if (UGameViewportClient* ViewportClient = PlayerController->GetWorld()->GetGameViewport())
+	if (UGameViewportClient* ViewportClient = PlayerController->GetWorld() ? PlayerController->GetWorld()->GetGameViewport() : nullptr)
 	{
 		ViewportClient->SetMouseCaptureMode(PreservedMouseCaptureMode);
 		ViewportClient->SetMouseLockMode(PreservedMouseLockMode);
@@ -261,6 +356,8 @@ void UDIVEInputComponent::ClearSessionPresentation(APlayerController* PlayerCont
 	}
 
 	bOrbitKeyHeld = false;
+	bSelectKeyHeld = false;
+	bSelectDragActive = false;
 	bHasLastOrbitMousePosition = false;
 	bSessionPresentationActive = false;
 	bSessionAppliedInputFlags = false;
@@ -350,7 +447,7 @@ void UDIVEInputComponent::HandleOrbitReleased()
 
 void UDIVEInputComponent::HandleOrbitDelta(FVector2D Delta)
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || bOrbitKeyHeld)
 	{
 		return;
 	}
@@ -412,12 +509,68 @@ void UDIVEInputComponent::HandleSelectPressed()
 
 	float MouseX = 0.f;
 	float MouseY = 0.f;
-	if (PlayerController->GetMousePosition(MouseX, MouseY))
+	if (!PlayerController->GetMousePosition(MouseX, MouseY))
 	{
-		Subsystem->SelectAtScreenPosition(FVector2D(MouseX, MouseY), PlayerController);
+		return;
 	}
 
+	SelectDragLastPosition = FVector2D(MouseX, MouseY);
+	bSelectKeyHeld = true;
+	bSelectDragActive = false;
+
+	if (Subsystem->TryBeginManipulatorDragAtScreenPosition(SelectDragLastPosition, PlayerController))
+	{
+		return;
+	}
+
+	bSelectKeyHeld = false;
+	Subsystem->SelectAtScreenPosition(SelectDragLastPosition, PlayerController);
 	ApplySessionInputMode(PlayerController);
+}
+
+void UDIVEInputComponent::HandleSelectReleased()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		if (Subsystem->IsManipulatorDragging())
+		{
+			Subsystem->EndManipulatorDrag();
+		}
+	}
+
+	bSelectKeyHeld = false;
+	bSelectDragActive = false;
+}
+
+void UDIVEInputComponent::HandleOperationExecutePressed()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (UDIVEOperationsUIComponent* OperationsUI = GetOperationsUIComponent())
+	{
+		OperationsUI->HandleExecutePressed();
+	}
+}
+
+void UDIVEInputComponent::HandleOperationExecuteReleased()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (UDIVEOperationsUIComponent* OperationsUI = GetOperationsUIComponent())
+	{
+		OperationsUI->HandleExecuteReleased();
+	}
 }
 
 void UDIVEInputComponent::HandleNavigateBack()
@@ -427,18 +580,12 @@ void UDIVEInputComponent::HandleNavigateBack()
 		return;
 	}
 
-	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
-	APlayerController* PlayerController = GetLocalPlayerController();
-	if (!Subsystem || !Subsystem->IsSessionActive())
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		return;
-	}
-
-	Subsystem->NavigateBack();
-
-	if (!Subsystem->IsSessionActive() && PlayerController)
-	{
-		ClearSessionPresentation(PlayerController);
+		if (Subsystem->IsSessionActive())
+		{
+			Subsystem->NavigateBack();
+		}
 	}
 }
 
@@ -449,18 +596,12 @@ void UDIVEInputComponent::HandleExitSession()
 		return;
 	}
 
-	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
-	APlayerController* PlayerController = GetLocalPlayerController();
-	if (!Subsystem || !Subsystem->IsSessionActive())
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		return;
-	}
-
-	Subsystem->EndSession();
-
-	if (PlayerController)
-	{
-		ClearSessionPresentation(PlayerController);
+		if (Subsystem->IsSessionActive())
+		{
+			Subsystem->EndSession();
+		}
 	}
 }
 

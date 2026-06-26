@@ -4,17 +4,22 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
-#include "Tickable.h"
 #include "DIVEConvention.h"
 #include "DIVETypes.h"
 #include "DIVESessionSubsystem.generated.h"
 
 class ADIVECameraRig;
+class UDIVEAnchorComponent;
 class UDIVEInspectableComponent;
 class UPrimitiveComponent;
+class AActor;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionStarted, AActor*, DeviceHost, UDIVEInspectableComponent*, Inspectable);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionEnded, EDIVESessionEndReason, Reason, AActor*, DeviceHost);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEFocusChanged, const FDIVEFocusTarget&, FocusTarget);
 
 UCLASS()
-class DIVERUNTIME_API UDIVESessionSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+class DIVERUNTIME_API UDIVESessionSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
 
@@ -34,16 +39,25 @@ public:
 	FDIVEFocusTarget GetFocusedTarget() const { return FocusedTarget; }
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
-	FDIVEFocusTarget GetHoveredTarget() const { return HoveredTarget; }
-
-	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsIsolationActive() const { return bIsolationActive; }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Manipulator")
+	bool IsManipulatorDragging() const { return bManipulatorDragging; }
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool TryBeginSession(AActor* DeviceHost, UDIVEInspectableComponent* Inspectable, const FDIVESessionParams& Params);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
-	void EndSession();
+	void EndSession(EDIVESessionEndReason Reason = EDIVESessionEndReason::UserExit);
+
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
+	FOnDIVESessionStarted OnSessionStarted;
+
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
+	FOnDIVESessionEnded OnSessionEnded;
+
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
+	FOnDIVEFocusChanged OnFocusChanged;
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ApplyOrbitInput(const FVector2D& Delta);
@@ -61,9 +75,6 @@ public:
 	bool SelectAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
-	bool UpdateHoverAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack = true);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
@@ -78,14 +89,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ClearIsolation();
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE")
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
+	void GetAvailableOperations(TArray<FDIVEOperationDescriptor>& OutOperations) const;
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
+	bool ValidateFocusedOperation(FName OperationId, FText& OutFailureMessage) const;
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
 	bool RequestFocusedOperation(FName OperationId, FDIVEOperationResult& OutResult);
 
-	virtual void Tick(float DeltaTime) override;
-	virtual TStatId GetStatId() const override;
-	virtual bool IsTickable() const override;
-	virtual bool IsTickableWhenPaused() const override { return false; }
-	virtual UWorld* GetTickableGameObjectWorld() const override;
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Manipulator")
+	bool TryBeginManipulatorDragAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Manipulator")
+	void UpdateManipulatorDrag(const FVector2D& ScreenDelta);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Manipulator")
+	void EndManipulatorDrag();
 
 private:
 	EDIVESessionState SessionState = EDIVESessionState::Inactive;
@@ -96,23 +116,24 @@ private:
 	TWeakObjectPtr<AActor> PreviousViewTarget;
 
 	FDIVEFocusTarget FocusedTarget = FDIVEFocusTarget::MakeDeviceRoot();
-	FDIVEFocusTarget HoveredTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	TArray<FDIVEFocusTarget> FocusStack;
-
-	TArray<TWeakObjectPtr<UPrimitiveComponent>> HighlightedHoverPrimitives;
-	TArray<TWeakObjectPtr<UPrimitiveComponent>> HighlightedFocusPrimitives;
 
 	bool bIsolationActive = false;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> IsolatedHiddenPrimitives;
+	TArray<TWeakObjectPtr<AActor>> WorldDimHiddenActors;
+
+	bool bManipulatorDragging = false;
+	TWeakObjectPtr<UDIVEAnchorComponent> ActiveManipulatorAnchor;
 
 	float SessionDefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
 
 	bool ResolveFocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController, FDIVEFocusTarget& OutTarget) const;
-	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack);
-	void RefreshHighlights();
-	void ClearHighlightPrimitives(TArray<TWeakObjectPtr<UPrimitiveComponent>>& Primitives);
-	void ApplyHighlightForPrimitive(UPrimitiveComponent* Primitive, int32 StencilValue, TArray<TWeakObjectPtr<UPrimitiveComponent>>& OutTrackedPrimitives);
+	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bUseDefaultOrbitDistance = false);
+	bool ApplyInitialSessionFocus(FName InitialFocusId);
 	bool ApplyIsolation();
-	void CollectDevicePrimitives(TArray<UPrimitiveComponent*>& OutPrimitives) const;
 	void CollectIsolationVisiblePrimitives(const FDIVEFocusTarget& Target, TArray<UPrimitiveComponent*>& OutVisible) const;
+	void ApplyWorldDim();
+	void ClearWorldDim();
+	UDIVEAnchorComponent* GetFocusedManipulatorAnchor() const;
+	bool BeginManipulatorDrag();
 };

@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.2.0",
+	"VersionName": "0.3.0",
 	"FriendlyName": "DIVE - Device Interactive View Explorer",
 	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, part hierarchy (AOI), data-driven operations. Self-contained; no dependency on ACTS, GRIP, or MESS.",
 	"Category": "Gameplay",
@@ -13,6 +13,12 @@
 	"IsBetaVersion": true,
 	"IsExperimentalVersion": false,
 	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "DataValidation",
+			"Enabled": true
+		}
+	],
 	"Modules": [
 		{
 			"Name": "DIVECore",
@@ -27,6 +33,11 @@
 		{
 			"Name": "DIVERuntimeDev",
 			"Type": "DeveloperTool",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "DIVEUnrealEditor",
+			"Type": "Editor",
 			"LoadingPhase": "Default"
 		}
 	]

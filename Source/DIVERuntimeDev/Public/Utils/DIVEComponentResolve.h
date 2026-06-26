@@ -9,7 +9,7 @@ class UActorComponent;
 
 namespace DIVEComponentResolve
 {
-	DIVERUNTIME_API UActorComponent* FindComponentByName(AActor* Owner, FName ComponentName);
+	DIVERUNTIMEDEV_API UActorComponent* FindComponentByName(AActor* Owner, FName ComponentName);
 
 	template<typename ComponentType>
 	ComponentType* FindComponentByName(AActor* Owner, FName ComponentName)
