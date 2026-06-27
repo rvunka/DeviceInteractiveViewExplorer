@@ -33,7 +33,7 @@ DIVE provides:
 6. Open session via ACTS `OpenDIVE` or `RequestSession()` in game code.
 7. Isolate: call `UDIVESessionSubsystem::ToggleIsolateFocused()` from UI or Blueprint (not bound by default).
 
-See `Docs/QUICKSTART.md` and `Project_docs/DIVE_Plugin_Design.md`.
+See `Docs/QUICKSTART.md`, `Docs/DeviceInteractionModel.md`, and `Project_docs/DIVE_Plugin_Design.md`.
 
 ## Version
 

@@ -80,6 +80,8 @@ Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = selec
 
 Device mesh isolate remains **`ToggleIsolateFocused()`** (explicit, separate from world dim).
 
+Physical panel controls (sliders, doors, GRIP, proxy drive) — see **`Docs/DeviceInteractionModel.md`**.
+
 ## Session flow
 
 1. `RequestSession()` → `TryBeginSession` → `BuildSemanticRegistry()` (anchors only).
