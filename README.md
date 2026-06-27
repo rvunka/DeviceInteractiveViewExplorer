@@ -10,6 +10,7 @@ DIVE provides:
 - **Mesh-first focus** — LMB on mesh → orbit around bounds center
 - **Anchor viewpoint** — LMB on session marker → camera at anchor transform
 - Optional **`UDIVEAnchorComponent`** for semantic AOI, operations, and authored view points
+- **`IDIVEProxyDrive`** extension point for monitor-side physical controls (game implements)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (DIVE \| Camera)
 - Self-contained runtime (no ACTS / GRIP / MESS dependencies)
 
@@ -19,7 +20,7 @@ DIVE provides:
 
 | Module | Role |
 |--------|------|
-| **DIVECore** | Shared types, `FDIVEFocusTarget`, conventions |
+| **DIVECore** | Shared types, `FDIVEFocusTarget`, `IDIVEProxyDrive`, conventions |
 | **DIVERuntime** | Subsystem, components, camera rig, assets, **`UDIVEInputComponent`** |
 | **DIVERuntimeDev** | `UDIVELegacyKbmInputComponent` — BindKey → **DIVE Input** |
 
@@ -37,4 +38,4 @@ See `Docs/QUICKSTART.md`, `Docs/DeviceInteractionModel.md`, and `Project_docs/DI
 
 ## Version
 
-0.3.0 — universal start focus, VFX removed, camera enter blend, mesh-first pick with optional anchors
+0.4.0-dev — anchor hinge manipulator removed; `IDIVEProxyDrive` hook for monitor-side physical controls

@@ -1,4 +1,4 @@
-# DIVE Architecture (v0.3)
+# DIVE Architecture (v0.4.0-dev)
 
 ## Layers
 
@@ -21,7 +21,7 @@
 │  ADIVECameraRig                         │
 │  UDIVEDeviceDefinitionAsset             │
 ├─────────────────────────────────────────┤
-│ DIVECore — FDIVEFocusTarget, DIVEHierarchy, types      │
+│ DIVECore — FDIVEFocusTarget, IDIVEProxyDrive, types │
 └─────────────────────────────────────────┘
 ```
 
@@ -50,12 +50,12 @@ Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponen
 | `IA_DIVE_Orbit` | Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` |
 | `IA_DIVE_Orbit` | Triggered (Axis2D) | `HandleOrbitDelta` — **do not combine** with Pressed/Released on the same action |
 | `IA_DIVE_Zoom` | Triggered | `HandleZoomIn` / `HandleZoomOut` |
-| `IA_DIVE_Select` | Started / Completed | `HandleSelectPressed` / `HandleSelectReleased` (hinge drag when focused) |
+| `IA_DIVE_Select` | Started / Completed | `HandleSelectPressed` / `HandleSelectReleased` (proxy drive or pick/focus) |
 | `IA_DIVE_ExecuteOperation` | Started / Completed | `HandleOperationExecutePressed` / `HandleOperationExecuteReleased` |
 | `IA_DIVE_Back` | Started | `HandleNavigateBack` (camera / focus undo) |
 | `IA_DIVE_Exit` | Started | `HandleExitSession` |
 
-Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = select / hinge drag.
+Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = select / proxy drag / focus.
 
 ## Operations (v0.2)
 
@@ -64,10 +64,28 @@ Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = selec
 - `ValidationRules` on device definition gate operations by `RequiredCompletedOperationIds`.
 - `UDIVEOperationsUIComponent` shows the list; `RequestFocusedOperation` validates, dispatches `OnOperationRequested`, marks success in session state.
 
-## Manipulators (v0.2)
+## Proxy drive (v0.4-dev)
 
-- `EDIVEManipulationKind` on `UDIVEAnchorComponent` — **Hinge only** (v0.3).
-- MMB orbit does not conflict with LMB hinge drag on focused hinged anchor.
+Physical panel controls (sliders, doors, knobs) live on the **device** with constraints and game state. DIVE exposes an extension point in **DIVECore**:
+
+- **`IDIVEProxyDrive`** — `CanProxyDrive`, `BeginProxyDrive`, `ApplyProxyDriveDelta`, `EndProxyDrive`
+- **`FDIVEProxyDriveContext`** — screen position, optional focus target snapshot, hit component
+
+**Select routing** (`UDIVEInputComponent`):
+
+1. LMB down → `TryBeginProxyDriveAtScreenPosition` if hit actor/component implements `IDIVEProxyDrive`
+2. else → `SelectAtScreenPosition` (mesh orbit / anchor viewpoint)
+3. LMB up → `EndProxyDrive(true)`
+
+No GRIP / ATSEP dependency in `DIVERuntime`. Game modules implement the interface on device controls. Full contract: **`Docs/DeviceInteractionModel.md`**.
+
+## Anchor (viewpoint + semantics)
+
+`UDIVEAnchorComponent` provides:
+
+- `PartId`, `DisplayName`, `OperationIds`
+- Authored camera viewpoint (transform + optional marker)
+- **Not** kinematic hinge / manipulator physics (removed in 0.4-dev)
 
 ## World dim (v0.3)
 
@@ -80,23 +98,20 @@ Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = selec
 
 Device mesh isolate remains **`ToggleIsolateFocused()`** (explicit, separate from world dim).
 
-Physical panel controls (sliders, doors, GRIP, proxy drive) — see **`Docs/DeviceInteractionModel.md`**.
-
 ## Session flow
 
 1. `RequestSession()` → `TryBeginSession` → `BuildSemanticRegistry()` (anchors only).
 2. Camera rig spawns at the player view, then blends to `InitialFocusId` / `DefaultStartFocusId` (anchor PartId or mesh component name) or device root.
 3. Optional world dim applied; focus stack initialized with `DeviceRoot`.
-4. LMB → pick; focused anchor → operations list; **F** → execute / hold.
-5. Focused hinged anchor + LMB drag → hinge manipulator.
-6. Ctrl+Z → pop focus stack; at root → no-op.
-7. Backspace → `EndSession`.
+4. LMB → proxy drive (if hit implements interface) **or** pick/focus; focused anchor → operations list; **F** → execute / hold.
+5. Ctrl+Z → pop focus stack; at root → no-op.
+6. Backspace → `EndSession`.
 
 ## Editor
 
 Context menu on selected actor: **DIVE Scan Device** — logs anchors, operations, catalog warnings.
 
-Automation smoke tests: `ATSEP.DIVE.Operations.ValidationRules`, `ATSEP.DIVE.Manipulation.HingeSnap`.
+Automation smoke test: `ATSEP.DIVE.Operations.ValidationRules`.
 
 ## Dependencies
 

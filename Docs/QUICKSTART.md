@@ -19,7 +19,7 @@ Pick filters on `UDIVEInspectableComponent`:
 | `SkipComponentTag` | `DIVE.Skip` | Ignore decorated / collision-only meshes |
 | `MinPickBoundsRadius` | `0` | Skip tiny meshes (set e.g. `1.0` to reduce noise) |
 
-### Anchor focus (viewpoint)
+### Anchor focus (viewpoint + scenario ops)
 
 LMB on the **session marker sphere** (or `FocusAnchor(PartId)`) → camera moves to the anchor **transform** (location + rotation). MMB/zoom adjust view **in place** at the anchor.
 
@@ -29,11 +29,19 @@ LMB on a **device mesh** (even under an anchor in the hierarchy) → **orbit** a
 |----------|---------|
 | `PartId` | Semantic id; can match `DefaultStartFocusId` for session start |
 | `DisplayName` | UI label |
-| `OperationIds` | Operation ids for this AOI |
+| `OperationIds` | Scenario operation ids for this AOI (inspect, demount — not physical knobs) |
 | `bShowSessionMarker` / `MarkerScale` | Pick sphere while navigating (hidden on the active anchor viewpoint) |
 | `bShowViewDirection` / `ViewDirectionScale` | View-direction arrow in **editor only** (never shown in PIE/game) |
 | Component rotation | View direction when `bUseComponentRotationForView` |
 | `ViewRotationOverride` | Fixed rotation when component rotation is disabled |
+
+### Physical controls (proxy drive)
+
+Sliders, doors, knobs, and switches are **device prefabs** (constraints + game state), not DIVE anchors.
+
+For monitor sessions, implement **`IDIVEProxyDrive`** (DIVECore) on the control actor or component. LMB on a proxy-drive hit starts drag; release commits. If nothing implements the interface, LMB behaves as pick/focus only.
+
+See `Docs/DeviceInteractionModel.md` for the full ATSEP / GRIP composition model.
 
 ### Camera sensitivity
 
@@ -91,7 +99,7 @@ Optional PIE demo: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — `Bi
 |-------------|----------------------------|
 | Middle mouse (hold + drag) | `HandleOrbitPressed` / `HandleOrbitReleased` + tick orbit |
 | Mouse wheel up / down | `HandleZoomIn` / `HandleZoomOut` |
-| Left mouse | `HandleSelectPressed` / `HandleSelectReleased` |
+| Left mouse | `HandleSelectPressed` / `HandleSelectReleased` (proxy drive or pick/focus) |
 | F | `HandleOperationExecutePressed` / `HandleOperationExecuteReleased` |
 | Ctrl+Z | `HandleNavigateBack` |
 | Backspace | `HandleExitSession` |

@@ -1,7 +1,7 @@
 # DIVE and physical device controls
 
 > **Audience:** device authors, game integration (ATSEP), VR planning.  
-> **Status:** architecture contract (v0.3+).  
+> **Status:** architecture contract (v0.4-dev).  
 > **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `Project_docs/Plugin_Input_Architecture.md`.
 
 ---
@@ -64,18 +64,18 @@ DIVE must **not** become the source of truth for knob position, door angle, or s
 | Sounds, haptics, MESS hooks | Device control component |
 | Reuse on another device | Same control prefab / component |
 
-Recommended **game interface** (lives in **game module**, not in DIVE plugin):
+Recommended **game interface** — now exported from **DIVECore** as `IDIVEProxyDrive`:
 
 ```text
-IDeviceProxyDrive (conceptual)
+IDIVEProxyDrive (DIVECore)
   CanProxyDrive() → bool
-  BeginProxyDrive(Hit, ScreenContext)
-  ApplyProxyDelta(Delta)
-  EndProxyDrive(bCommitSnap)
+  BeginProxyDrive(FDIVEProxyDriveContext)  // ScreenPosition, FocusTarget, HitComponent
+  ApplyProxyDriveDelta(ScreenDelta)
+  EndProxyDrive(bCommit)
 ```
 
 - **GRIP path:** hand grab applies forces; constraint + component update state.
-- **DIVE path:** session pick calls `BeginProxyDrive` / `ApplyProxyDelta` on the hit control.
+- **DIVE path:** session pick calls `BeginProxyDrive` / `ApplyProxyDriveDelta` on the hit control (via `IDIVEProxyDrive`).
 - **Sounds:** only inside the device component when value/angle actually changes.
 
 ### DIVE plugin (stays thin)
@@ -84,6 +84,7 @@ IDeviceProxyDrive (conceptual)
 |----------|----------------|
 | Session, camera rig, focus stack | Authoring constraints on devices |
 | Ray pick from DIVE camera | GRIP hand physics |
+| `IDIVEProxyDrive` hook (routing in session subsystem) | Implementations on devices (game module) |
 | `Handle*` input API for Enhanced Input | MESS / electrical solver |
 | Optional semantic **operations** (inspect, demount, scenario steps) | Defining every physical knob as an OperationId |
 
@@ -98,17 +99,24 @@ Do not model every physical handle as a Press/Hold **operation** unless it is tr
 
 ---
 
-## 4. Current DIVE v0.3 (prototype vs target)
+## 4. DIVE v0.4-dev (current)
 
-v0.3 includes a **DIVE-local** kinematic hinge on `UDIVEAnchorComponent` and anchor **OperationIds**. That is a **prototype** for doors and AOI, **not** the long-term model for panel hardware.
+v0.4-dev removes the **DIVE-local kinematic hinge** on `UDIVEAnchorComponent`. Anchors remain for **viewpoint + PartId + scenario OperationIds**.
 
-| v0.3 prototype | Target |
-|----------------|--------|
-| `EDIVEManipulationKind::Hinge` rotates attach parent kinematically | Drive device constraint / `IDeviceProxyDrive` |
-| `OperationIds` on anchor | Physical controls via device API; operations for non-physical steps only |
-| Pick mesh → orbit | Pick mesh → orbit **or** start proxy drive if hit implements drive interface |
+| Removed in 0.4-dev | Replacement |
+|--------------------|-------------|
+| `EDIVEManipulationKind::Hinge` | Device constraint + `IDIVEProxyDrive` on control |
+| `DIVEManipulation` utils | Session routing: `TryBeginProxyDriveAtScreenPosition` |
+| `ATSEP.DIVE.Manipulation.HingeSnap` test | `ATSEP.DIVE.Operations.ValidationRules` |
 
-Roadmap: proxy-drive integration in **game module**; shrink DIVE-specific manipulators once device API exists.
+| Current behaviour | Notes |
+|-------------------|-------|
+| Pick mesh → orbit | Unchanged |
+| Pick anchor marker → viewpoint | Unchanged |
+| LMB on `IDIVEProxyDrive` hit → drag | Game implements interface; no default impl in plugin |
+| `OperationIds` on anchor | Scenario steps only (inspect, demount) |
+
+Roadmap: ATSEP implements `IDIVEProxyDrive` on device controls; optional GRIP bridge for virtual-hand grab.
 
 ---
 
@@ -147,8 +155,8 @@ DIVERuntime          GRIPRuntime          ATSEP_Fundamental (game)
 
 **Option A — Proxy drive (preferred for sliders / hinged panels in DIVE)**
 
-1. Device implements `IDeviceProxyDrive` (game code).
-2. DIVE select + drag → game subsystem translates screen delta → `ApplyProxyDelta`.
+1. Device implements `IDIVEProxyDrive` (game code on control actor/component).
+2. DIVE select + drag → `UDIVESessionSubsystem` routes to active proxy drive.
 3. GRIP not involved in the monitor session; VR still uses GRIP on the same mesh.
 
 **Option B — Virtual GRIP hand during DIVE (reuse grab PD)**
@@ -214,11 +222,9 @@ Exact VR policy (DIVE session in HMD or not) is a **game** decision; DIVE expose
 
 | Item | Owner |
 |------|--------|
-| `IDeviceProxyDrive` (or equivalent) in game module | ATSEP |
-| DIVE pick → proxy drive routing | ATSEP |
+| `IDIVEProxyDrive` implementations on device controls | ATSEP |
 | Optional virtual GRIP hand from DIVE camera | ATSEP or `DIVEGRIPAdapter` |
 | VR two-hand + OpenXR | GRIPVR / game |
-| Remove or deprecate DIVE-local hinge when proxy path exists | DIVE + game migration |
 
 ---
 
