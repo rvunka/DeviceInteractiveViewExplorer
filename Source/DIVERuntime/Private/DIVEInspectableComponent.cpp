@@ -314,19 +314,6 @@ void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
 	if (bActive)
 	{
 		ResetSessionOperationState();
-
-		if (GetOwner())
-		{
-			TArray<UDIVEAnchorComponent*> Anchors;
-			GetOwner()->GetComponents<UDIVEAnchorComponent>(Anchors);
-			for (UDIVEAnchorComponent* Anchor : Anchors)
-			{
-				if (Anchor && Anchor->SupportsManipulation())
-				{
-					Anchor->CaptureManipulationBase();
-				}
-			}
-		}
 	}
 	else
 	{

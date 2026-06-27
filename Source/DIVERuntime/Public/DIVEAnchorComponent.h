@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
-#include "DIVETypes.h"
+
 #include "DIVEAnchorComponent.generated.h"
 
 class UArrowComponent;
@@ -26,24 +26,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
 	TArray<FName> OperationIds;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Manipulator")
-	EDIVEManipulationKind ManipulationKind = EDIVEManipulationKind::None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Manipulator", meta = (EditCondition = "ManipulationKind == EDIVEManipulationKind::Hinge", EditConditionHides))
-	FVector HingeAxisLocal = FVector(0.f, 1.f, 0.f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Manipulator", meta = (EditCondition = "ManipulationKind == EDIVEManipulationKind::Hinge", EditConditionHides))
-	float HingeMinAngle = 0.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Manipulator", meta = (EditCondition = "ManipulationKind == EDIVEManipulationKind::Hinge", EditConditionHides))
-	float HingeMaxAngle = 90.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Manipulator", meta = (EditCondition = "ManipulationKind == EDIVEManipulationKind::Hinge", EditConditionHides))
-	TArray<float> HingeSnapAngles;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Manipulator", meta = (ClampMin = "0.01", EditCondition = "ManipulationKind == EDIVEManipulationKind::Hinge", EditConditionHides))
-	float HingeDragSensitivity = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker")
 	bool bShowSessionMarker = true;
@@ -73,16 +55,6 @@ public:
 
 	UStaticMeshComponent* GetSessionMarkerMesh() const { return SessionMarkerMesh; }
 
-	UFUNCTION(BlueprintPure, Category = "DIVE|Manipulator")
-	float GetHingeAngleDegrees() const { return CurrentHingeAngleDegrees; }
-
-	UFUNCTION(BlueprintPure, Category = "DIVE|Manipulator")
-	bool SupportsManipulation() const { return ManipulationKind == EDIVEManipulationKind::Hinge; }
-
-	void CaptureManipulationBase();
-	void SetHingeAngleDegrees(float AngleDegrees);
-	USceneComponent* GetManipulatedComponent() const;
-
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
@@ -96,9 +68,6 @@ protected:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UArrowComponent> ViewDirectionArrow;
-
-	FRotator ManipulationBaseRotation = FRotator::ZeroRotator;
-	float CurrentHingeAngleDegrees = 0.f;
 
 	bool CanOwnRuntimeVisuals() const;
 	void EnsureEditorViewDirectionArrow();

@@ -114,11 +114,6 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			SeenPartIds.Add(PartId);
 		}
 
-		if (Anchor->ManipulationKind == EDIVEManipulationKind::Hinge)
-		{
-			AddInfo(Report, FString::Printf(TEXT("Anchor '%s' uses Hinge manipulator."), *PartId.ToString()));
-		}
-
 		for (const FName OperationId : Anchor->OperationIds)
 		{
 			++Report.OperationReferenceCount;

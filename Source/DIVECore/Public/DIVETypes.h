@@ -17,7 +17,6 @@ UENUM(BlueprintType)
 enum class EDIVESessionEndReason : uint8
 {
 	UserExit,
-	BackAtRoot,
 	SessionRestart,
 	Forced
 };
@@ -35,13 +34,6 @@ enum class EDIVEOperationInputMode : uint8
 {
 	Press UMETA(DisplayName = "Press"),
 	Hold UMETA(DisplayName = "Hold")
-};
-
-UENUM(BlueprintType)
-enum class EDIVEManipulationKind : uint8
-{
-	None UMETA(DisplayName = "None"),
-	Hinge UMETA(DisplayName = "Hinge")
 };
 
 UENUM(BlueprintType)
