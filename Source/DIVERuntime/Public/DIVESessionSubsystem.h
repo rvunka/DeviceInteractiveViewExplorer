@@ -5,14 +5,15 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "DIVEConvention.h"
+#include "DIVEProxyDrive.h"
 #include "DIVETypes.h"
 #include "DIVESessionSubsystem.generated.h"
 
 class ADIVECameraRig;
-class UDIVEAnchorComponent;
 class UDIVEInspectableComponent;
 class UPrimitiveComponent;
 class AActor;
+class APlayerController;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionStarted, AActor*, DeviceHost, UDIVEInspectableComponent*, Inspectable);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionEnded, EDIVESessionEndReason, Reason, AActor*, DeviceHost);
@@ -41,8 +42,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsIsolationActive() const { return bIsolationActive; }
 
-	UFUNCTION(BlueprintPure, Category = "DIVE|Manipulator")
-	bool IsManipulatorDragging() const { return bManipulatorDragging; }
+	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
+	bool IsProxyDriving() const { return bProxyDriving; }
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool TryBeginSession(AActor* DeviceHost, UDIVEInspectableComponent* Inspectable, const FDIVESessionParams& Params);
@@ -98,14 +99,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
 	bool RequestFocusedOperation(FName OperationId, FDIVEOperationResult& OutResult);
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Manipulator")
-	bool TryBeginManipulatorDragAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	bool TryBeginProxyDriveAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Manipulator")
-	void UpdateManipulatorDrag(const FVector2D& ScreenDelta);
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	void UpdateProxyDrive(const FVector2D& ScreenDelta);
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Manipulator")
-	void EndManipulatorDrag();
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	void EndProxyDrive(bool bCommit);
 
 private:
 	EDIVESessionState SessionState = EDIVESessionState::Inactive;
@@ -122,8 +123,8 @@ private:
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> IsolatedHiddenPrimitives;
 	TArray<TWeakObjectPtr<AActor>> WorldDimHiddenActors;
 
-	bool bManipulatorDragging = false;
-	TWeakObjectPtr<UDIVEAnchorComponent> ActiveManipulatorAnchor;
+	bool bProxyDriving = false;
+	TWeakInterfacePtr<IDIVEProxyDrive> ActiveProxyDrive;
 
 	float SessionDefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
 
@@ -134,6 +135,5 @@ private:
 	void CollectIsolationVisiblePrimitives(const FDIVEFocusTarget& Target, TArray<UPrimitiveComponent*>& OutVisible) const;
 	void ApplyWorldDim();
 	void ClearWorldDim();
-	UDIVEAnchorComponent* GetFocusedManipulatorAnchor() const;
-	bool BeginManipulatorDrag();
+	void ClearProxyDrive();
 };

@@ -1,0 +1,25 @@
+// Copyright (c) 2026. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "DIVETypes.h"
+
+#include "DIVEProxyDriveTypes.generated.h"
+
+class UPrimitiveComponent;
+
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEProxyDriveContext
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector2D ScreenPosition = FVector2D::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FDIVEFocusTarget FocusTarget;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	TObjectPtr<UPrimitiveComponent> HitComponent = nullptr;
+};

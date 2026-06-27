@@ -38,13 +38,15 @@ bool IsComponentPartOfDeviceHost(const USceneComponent* Component, const AActor*
 	return false;
 }
 
-bool ResolveFocusAtScreenPosition(
+bool PickAtScreenPosition(
 	const FSessionPickContext& Context,
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController,
+	FHitResult& OutHit,
 	FDIVEFocusTarget& OutTarget)
 {
 	OutTarget = FDIVEFocusTarget::MakeDeviceRoot();
+	OutHit = FHitResult();
 
 	if (!Context.World || !Context.DeviceHost || !Context.Inspectable || !PlayerController)
 	{
@@ -58,7 +60,6 @@ bool ResolveFocusAtScreenPosition(
 		return false;
 	}
 
-	FHitResult HitResult;
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DIVEPick), false);
 	if (Context.IgnoredActor)
 	{
@@ -66,7 +67,7 @@ bool ResolveFocusAtScreenPosition(
 	}
 
 	if (!Context.World->LineTraceSingleByChannel(
-		HitResult,
+		OutHit,
 		WorldOrigin,
 		WorldOrigin + WorldDirection * 100000.f,
 		Context.TraceChannel,
@@ -75,7 +76,7 @@ bool ResolveFocusAtScreenPosition(
 		return false;
 	}
 
-	UPrimitiveComponent* HitPrimitive = HitResult.GetComponent();
+	UPrimitiveComponent* HitPrimitive = OutHit.GetComponent();
 	if (!HitPrimitive || !IsComponentPartOfDeviceHost(HitPrimitive, Context.DeviceHost))
 	{
 		return false;
@@ -101,5 +102,15 @@ bool ResolveFocusAtScreenPosition(
 	const FName SemanticPartId = Context.Inspectable->ResolveSemanticPartId(HitPrimitive);
 	OutTarget = FDIVEFocusTarget::FromPrimitive(HitPrimitive, SemanticPartId);
 	return true;
+}
+
+bool ResolveFocusAtScreenPosition(
+	const FSessionPickContext& Context,
+	const FVector2D& ScreenPosition,
+	APlayerController* PlayerController,
+	FDIVEFocusTarget& OutTarget)
+{
+	FHitResult HitResult;
+	return PickAtScreenPosition(Context, ScreenPosition, PlayerController, HitResult, OutTarget);
 }
 }

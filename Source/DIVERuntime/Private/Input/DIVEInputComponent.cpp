@@ -74,7 +74,7 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	if (bSelectKeyHeld)
 	{
-		ApplySelectDragFromMouse();
+		ApplyProxyDriveFromMouse();
 	}
 }
 
@@ -185,11 +185,11 @@ UDIVEOperationsUIComponent* UDIVEInputComponent::GetOperationsUIComponent() cons
 	return GetOwner() ? GetOwner()->FindComponentByClass<UDIVEOperationsUIComponent>() : nullptr;
 }
 
-void UDIVEInputComponent::ApplySelectDragFromMouse()
+void UDIVEInputComponent::ApplyProxyDriveFromMouse()
 {
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	APlayerController* PlayerController = GetLocalPlayerController();
-	if (!Subsystem || !PlayerController || !Subsystem->IsManipulatorDragging())
+	if (!Subsystem || !PlayerController || !Subsystem->IsProxyDriving())
 	{
 		return;
 	}
@@ -218,7 +218,7 @@ void UDIVEInputComponent::ApplySelectDragFromMouse()
 	SelectDragLastPosition = CurrentPosition;
 	if (!Delta.IsNearlyZero())
 	{
-		Subsystem->UpdateManipulatorDrag(Delta);
+		Subsystem->UpdateProxyDrive(Delta);
 	}
 }
 
@@ -518,7 +518,7 @@ void UDIVEInputComponent::HandleSelectPressed()
 	bSelectKeyHeld = true;
 	bSelectDragActive = false;
 
-	if (Subsystem->TryBeginManipulatorDragAtScreenPosition(SelectDragLastPosition, PlayerController))
+	if (Subsystem->TryBeginProxyDriveAtScreenPosition(SelectDragLastPosition, PlayerController))
 	{
 		return;
 	}
@@ -537,9 +537,9 @@ void UDIVEInputComponent::HandleSelectReleased()
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		if (Subsystem->IsManipulatorDragging())
+		if (Subsystem->IsProxyDriving())
 		{
-			Subsystem->EndManipulatorDrag();
+			Subsystem->EndProxyDrive(true);
 		}
 	}
 

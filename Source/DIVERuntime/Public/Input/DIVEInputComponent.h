@@ -85,7 +85,7 @@ protected:
 	void UnbindSessionDelegates();
 	void BeginSessionPresentation();
 	class UDIVEOperationsUIComponent* GetOperationsUIComponent() const;
-	void ApplySelectDragFromMouse();
+	void ApplyProxyDriveFromMouse();
 
 	bool bOrbitKeyHeld = false;
 	bool bSelectKeyHeld = false;

@@ -6,11 +6,13 @@
 #include "DIVECameraRig.h"
 #include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
+#include "DIVEProxyDrive.h"
+#include "DIVEProxyDriveResolve.h"
+#include "DIVEProxyDriveTypes.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
-#include "Utils/DIVEManipulation.h"
 #include "Utils/DIVEPick.h"
 #include "Utils/DIVEPlayerQuery.h"
 #include "Containers/Set.h"
@@ -111,8 +113,7 @@ void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 
 	AActor* EndedDeviceHost = ActiveDeviceHost.Get();
 
-	bManipulatorDragging = false;
-	ActiveManipulatorAnchor.Reset();
+	ClearProxyDrive();
 	ClearWorldDim();
 	ClearIsolation();
 	FocusStack.Reset();
@@ -380,78 +381,105 @@ bool UDIVESessionSubsystem::ValidateFocusedOperation(FName OperationId, FText& O
 	return Inspectable->ValidateOperation(OperationId, OutFailureMessage);
 }
 
-bool UDIVESessionSubsystem::BeginManipulatorDrag()
+void UDIVESessionSubsystem::ClearProxyDrive()
 {
-	if (!IsSessionActive() || bManipulatorDragging)
+	if (bProxyDriving)
 	{
-		return false;
+		if (UObject* ProxyObject = ActiveProxyDrive.GetObject())
+		{
+			IDIVEProxyDrive::Execute_EndProxyDrive(ProxyObject, false);
+		}
 	}
 
-	UDIVEAnchorComponent* Anchor = GetFocusedManipulatorAnchor();
-	if (!Anchor)
-	{
-		return false;
-	}
-
-	Anchor->CaptureManipulationBase();
-	ActiveManipulatorAnchor = Anchor;
-	bManipulatorDragging = true;
-	return true;
+	bProxyDriving = false;
+	ActiveProxyDrive.Reset();
 }
 
-bool UDIVESessionSubsystem::TryBeginManipulatorDragAtScreenPosition(
+bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController)
 {
-	if (!GetFocusedManipulatorAnchor())
+	if (!IsSessionActive() || bProxyDriving || !PlayerController)
 	{
 		return false;
 	}
 
+	AActor* DeviceHost = ActiveDeviceHost.Get();
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	UWorld* World = GetWorld();
+	if (!DeviceHost || !Inspectable || !World)
+	{
+		return false;
+	}
+
+	FHitResult HitResult;
 	FDIVEFocusTarget PickTarget;
-	if (!ResolveFocusAtScreenPosition(ScreenPosition, PlayerController, PickTarget))
+	DIVEPick::FSessionPickContext Context;
+	Context.World = World;
+	Context.DeviceHost = DeviceHost;
+	Context.Inspectable = Inspectable;
+	Context.IgnoredActor = ActiveCameraRig.Get();
+	Context.TraceChannel = Inspectable->GetEffectivePickTraceChannel();
+
+	if (!DIVEPick::PickAtScreenPosition(Context, ScreenPosition, PlayerController, HitResult, PickTarget))
 	{
 		return false;
 	}
 
-	if (!PickTarget.Equals(FocusedTarget))
+	UPrimitiveComponent* HitComponent = HitResult.GetComponent();
+	IDIVEProxyDrive* ProxyDrive = DIVEProxyDriveResolve::FindProxyDriveForHit(HitComponent);
+	UObject* ProxyObject = Cast<UObject>(ProxyDrive);
+	if (!ProxyObject || !IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject))
 	{
 		return false;
 	}
 
-	return BeginManipulatorDrag();
+	FDIVEProxyDriveContext DriveContext;
+	DriveContext.ScreenPosition = ScreenPosition;
+	DriveContext.FocusTarget = PickTarget;
+	DriveContext.HitComponent = HitComponent;
+
+	if (!IDIVEProxyDrive::Execute_BeginProxyDrive(ProxyObject, DriveContext))
+	{
+		return false;
+	}
+
+	ActiveProxyDrive = ProxyObject;
+	bProxyDriving = true;
+	return true;
 }
 
-void UDIVESessionSubsystem::UpdateManipulatorDrag(const FVector2D& ScreenDelta)
+void UDIVESessionSubsystem::UpdateProxyDrive(const FVector2D& ScreenDelta)
 {
-	if (!bManipulatorDragging)
+	if (!bProxyDriving)
 	{
 		return;
 	}
 
-	UDIVEAnchorComponent* Anchor = ActiveManipulatorAnchor.Get();
-	if (!Anchor || !Anchor->SupportsManipulation())
+	if (UObject* ProxyObject = ActiveProxyDrive.GetObject())
 	{
-		return;
+		IDIVEProxyDrive::Execute_ApplyProxyDriveDelta(ProxyObject, ScreenDelta);
 	}
-
-	DIVEManipulation::ApplyHingeDelta(Anchor, -ScreenDelta.Y * Anchor->HingeDragSensitivity);
+	else
+	{
+		ClearProxyDrive();
+	}
 }
 
-void UDIVESessionSubsystem::EndManipulatorDrag()
+void UDIVESessionSubsystem::EndProxyDrive(bool bCommit)
 {
-	if (!bManipulatorDragging)
+	if (!bProxyDriving)
 	{
 		return;
 	}
 
-	if (UDIVEAnchorComponent* Anchor = ActiveManipulatorAnchor.Get())
+	if (UObject* ProxyObject = ActiveProxyDrive.GetObject())
 	{
-		DIVEManipulation::CommitHingeSnap(Anchor);
+		IDIVEProxyDrive::Execute_EndProxyDrive(ProxyObject, bCommit);
 	}
 
-	bManipulatorDragging = false;
-	ActiveManipulatorAnchor.Reset();
+	bProxyDriving = false;
+	ActiveProxyDrive.Reset();
 }
 
 bool UDIVESessionSubsystem::ResolveFocusAtScreenPosition(
@@ -707,20 +735,4 @@ void UDIVESessionSubsystem::ClearWorldDim()
 	}
 
 	WorldDimHiddenActors.Reset();
-}
-
-UDIVEAnchorComponent* UDIVESessionSubsystem::GetFocusedManipulatorAnchor() const
-{
-	if (FocusedTarget.Kind != EDIVEFocusKind::Anchor)
-	{
-		return nullptr;
-	}
-
-	UDIVEAnchorComponent* Anchor = Cast<UDIVEAnchorComponent>(FocusedTarget.Anchor.Get());
-	if (!Anchor || !Anchor->SupportsManipulation())
-	{
-		return nullptr;
-	}
-
-	return Anchor;
 }
