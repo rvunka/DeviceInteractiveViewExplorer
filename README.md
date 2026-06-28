@@ -9,9 +9,9 @@ DIVE provides:
 - Orbit camera rig for device-focused sessions
 - **Explicit focus** — context menu or `HandleFocusUnderCursor` (not default LMB)
 - **Interaction modes** — Default (inspect) / Physical (proxy drive on device controls)
-- **In-session context menu** — Focus, Isolate, Back at cursor
-- Optional **`UDIVEAnchorComponent`** for semantic AOI, operations, and authored view points
-- **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (game implements)
+- **In-session context menu** — Focus, Isolate, Back at cursor; device rows via `AppendContextMenuEntries`
+- Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
+- **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (host implements)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (DIVE | Camera)
 - Self-contained runtime (no ACTS / GRIP / MESS dependencies)
 
@@ -29,14 +29,15 @@ DIVE provides:
 
 1. Enable plugin `DeviceInteractiveViewExplorer` in the project.
 2. Add `UDIVEInspectableComponent` to a device actor (meshes on the same actor).
-3. Optional: `UDIVEAnchorComponent` for operations / named view points.
-4. On pawn: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponent`** + **`UDIVEContextMenuUIComponent`**.
+3. Optional: `UDIVEAnchorComponent` for authored camera viewpoints / PartId.
+4. On pawn: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (Input auto-finds UI by class).
 5. Optional PIE: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — RMB context menu, MMB orbit, etc.
 6. Open session via ACTS `OpenDIVE` or `RequestSession()` in game code.
-7. Physical controls: host project implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` on devices (see `DeviceInteractionModel.md` §6).
+7. Device-specific actions: override `AppendContextMenuEntries` / `ExecuteContextMenuAction` on inspectable.
+8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `DeviceInteractionModel.md` §6).
 
 See `Docs/QUICKSTART.md`, `Docs/DeviceInteractionModel.md`, and `Project_docs/DIVE_Plugin_Design.md`.
 
 ## Version
 
-0.6-dev — in-session context menu; interaction mode policy; `IDIVEDeviceControlRegistry` hook (host implements)
+0.7-dev — remove operations/checklist stack; context menu + direct manipulation model

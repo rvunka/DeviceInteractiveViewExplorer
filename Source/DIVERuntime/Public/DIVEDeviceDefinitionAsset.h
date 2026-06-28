@@ -4,7 +4,6 @@
 
 #include "CoreMinimal.h"
 #include "DIVEConvention.h"
-#include "DIVETypes.h"
 #include "Engine/DataAsset.h"
 
 #if WITH_EDITOR
@@ -27,12 +26,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Camera", meta = (ClampMin = "0.01"))
 	float ZoomSensitivity = 40.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Operations")
-	TArray<FDIVEOperationDescriptor> OperationCatalog;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Operations")
-	TArray<FDIVEOperationValidationRule> ValidationRules;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

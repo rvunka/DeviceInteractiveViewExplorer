@@ -89,9 +89,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ApplyCameraInputFromInspectable();
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DeprecatedFunction, DeprecationMessage = "Use FocusAtScreenPosition"))
-	bool SelectAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
-
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
@@ -129,15 +126,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ClearIsolation();
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
-	void GetAvailableOperations(TArray<FDIVEOperationDescriptor>& OutOperations) const;
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
-	bool ValidateFocusedOperation(FName OperationId, FText& OutFailureMessage) const;
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
-	bool RequestFocusedOperation(FName OperationId, FDIVEOperationResult& OutResult);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	bool TryBeginProxyDriveAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);

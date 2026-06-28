@@ -1,10 +1,10 @@
-# DIVE Architecture (v0.4.0-dev)
+# DIVE Architecture (v0.7-dev)
 
 ## Layers
 
 ```text
 ┌─────────────────────────────────────────┐
-│ ATSEP (game module: ACTS entry, EI)      │
+│ Host project (ACTS entry, EI, PC)       │
 ├─────────────────────────────────────────┤
 │ DIVERuntimeDev (optional, debug only)   │
 │  UDIVELegacyKbmInputComponent — BindKey │
@@ -15,7 +15,6 @@
 │ DIVERuntime                             │
 │  UDIVESessionSubsystem — focus stack      │
 │  UDIVEInputComponent — session input      │
-│  UDIVEOperationsUIComponent — ops list  │
 │  UDIVEContextMenuUIComponent — context menu │
 │  UDIVEInspectableComponent              │
 │  UDIVEAnchorComponent (optional)        │
@@ -26,129 +25,89 @@
 └─────────────────────────────────────────┘
 ```
 
-## Subsystem scope (decision)
+## Subsystem scope
 
 **Current:** `UGameInstanceSubsystem` (`UDIVESessionSubsystem`).
 
-**Rationale:** ATSEP v0.2 is single-player / one local modal session per game instance. One active DIVE session matches training-sim UX. Input components already guard with `IsLocallyControlled()`.
-
-**Future:** migrate to `ULocalPlayerSubsystem` if split-screen or multiple independent DIVE viewports are required (roadmap v0.5+).
+One active DIVE session per game instance. Input components guard with `IsLocallyControlled()`.
 
 ## Input
 
 | Component | Module | Role |
 |-----------|--------|------|
 | **DIVE Input** | `DIVERuntime` | Semantic `Handle*` API for Enhanced Input (no `EKeys` in runtime) |
-| **DIVE Operations UI** | `DIVERuntime` | Operation list + Hold progress during session |
+| **DIVE Context Menu UI** | `DIVERuntime` | In-session menu widget; auto-found by Input |
 | **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** (PIE dev) |
 
-Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponent`** + **`UDIVEContextMenuUIComponent`** (+ optional **Legacy KBM** for PIE).
+Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (+ optional **Legacy KBM** for PIE).
 
-**Contract:** physical keys → `UInputAction` in **ATSEP Content** → `BindAction` on **PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Input_Architecture.md` and **`Docs/DeviceInteractionModel.md` §4**.
+**Contract:** physical keys → `UInputAction` in host Content → `BindAction` on **PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Input_Architecture.md` and **`Docs/DeviceInteractionModel.md` §4**.
 
 ### Session chrome (always available)
 
-Orbit, zoom, focus undo, exit, and (target) context menu work in **every** interaction mode. Camera navigation is **not** a separate «Navigate mode».
+Orbit, zoom, focus undo, exit, and context menu work in **every** interaction mode.
 
-### Interaction mode (v0.5 skeleton)
+### Interaction mode
 
 `EDIVESessionInteractionMode` in **DIVECore**: **Default** | **Physical**.
 
-- **`GetInteractionMode` / `SetInteractionMode`** on `UDIVESessionSubsystem` and `UDIVEInputComponent`
 - Resets to **Default** on session start/end
 - **Physical:** `TryBeginProxyDrive*` allowed; **Default:** primary action no-op
 
-Full spec: **`DeviceInteractionModel.md` §4.2**.
-
-### Enhanced Input — implemented (v0.5 skeleton)
+### Enhanced Input (host Content)
 
 | Input Action | Event | Call |
 |--------------|-------|------|
 | `IA_DIVE_Orbit` | Started / Completed / Triggered | `HandleOrbit*` |
 | `IA_DIVE_Zoom` | Triggered | `HandleZoomIn` / `HandleZoomOut` |
 | `IA_DIVE_PrimaryAction` | Started / Completed | `HandlePrimaryActionPressed` / `Released` |
-| `IA_DIVE_Select` | Started / Completed | Same as PrimaryAction *(deprecated alias)* |
 | `IA_DIVE_FocusTarget` | Started | `HandleFocusUnderCursor` |
-| `IA_DIVE_ExecuteOperation` | Started / Completed | `HandleOperationExecute*` |
 | `IA_DIVE_Back` / `IA_DIVE_Exit` | Started | `HandleNavigateBack` / `HandleExitSession` |
 | `IA_DIVE_SetMode_*` | Started | `SetInteractionMode` |
 | `IA_DIVE_ContextMenu` | Started | `HandleContextMenuRequested` |
 
-Legacy PIE: **RMB** = context menu, **G** = focus (shortcut), **P** = cycle mode, **LMB** = primary action.
+Legacy PIE: **RMB** = context menu, **G** = focus shortcut, **P** = cycle mode, **LMB** = primary action.
 
-### Enhanced Input — optional
+### Context menu
 
-| Input Action | Call |
-|--------------|------|
-| `IA_DIVE_ToggleIsolate` | `HandleToggleIsolate` |
+In-session menu at cursor — **not** ACTS. Built-in: Focus, Isolate, Back (when stack > 1); device rows via `AppendContextMenuEntries`. Opened via `HandleContextMenuRequested`.
 
-### DIVE context menu (v0.6)
+## Device interaction (direct manipulation)
 
-In-session menu at cursor — **not** ACTS. Built-in: Focus, Isolate, Back (when stack > 1); device rows via `AppendContextMenuEntries`. Opened via `HandleContextMenuRequested`. See **`DeviceInteractionModel.md` §4.3**.
-
-## Operations (v0.2)
-
-- Anchors expose `OperationIds`; metadata lives in `UDIVEDeviceDefinitionAsset::OperationCatalog`.
-- `EDIVEOperationInputMode`: **Press** (instant) or **Hold** (timer, ACTS-compatible UX).
-- `ValidationRules` on device definition gate operations by `RequiredCompletedOperationIds`.
-- `UDIVEOperationsUIComponent` shows the list; `RequestFocusedOperation` validates, dispatches `OnOperationRequested`, marks success in session state.
-
-## Proxy drive (v0.4-dev, interim)
-
-Physical panel controls live on the **device** with constraints and game state. DIVECore exposes **`IDIVEProxyDrive`** as one backend for **Physical** mode (target), not as the primary UX model.
-
-- **`IDIVEProxyDrive`** — `CanProxyDrive`, `BeginProxyDrive`, `ApplyProxyDriveDelta`, `EndProxyDrive`
-- **`FDIVEProxyDriveContext`** — screen position, focus target snapshot, hit component
-
-**Today:** `HandlePrimaryAction*` routes by `GetInteractionMode()`. Default → no-op. Physical → `TryBeginProxyDrive*`.
-
-**Planned:** device registry as primary backend for Physical mode.
-
-No GRIP / ATSEP dependency in `DIVERuntime`. Full contract: **`Docs/DeviceInteractionModel.md` §4–§6**.
-
-## Anchor (viewpoint + semantics)
-
-`UDIVEAnchorComponent` provides:
-
-- `PartId`, `DisplayName`, `OperationIds`
-- Authored camera viewpoint (transform + optional marker)
-- **Not** kinematic hinge / manipulator physics (removed in 0.4-dev)
-
-## World dim (v0.3)
-
-`EDIVEWorldDimPolicy` on `UDIVEInspectableComponent`:
-
-| Policy | Behaviour |
+| Intent | Mechanism |
 |--------|-----------|
-| `None` | No actor hiding during session |
-| `HideNonDeviceActors` | Hide other level actors during session (includes player pawn) |
+| Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
+| Read label, use control | Context menu row on pick (`AppendContextMenuEntries`) |
+| Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
+| Cable, grab | GRIP + MESS in host project |
 
-Device mesh isolate remains **`ToggleIsolateFocused()`** (explicit, separate from world dim).
+## Proxy drive
+
+Physical panel controls live on the **device**. DIVECore exposes **`IDIVEProxyDrive`** and **`IDIVEDeviceControlRegistry`** for **Physical** mode.
+
+## Anchor (viewpoint only)
+
+`UDIVEAnchorComponent`: `PartId`, `DisplayName`, authored camera viewpoint (transform + optional marker). No checklist operations.
+
+## World dim
+
+`EDIVEWorldDimPolicy` on `UDIVEInspectableComponent`: hide non-device actors during session (optional).
+
+Device mesh isolate: **`ToggleIsolateFocused()`** via context menu.
 
 ## Session flow
 
-### Today (v0.6)
-
 1. `RequestSession()` → mode **Default**; camera blends to start focus.
-2. **Chrome always:** orbit (MMB), zoom, Ctrl+Z, Backspace exit.
+2. Orbit (MMB), zoom, Ctrl+Z, Backspace exit — always.
 3. **RMB** / `HandleContextMenuRequested` → Focus, Isolate, Back at cursor.
-4. **G** / `HandleFocusUnderCursor` → dev shortcut for explicit focus.
-5. **P** / `SetInteractionMode(Physical)` → primary action enables proxy drive.
-6. **F** → scenario operation (unchanged).
-
-### Planned (host project)
-
-- `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` on device prefabs.
-- `IA_DIVE_ContextMenu`, `IA_DIVE_FocusTarget`, mode actions in Content + PC `BindAction`.
+4. **P** / `SetInteractionMode(Physical)` → LMB drives device controls.
 
 ## Editor
 
-Context menu on selected actor: **DIVE Scan Device** — logs anchors, operations, catalog warnings.
+**DIVE Scan Device** — logs anchors and focus warnings.
 
-Automation smoke tests: `DIVE.Operations.ValidationRules`, `DIVE.ContextMenu.BuiltInEntries`.
+Automation smoke test: `DIVE.ContextMenu.BuiltInEntries`.
 
 ## Dependencies
 
 DIVE **must not** link ACTS, GRIP, or MESS in **DIVERuntime**. No Enhanced Input in plugin modules.
-
-Full contract: `Project_docs/DIVE_Plugin_Design.md`

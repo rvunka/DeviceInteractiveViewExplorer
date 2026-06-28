@@ -30,13 +30,6 @@ enum class EDIVEFocusKind : uint8
 };
 
 UENUM(BlueprintType)
-enum class EDIVEOperationInputMode : uint8
-{
-	Press UMETA(DisplayName = "Press"),
-	Hold UMETA(DisplayName = "Hold")
-};
-
-UENUM(BlueprintType)
 enum class EDIVEWorldDimPolicy : uint8
 {
 	None UMETA(DisplayName = "None"),
@@ -54,39 +47,6 @@ enum class EDIVESessionInteractionMode : uint8
 class UPrimitiveComponent;
 class USceneComponent;
 class AActor;
-
-USTRUCT(BlueprintType)
-struct DIVECORE_API FDIVEOperationDescriptor
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FName OperationId = NAME_None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FText DisplayName;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	EDIVEOperationInputMode InputMode = EDIVEOperationInputMode::Press;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE", meta = (ClampMin = "0.0", EditCondition = "InputMode == EDIVEOperationInputMode::Hold", EditConditionHides))
-	float HoldDuration = 0.45f;
-};
-
-USTRUCT(BlueprintType)
-struct DIVECORE_API FDIVEOperationValidationRule
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FName OperationId = NAME_None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	TArray<FName> RequiredCompletedOperationIds;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FText FailureMessage;
-};
 
 USTRUCT(BlueprintType)
 struct DIVECORE_API FDIVEFocusTarget
@@ -129,9 +89,6 @@ struct DIVECORE_API FDIVEPartNode
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
 	FText DisplayName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	TArray<FName> OperationIds;
-
 	TWeakObjectPtr<USceneComponent> SceneComponent;
 };
 
@@ -159,33 +116,6 @@ struct DIVECORE_API FDIVESessionParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
 	FName InitialFocusId = NAME_None;
-};
-
-USTRUCT(BlueprintType)
-struct DIVECORE_API FDIVEOperationRequest
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FName OperationId = NAME_None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FName SemanticPartId = NAME_None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FDIVEFocusTarget FocusTarget;
-};
-
-USTRUCT(BlueprintType)
-struct DIVECORE_API FDIVEOperationResult
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	bool bSuccess = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	FText Message;
 };
 
 USTRUCT(BlueprintType)

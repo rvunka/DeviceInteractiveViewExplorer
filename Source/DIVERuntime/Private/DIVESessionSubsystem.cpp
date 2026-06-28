@@ -203,11 +203,6 @@ void UDIVESessionSubsystem::ApplyCameraInputFromInspectable()
 	}
 }
 
-bool UDIVESessionSubsystem::SelectAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController)
-{
-	return FocusAtScreenPosition(ScreenPosition, PlayerController);
-}
-
 bool UDIVESessionSubsystem::FocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController)
 {
 	FDIVEFocusTarget SelectedTarget;
@@ -429,87 +424,6 @@ void UDIVESessionSubsystem::ClearIsolation()
 
 	IsolatedHiddenPrimitives.Reset();
 	bIsolationActive = false;
-}
-
-bool UDIVESessionSubsystem::RequestFocusedOperation(FName OperationId, FDIVEOperationResult& OutResult)
-{
-	OutResult = FDIVEOperationResult();
-
-	if (!IsSessionActive())
-	{
-		OutResult.Message = NSLOCTEXT("DIVE", "NoActiveSession", "No active DIVE session.");
-		return false;
-	}
-
-	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
-	if (!Inspectable)
-	{
-		OutResult.Message = NSLOCTEXT("DIVE", "MissingInspectable", "Inspectable component missing.");
-		return false;
-	}
-
-	FText ValidationMessage;
-	if (!ValidateFocusedOperation(OperationId, ValidationMessage))
-	{
-		OutResult.Message = ValidationMessage;
-		return false;
-	}
-
-	FDIVEOperationRequest Request;
-	Request.OperationId = OperationId;
-	Request.FocusTarget = FocusedTarget;
-	Request.SemanticPartId = FocusedTarget.SemanticPartId;
-	if (!Inspectable->RequestOperation(Request, OutResult))
-	{
-		return false;
-	}
-
-	if (OutResult.bSuccess)
-	{
-		Inspectable->MarkOperationCompleted(OperationId);
-	}
-
-	return OutResult.bSuccess;
-}
-
-void UDIVESessionSubsystem::GetAvailableOperations(TArray<FDIVEOperationDescriptor>& OutOperations) const
-{
-	OutOperations.Reset();
-
-	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
-	{
-		Inspectable->GetAvailableOperationsForFocus(FocusedTarget, OutOperations);
-	}
-}
-
-bool UDIVESessionSubsystem::ValidateFocusedOperation(FName OperationId, FText& OutFailureMessage) const
-{
-	if (!IsSessionActive())
-	{
-		OutFailureMessage = NSLOCTEXT("DIVE", "NoActiveSession", "No active DIVE session.");
-		return false;
-	}
-
-	const UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
-	if (!Inspectable)
-	{
-		OutFailureMessage = NSLOCTEXT("DIVE", "MissingInspectable", "Inspectable component missing.");
-		return false;
-	}
-
-	TArray<FDIVEOperationDescriptor> AvailableOperations;
-	Inspectable->GetAvailableOperationsForFocus(FocusedTarget, AvailableOperations);
-	const bool bListed = AvailableOperations.ContainsByPredicate([OperationId](const FDIVEOperationDescriptor& Descriptor)
-	{
-		return Descriptor.OperationId == OperationId;
-	});
-	if (!bListed)
-	{
-		OutFailureMessage = NSLOCTEXT("DIVE", "OperationNotAvailable", "Operation is not available for the current focus.");
-		return false;
-	}
-
-	return Inspectable->ValidateOperation(OperationId, OutFailureMessage);
 }
 
 void UDIVESessionSubsystem::ClearProxyDrive()

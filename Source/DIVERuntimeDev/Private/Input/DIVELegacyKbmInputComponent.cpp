@@ -21,7 +21,6 @@ UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 	SelectKey = EKeys::LeftMouseButton;
 	FocusUnderCursorKey = EKeys::G;
 	InteractionModeCycleKey = EKeys::P;
-	OperationExecuteKey = EKeys::F;
 	CameraUndoKey = EKeys::Z;
 	ExitKey = EKeys::BackSpace;
 	IsolateKey = EKeys::I;
@@ -172,26 +171,6 @@ void UDIVELegacyKbmInputComponent::CycleInteractionModePressed()
 			: EDIVESessionInteractionMode::Default);
 }
 
-void UDIVELegacyKbmInputComponent::OperationExecutePressed()
-{
-	EnsureInputReady();
-
-	if (InputComponent)
-	{
-		InputComponent->HandleOperationExecutePressed();
-	}
-}
-
-void UDIVELegacyKbmInputComponent::OperationExecuteReleased()
-{
-	EnsureInputReady();
-
-	if (InputComponent)
-	{
-		InputComponent->HandleOperationExecuteReleased();
-	}
-}
-
 void UDIVELegacyKbmInputComponent::NavigateBackPressed()
 {
 	EnsureInputReady();
@@ -313,13 +292,6 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	if (bBindInteractionModeCycleInput && InteractionModeCycleKey.IsValid())
 	{
 		PawnInputComponent->BindKey(InteractionModeCycleKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::CycleInteractionModePressed);
-		bBoundAny = true;
-	}
-
-	if (bBindOperationExecuteInput && OperationExecuteKey.IsValid())
-	{
-		PawnInputComponent->BindKey(OperationExecuteKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::OperationExecutePressed);
-		PawnInputComponent->BindKey(OperationExecuteKey, IE_Released, this, &UDIVELegacyKbmInputComponent::OperationExecuteReleased);
 		bBoundAny = true;
 	}
 

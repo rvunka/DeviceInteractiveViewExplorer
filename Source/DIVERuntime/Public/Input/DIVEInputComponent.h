@@ -10,6 +10,7 @@
 #include "DIVEInputComponent.generated.h"
 
 class APlayerController;
+class UDIVEContextMenuUIComponent;
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Input"))
 class DIVERUNTIME_API UDIVEInputComponent : public UActorComponent
@@ -44,22 +45,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandlePrimaryActionReleased();
 
-	/** @deprecated Use HandlePrimaryActionPressed — legacy name kept for existing IA_DIVE_Select wiring. */
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Input", meta = (DeprecatedFunction, DeprecationMessage = "Use HandlePrimaryActionPressed"))
-	void HandleSelectPressed();
-
-	/** @deprecated Use HandlePrimaryActionReleased — legacy name kept for existing IA_DIVE_Select wiring. */
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Input", meta = (DeprecatedFunction, DeprecationMessage = "Use HandlePrimaryActionReleased"))
-	void HandleSelectReleased();
-
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandleFocusUnderCursor();
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
-	void HandleOperationExecutePressed();
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
-	void HandleOperationExecuteReleased();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandleNavigateBack();
@@ -78,6 +65,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|Input")
 	EDIVESessionInteractionMode GetInteractionMode() const;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (
+		DisplayName = "Context Menu UI Component",
+		ToolTip = "Leave empty to auto-find DIVE Context Menu UI on the owner. Otherwise enter the component name from the Components tab."))
+	FName ContextMenuUIComponentName;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bShowMouseCursorInSession = true;
@@ -104,13 +96,18 @@ protected:
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();
 	void BeginSessionPresentation();
-	class UDIVEOperationsUIComponent* GetOperationsUIComponent() const;
+	void ResolveComponentReferences();
+	void WarnMissingContextMenuUIOnce();
 	void ApplyPrimaryActionDragFromMouse();
 	bool TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const;
 	void RoutePrimaryActionPressed(const FVector2D& ScreenPosition);
 	void RoutePrimaryActionReleased();
 	bool ShouldSuppressSessionInput() const;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UDIVEContextMenuUIComponent> ContextMenuUIComponent;
+
+	bool bLoggedMissingContextMenuUI = false;
 	bool bOrbitKeyHeld = false;
 	bool bPrimaryActionHeld = false;
 	bool bPrimaryActionDragActive = false;

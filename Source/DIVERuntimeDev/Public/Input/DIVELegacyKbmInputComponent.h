@@ -46,12 +46,6 @@ public:
 	void CycleInteractionModePressed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
-	void OperationExecutePressed();
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
-	void OperationExecuteReleased();
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void NavigateBackPressed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
@@ -100,12 +94,6 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindInteractionModeCycleInput"))
 	FKey InteractionModeCycleKey;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
-	bool bBindOperationExecuteInput = true;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindOperationExecuteInput"))
-	FKey OperationExecuteKey;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindCameraUndoInput = true;

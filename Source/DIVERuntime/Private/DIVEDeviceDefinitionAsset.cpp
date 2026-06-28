@@ -6,30 +6,6 @@
 
 #include "Misc/DataValidation.h"
 
-namespace
-{
-bool HasDuplicateOperationIds(const TArray<FDIVEOperationDescriptor>& Catalog)
-{
-	TSet<FName> SeenIds;
-	for (const FDIVEOperationDescriptor& Descriptor : Catalog)
-	{
-		if (Descriptor.OperationId.IsNone())
-		{
-			continue;
-		}
-
-		if (SeenIds.Contains(Descriptor.OperationId))
-		{
-			return true;
-		}
-
-		SeenIds.Add(Descriptor.OperationId);
-	}
-
-	return false;
-}
-}
-
 EDataValidationResult UDIVEDeviceDefinitionAsset::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = EDataValidationResult::Valid;
@@ -50,20 +26,6 @@ EDataValidationResult UDIVEDeviceDefinitionAsset::IsDataValid(FDataValidationCon
 	{
 		Context.AddError(FText::FromString(TEXT("ZoomSensitivity must be greater than zero.")));
 		Result = EDataValidationResult::Invalid;
-	}
-
-	if (HasDuplicateOperationIds(OperationCatalog))
-	{
-		Context.AddError(FText::FromString(TEXT("OperationCatalog contains duplicate OperationId values.")));
-		Result = EDataValidationResult::Invalid;
-	}
-
-	for (const FDIVEOperationValidationRule& Rule : ValidationRules)
-	{
-		if (Rule.OperationId.IsNone())
-		{
-			Context.AddWarning(FText::FromString(TEXT("Validation rule with empty OperationId will never match.")));
-		}
 	}
 
 	return Result;

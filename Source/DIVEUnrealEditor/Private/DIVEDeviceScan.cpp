@@ -3,9 +3,7 @@
 #include "DIVEDeviceScan.h"
 
 #include "DIVEAnchorComponent.h"
-#include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEInspectableComponent.h"
-#include "Utils/DIVEOperations.h"
 
 namespace
 {
@@ -79,18 +77,6 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 	}
 
 	TSet<FName> SeenPartIds;
-	TSet<FName> CatalogIds;
-	if (Inspectable->DeviceDefinition)
-	{
-		for (const FDIVEOperationDescriptor& Descriptor : Inspectable->DeviceDefinition->OperationCatalog)
-		{
-			if (!Descriptor.OperationId.IsNone())
-			{
-				CatalogIds.Add(Descriptor.OperationId);
-			}
-		}
-	}
-
 	for (UDIVEAnchorComponent* Anchor : Anchors)
 	{
 		if (!Anchor)
@@ -112,51 +98,6 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 		else
 		{
 			SeenPartIds.Add(PartId);
-		}
-
-		for (const FName OperationId : Anchor->OperationIds)
-		{
-			++Report.OperationReferenceCount;
-			if (OperationId.IsNone())
-			{
-				AddWarning(Report, FString::Printf(TEXT("Anchor '%s' contains an empty OperationId."), *PartId.ToString()));
-				continue;
-			}
-
-			FDIVEOperationDescriptor Descriptor;
-			if (Inspectable->DeviceDefinition && DIVEOperations::FindCatalogDescriptor(Inspectable->DeviceDefinition, OperationId, Descriptor))
-			{
-				AddInfo(Report, FString::Printf(
-					TEXT("Anchor '%s' -> %s (%s)"),
-					*PartId.ToString(),
-					*OperationId.ToString(),
-					Descriptor.InputMode == EDIVEOperationInputMode::Hold ? TEXT("Hold") : TEXT("Press")));
-			}
-			else
-			{
-				AddWarning(Report, FString::Printf(
-					TEXT("Anchor '%s' references operation '%s' missing from DeviceDefinition catalog."),
-					*PartId.ToString(),
-					*OperationId.ToString()));
-			}
-		}
-	}
-
-	for (const FName CatalogId : CatalogIds)
-	{
-		bool bReferenced = false;
-		for (UDIVEAnchorComponent* Anchor : Anchors)
-		{
-			if (Anchor && Anchor->OperationIds.Contains(CatalogId))
-			{
-				bReferenced = true;
-				break;
-			}
-		}
-
-		if (!bReferenced)
-		{
-			AddWarning(Report, FString::Printf(TEXT("Catalog operation '%s' is not referenced by any anchor."), *CatalogId.ToString()));
 		}
 	}
 

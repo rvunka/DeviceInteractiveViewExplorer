@@ -24,9 +24,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
 	FText DisplayName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
-	TArray<FName> OperationIds;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker")
 	bool bShowSessionMarker = true;
 

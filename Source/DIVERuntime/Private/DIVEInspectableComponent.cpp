@@ -8,7 +8,6 @@
 #include "DIVESessionSubsystem.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/GameInstance.h"
-#include "Utils/DIVEOperations.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -66,7 +65,6 @@ void UDIVEInspectableComponent::BuildSemanticRegistry()
 		Node.DisplayName = Anchor->DisplayName.IsEmpty()
 			? FText::FromName(ResolvedPartId)
 			: Anchor->DisplayName;
-		Node.OperationIds = Anchor->OperationIds;
 		Node.SceneComponent = Anchor;
 		SemanticRegistry.Nodes.Add(Node);
 	}
@@ -203,81 +201,6 @@ bool UDIVEInspectableComponent::TryResolveStartFocusTarget(FName FocusObjectId, 
 	return bResolved;
 }
 
-TArray<FName> UDIVEInspectableComponent::ResolveOperationIdsForFocus(const FDIVEFocusTarget& FocusTarget) const
-{
-	TArray<FName> OperationIds;
-
-	if (FocusTarget.Kind == EDIVEFocusKind::Anchor)
-	{
-		if (const UDIVEAnchorComponent* Anchor = Cast<UDIVEAnchorComponent>(FocusTarget.Anchor.Get()))
-		{
-			OperationIds = Anchor->OperationIds;
-		}
-	}
-	else if (!FocusTarget.SemanticPartId.IsNone())
-	{
-		FDIVEPartNode Node;
-		if (FindAnchorNode(FocusTarget.SemanticPartId, Node))
-		{
-			OperationIds = Node.OperationIds;
-		}
-	}
-
-	return OperationIds;
-}
-
-FDIVEOperationDescriptor UDIVEInspectableComponent::ResolveOperationDescriptor(FName OperationId) const
-{
-	FDIVEOperationDescriptor Descriptor;
-	if (DIVEOperations::FindCatalogDescriptor(DeviceDefinition, OperationId, Descriptor))
-	{
-		return Descriptor;
-	}
-
-	return DIVEOperations::MakeFallbackDescriptor(OperationId);
-}
-
-void UDIVEInspectableComponent::GetAvailableOperationsForFocus(
-	const FDIVEFocusTarget& FocusTarget,
-	TArray<FDIVEOperationDescriptor>& OutOperations) const
-{
-	OutOperations.Reset();
-
-	const TArray<FName> OperationIds = ResolveOperationIdsForFocus(FocusTarget);
-	for (const FName OperationId : OperationIds)
-	{
-		if (OperationId.IsNone())
-		{
-			continue;
-		}
-
-		OutOperations.Add(ResolveOperationDescriptor(OperationId));
-	}
-}
-
-bool UDIVEInspectableComponent::ValidateOperation(FName OperationId, FText& OutFailureMessage) const
-{
-	return DIVEOperations::ValidateOperation(DeviceDefinition, OperationId, CompletedOperationIds, OutFailureMessage);
-}
-
-bool UDIVEInspectableComponent::IsOperationCompleted(FName OperationId) const
-{
-	return !OperationId.IsNone() && CompletedOperationIds.Contains(OperationId);
-}
-
-void UDIVEInspectableComponent::ResetSessionOperationState()
-{
-	CompletedOperationIds.Reset();
-}
-
-void UDIVEInspectableComponent::MarkOperationCompleted(FName OperationId)
-{
-	if (!OperationId.IsNone())
-	{
-		CompletedOperationIds.Add(OperationId);
-	}
-}
-
 bool UDIVEInspectableComponent::FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const
 {
 	if (PartId.IsNone())
@@ -294,31 +217,13 @@ bool UDIVEInspectableComponent::FindAnchorNode(FName PartId, FDIVEPartNode& OutN
 	return false;
 }
 
-bool UDIVEInspectableComponent::RequestOperation(const FDIVEOperationRequest& Request, FDIVEOperationResult& OutResult)
-{
-	OutResult = FDIVEOperationResult();
-	OnOperationRequested.Broadcast(Request, OutResult);
-
-	if (!OutResult.bSuccess && OutResult.Message.IsEmpty())
-	{
-		OutResult.Message = NSLOCTEXT("DIVE", "OperationUnhandled", "No handler accepted this operation.");
-	}
-
-	return OutResult.bSuccess;
-}
-
 void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
 {
 	bSessionActive = bActive;
 
-	if (bActive)
-	{
-		ResetSessionOperationState();
-	}
-	else
+	if (!bActive)
 	{
 		UpdateAnchorSessionPresentation(FDIVEFocusTarget::MakeDeviceRoot());
-		ResetSessionOperationState();
 	}
 
 	OnSessionLifecycle.Broadcast(bActive);

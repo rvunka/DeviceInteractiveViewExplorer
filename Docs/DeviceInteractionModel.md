@@ -1,7 +1,7 @@
 # DIVE and physical device controls
 
 > **Audience:** device authors, game integration (ATSEP), VR planning.  
-> **Status:** architecture contract (v0.5 skeleton in code).  
+> **Status:** architecture contract (v0.7).  
 > **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `Project_docs/Plugin_Input_Architecture.md`.
 
 ---
@@ -89,16 +89,15 @@ IDIVEProxyDrive (DIVECore) — backend for Physical mode only
 | Ray pick from DIVE camera | GRIP hand physics |
 | `IDIVEProxyDrive` hook (routing in session subsystem) | Implementations on devices (game module) |
 | `Handle*` input API for Enhanced Input | MESS / electrical solver |
-| Optional semantic **operations** (inspect, demount, scenario steps) | Defining every physical knob as an OperationId |
+| Context menu + `AppendContextMenuEntries` hook | Defining every physical knob as a menu row |
 
-### Semantic operations vs physical controls
+### Direct manipulation vs physical controls
 
 | Interaction | Mechanism |
 |-------------|-----------|
-| Door, slider, knob, switch | **Physical control** → proxy drive or GRIP (same state) |
-| «Read label», «Run checklist step», «Demount module» | **DIVE operation** → `OnOperationRequested` delegate (game decides) |
-
-Do not model every physical handle as a Press/Hold **operation** unless it is truly a discrete scenario action with no continuous DOF.
+| Door, slider, knob, switch | **Physical** mode → proxy drive or GRIP (same device state) |
+| Read label, use button, demount module | **Context menu** on pick → `AppendContextMenuEntries` / `ExecuteContextMenuAction` |
+| Cable, grab | GRIP + MESS in host project |
 
 ---
 
@@ -118,8 +117,7 @@ Available regardless of `EDIVESessionInteractionMode`:
 | Exit session | `HandleExitSession` | `IA_DIVE_Exit` |
 | Context menu at cursor | `HandleContextMenuRequested` | `IA_DIVE_ContextMenu` |
 | Focus pick under cursor | `HandleFocusUnderCursor` | `IA_DIVE_FocusTarget` |
-| Scenario operation execute | `HandleOperationExecutePressed/Released` | `IA_DIVE_ExecuteOperation` |
-| Mesh isolate | `HandleToggleIsolate` | custom / UI |
+| Mesh isolate | Context menu or `HandleToggleIsolate` | custom / UI |
 
 **Focus / «подъехать»** is an **explicit** action (context menu item or `IA_DIVE_FocusTarget`), not the default meaning of every click. That avoids fighting physical controls.
 
@@ -142,7 +140,6 @@ Mode is **not** tied to a single mouse button. It is **policy** for routing **mu
 | Context menu contents | Always: Focus, Isolate; Physical may add device entries |
 | Hit highlight / filter | Physical may prefer grabbable primitives |
 | HUD / cursor | Show active mode label |
-| Operations UI | Scenario ops always available; not a substitute for Physical |
 
 Mode does **not** disable orbit, context menu, or focus stack.
 
@@ -153,18 +150,18 @@ Switch mode via `SetInteractionMode` from ATSEP (`IA_DIVE_SetMode_*` or cycle ac
 **ACTS** = world interaction before session («Детальный осмотр»).  
 **DIVE context menu** = in-session, ray under cursor, **not** the ACTS radial/world menu.
 
-Flow *(planned)*:
+Flow:
 
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
-2. **Built-in entries** (plugin): Focus here, Isolate focused subtree, (optional) Back.
-3. **Device extensions** (game): extra rows from registry / anchor ops / control metadata.
+2. **Built-in entries** (plugin): Focus here, Isolate, Back (when stack > 1).
+3. **Device extensions** (host): `AppendContextMenuEntries` on inspectable.
 4. Player picks row → `ExecuteContextMenuAction(ActionId)`.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 
 ### 4.4. Primary action (semantic, not Select/LMB)
 
-Target name: **`HandlePrimaryActionPressed/Released`** (replacing legacy `HandleSelect*`).
+Target API: **`HandlePrimaryActionPressed/Released`**.
 
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
@@ -194,38 +191,27 @@ Drag delta while held is driven by the same action lifecycle + tick/Triggered ax
 
 ---
 
-## 5. DIVE v0.4-dev (implemented) vs target
+## 5. Implementation status (v0.7)
 
-### Implemented in v0.4-dev
-
-v0.4-dev removes the **DIVE-local kinematic hinge** on `UDIVEAnchorComponent`. Anchors remain for **viewpoint + PartId + scenario OperationIds**.
-
-| Removed in 0.4-dev | Replacement (interim) |
-|--------------------|------------------------|
-| `EDIVEManipulationKind::Hinge` | Device constraint + drive hook |
-| `DIVEManipulation` utils | `TryBeginProxyDriveAtScreenPosition` |
-| `ATSEP.DIVE.Manipulation.HingeSnap` test | `DIVE.Operations.ValidationRules` |
+v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **operations** stack (F-key, OperationIds, Operations UI).
 
 | Current behaviour | Notes |
 |-------------------|-------|
-| `EDIVESessionInteractionMode` + `SetInteractionMode` | **Implemented** (Default / Physical) |
-| `HandlePrimaryAction*` + deprecated `HandleSelect*` alias | **Implemented** |
-| `HandleFocusUnderCursor` → `FocusAtScreenPosition` | **Implemented** |
-| Default: primary action no-op | **Implemented** |
-| Physical: proxy drive only | **Implemented** (registry optional) |
-| `HandleSelect*` naming in some EI assets | Migrate to `IA_DIVE_PrimaryAction` |
-| Context menu API + widget | **Implemented** (v0.6) |
-| Device control registry | **Hook in DIVECore** (`IDIVEDeviceControlRegistry`); **implementations = host project** |
-| `IDIVEProxyDrive` backends | **Host project** (Blueprint or C++ on device controls) |
+| `EDIVESessionInteractionMode` + `SetInteractionMode` | Default / Physical |
+| `HandlePrimaryAction*` | Default no-op; Physical → proxy drive |
+| Context menu + widget | Focus, Isolate, Back; device rows via hook |
+| `AppendContextMenuEntries` / `ExecuteContextMenuAction` | Host extension for pick-specific actions |
+| `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices |
+| Anchor | Viewpoint + PartId only |
 
-### Target (remaining)
+### Host project (remaining)
 
 | Item | Owner |
 |------|--------|
-| `IA_DIVE_*` Content assets + `IMC_DIVE` mappings | Host project Content |
-| Registry / `IDIVEProxyDrive` on device prefabs | Host project / devices |
-| Context menu rows from registry metadata | Host via `AppendContextMenuEntries` |
-| Optional virtual GRIP hand | Host project or `DIVEGRIPAdapter` |
+| `IA_DIVE_*` Content + `IMC_DIVE` | Host Content |
+| Registry / proxy drive on prefabs | Host / devices |
+| Context menu rows per pick | `AppendContextMenuEntries` |
+| GRIP / MESS for cables | Host project |
 
 ---
 

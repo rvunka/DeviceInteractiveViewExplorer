@@ -7,7 +7,8 @@
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "UI/DIVEOperationsUIComponent.h"
+#include "UI/DIVEContextMenuUIComponent.h"
+#include "Utils/DIVEComponentResolve.h"
 
 UDIVEInputComponent::UDIVEInputComponent()
 {
@@ -19,6 +20,7 @@ void UDIVEInputComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	SetComponentTickEnabled(false);
+	ResolveComponentReferences();
 	BindSessionDelegates();
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
@@ -180,9 +182,26 @@ bool UDIVEInputComponent::IsLocallyControlledOwner() const
 	return OwnerPawn && OwnerPawn->IsLocallyControlled();
 }
 
-UDIVEOperationsUIComponent* UDIVEInputComponent::GetOperationsUIComponent() const
+void UDIVEInputComponent::ResolveComponentReferences()
 {
-	return GetOwner() ? GetOwner()->FindComponentByClass<UDIVEOperationsUIComponent>() : nullptr;
+	ContextMenuUIComponent = DIVEComponentResolve::FindComponentByNameOrClass<UDIVEContextMenuUIComponent>(
+		GetOwner(),
+		ContextMenuUIComponentName);
+}
+
+void UDIVEInputComponent::WarnMissingContextMenuUIOnce()
+{
+	if (bLoggedMissingContextMenuUI || ContextMenuUIComponent)
+	{
+		return;
+	}
+
+	bLoggedMissingContextMenuUI = true;
+	UE_LOG(
+		LogTemp,
+		Warning,
+		TEXT("DIVE Input on '%s': no UDIVEContextMenuUIComponent found on the pawn — add it to show the context menu widget."),
+		*GetNameSafe(GetOwner()));
 }
 
 void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
@@ -592,16 +611,6 @@ void UDIVEInputComponent::HandlePrimaryActionReleased()
 	RoutePrimaryActionReleased();
 }
 
-void UDIVEInputComponent::HandleSelectPressed()
-{
-	HandlePrimaryActionPressed();
-}
-
-void UDIVEInputComponent::HandleSelectReleased()
-{
-	HandlePrimaryActionReleased();
-}
-
 void UDIVEInputComponent::HandleFocusUnderCursor()
 {
 	if (!IsLocallyControlledOwner())
@@ -643,32 +652,6 @@ void UDIVEInputComponent::SetInteractionMode(EDIVESessionInteractionMode NewMode
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
 		Subsystem->SetInteractionMode(NewMode);
-	}
-}
-
-void UDIVEInputComponent::HandleOperationExecutePressed()
-{
-	if (!IsLocallyControlledOwner())
-	{
-		return;
-	}
-
-	if (UDIVEOperationsUIComponent* OperationsUI = GetOperationsUIComponent())
-	{
-		OperationsUI->HandleExecutePressed();
-	}
-}
-
-void UDIVEInputComponent::HandleOperationExecuteReleased()
-{
-	if (!IsLocallyControlledOwner())
-	{
-		return;
-	}
-
-	if (UDIVEOperationsUIComponent* OperationsUI = GetOperationsUIComponent())
-	{
-		OperationsUI->HandleExecuteReleased();
 	}
 }
 
@@ -733,6 +716,8 @@ void UDIVEInputComponent::HandleContextMenuRequested()
 		return;
 	}
 
+	ResolveComponentReferences();
+
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	APlayerController* PlayerController = GetLocalPlayerController();
 	if (!Subsystem || !Subsystem->IsSessionActive() || !PlayerController)
@@ -750,6 +735,8 @@ void UDIVEInputComponent::HandleContextMenuRequested()
 	{
 		return;
 	}
+
+	WarnMissingContextMenuUIOnce();
 
 	bOrbitKeyHeld = false;
 	bPrimaryActionHeld = false;

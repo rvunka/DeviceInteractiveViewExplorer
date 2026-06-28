@@ -18,7 +18,6 @@ class UDIVEDeviceDefinitionAsset;
 class UDIVEAnchorComponent;
 class UPrimitiveComponent;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVEOperationRequested, const FDIVEOperationRequest&, Request, FDIVEOperationResult&, OutResult);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVESessionLifecycle, bool, bSessionActive);
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent))
@@ -65,9 +64,6 @@ public:
 	EDIVEWorldDimPolicy WorldDimPolicy = EDIVEWorldDimPolicy::None;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
-	FOnDIVEOperationRequested OnOperationRequested;
-
-	UPROPERTY(BlueprintAssignable, Category = "DIVE")
 	FOnDIVESessionLifecycle OnSessionLifecycle;
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DisplayName = "Request Session"))
@@ -84,9 +80,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsSessionActive() const { return bSessionActive; }
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE")
-	bool RequestOperation(const FDIVEOperationRequest& Request, FDIVEOperationResult& OutResult);
 
 	void UpdateAnchorSessionPresentation(const FDIVEFocusTarget& FocusedTarget);
 
@@ -117,20 +110,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|Presentation")
 	EDIVEWorldDimPolicy GetEffectiveWorldDimPolicy() const { return WorldDimPolicy; }
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
-	void GetAvailableOperationsForFocus(const FDIVEFocusTarget& FocusTarget, TArray<FDIVEOperationDescriptor>& OutOperations) const;
-
 	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
 	void AppendContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries);
 
 	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
 	bool ExecuteContextMenuAction(FName ActionId, const FDIVEFocusTarget& PickTarget);
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
-	bool ValidateOperation(FName OperationId, FText& OutFailureMessage) const;
-
-	UFUNCTION(BlueprintPure, Category = "DIVE|Operations")
-	bool IsOperationCompleted(FName OperationId) const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;
@@ -146,13 +130,7 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "DIVE")
 	bool bSessionActive = false;
 
-	TSet<FName> CompletedOperationIds;
-
 	friend class UDIVESessionSubsystem;
 
 	void NotifySessionLifecycle(bool bActive);
-	void ResetSessionOperationState();
-	void MarkOperationCompleted(FName OperationId);
-	FDIVEOperationDescriptor ResolveOperationDescriptor(FName OperationId) const;
-	TArray<FName> ResolveOperationIdsForFocus(const FDIVEFocusTarget& FocusTarget) const;
 };
