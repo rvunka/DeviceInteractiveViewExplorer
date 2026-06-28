@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Utils/DIVEPick.h"
 #include "Utils/DIVEPlayerQuery.h"
+#include "Utils/DIVEContextMenu.h"
 #include "Containers/Set.h"
 
 void UDIVESessionSubsystem::Deinitialize()
@@ -114,6 +115,7 @@ void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 
 	AActor* EndedDeviceHost = ActiveDeviceHost.Get();
 
+	CloseContextMenu();
 	ClearProxyDrive();
 	ClearWorldDim();
 	ClearIsolation();
@@ -224,6 +226,8 @@ void UDIVESessionSubsystem::SetInteractionMode(EDIVESessionInteractionMode NewMo
 		return;
 	}
 
+	CloseContextMenu();
+
 	if (NewMode != EDIVESessionInteractionMode::Physical)
 	{
 		ClearProxyDrive();
@@ -285,6 +289,111 @@ bool UDIVESessionSubsystem::NavigateBack()
 
 	FocusStack.Pop();
 	return ApplyFocusTarget(FocusStack.Last(), false);
+}
+
+bool UDIVESessionSubsystem::BuildContextMenuEntries(
+	const FVector2D& ScreenPosition,
+	APlayerController* PlayerController,
+	TArray<FDIVEContextMenuEntry>& OutEntries,
+	FDIVEFocusTarget& OutPickTarget) const
+{
+	OutEntries.Reset();
+	OutPickTarget = FDIVEFocusTarget::MakeDeviceRoot();
+
+	if (!IsSessionActive() || !PlayerController)
+	{
+		return false;
+	}
+
+	const bool bHasValidPick = ResolveFocusAtScreenPosition(ScreenPosition, PlayerController, OutPickTarget);
+	DIVEContextMenu::BuildBuiltInEntries(this, OutPickTarget, bHasValidPick, OutEntries);
+
+	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
+	{
+		Inspectable->AppendContextMenuEntries(OutPickTarget, OutEntries);
+	}
+
+	return !OutEntries.IsEmpty();
+}
+
+bool UDIVESessionSubsystem::OpenContextMenuAtScreenPosition(
+	const FVector2D& ScreenPosition,
+	APlayerController* PlayerController)
+{
+	if (!IsSessionActive() || !PlayerController)
+	{
+		return false;
+	}
+
+	if (bContextMenuOpen)
+	{
+		CloseContextMenu();
+		return false;
+	}
+
+	FDIVEFocusTarget PickTarget;
+	if (!BuildContextMenuEntries(ScreenPosition, PlayerController, ContextMenuEntries, PickTarget))
+	{
+		return false;
+	}
+
+	ContextMenuPickTarget = PickTarget;
+	ContextMenuScreenPosition = ScreenPosition;
+	bContextMenuOpen = true;
+	OnContextMenuVisibilityChanged.Broadcast(true);
+	return true;
+}
+
+bool UDIVESessionSubsystem::ExecuteContextMenuAction(FName ActionId)
+{
+	if (!IsSessionActive() || !bContextMenuOpen || ActionId.IsNone())
+	{
+		return false;
+	}
+
+	const FDIVEFocusTarget PickTarget = ContextMenuPickTarget;
+	CloseContextMenu();
+
+	if (ActionId == DIVE::kContextFocus)
+	{
+		if (!PickTarget.IsValidFocus())
+		{
+			return false;
+		}
+
+		return FocusTarget(PickTarget, true);
+	}
+
+	if (ActionId == DIVE::kContextIsolate)
+	{
+		return ToggleIsolateFocused();
+	}
+
+	if (ActionId == DIVE::kContextBack)
+	{
+		return NavigateBack();
+	}
+
+	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
+	{
+		return Inspectable->ExecuteContextMenuAction(ActionId, PickTarget);
+	}
+
+	return false;
+}
+
+void UDIVESessionSubsystem::CloseContextMenu()
+{
+	if (!bContextMenuOpen)
+	{
+		return;
+	}
+
+	bContextMenuOpen = false;
+	ContextMenuEntries.Reset();
+	ContextMenuPickTarget = FDIVEFocusTarget::MakeDeviceRoot();
+	ContextMenuScreenPosition = FVector2D::ZeroVector;
+	OnContextMenuVisibilityChanged.Broadcast(false);
 }
 
 bool UDIVESessionSubsystem::ToggleIsolateFocused()

@@ -72,7 +72,7 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		ApplyOrbitFromMouseDelta();
 	}
 
-	if (bPrimaryActionHeld)
+	if (bPrimaryActionHeld && !ShouldSuppressSessionInput())
 	{
 		ApplyPrimaryActionDragFromMouse();
 	}
@@ -240,6 +240,11 @@ bool UDIVEInputComponent::TryGetCursorScreenPosition(FVector2D& OutScreenPositio
 
 void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosition)
 {
+	if (ShouldSuppressSessionInput())
+	{
+		return;
+	}
+
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	APlayerController* PlayerController = GetLocalPlayerController();
 	if (!Subsystem || !PlayerController)
@@ -422,6 +427,11 @@ void UDIVEInputComponent::ClearSessionPresentation(APlayerController* PlayerCont
 
 void UDIVEInputComponent::ApplyOrbitFromMouseDelta()
 {
+	if (ShouldSuppressSessionInput())
+	{
+		return;
+	}
+
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	if (!Subsystem || !Subsystem->IsSessionActive())
 	{
@@ -469,7 +479,7 @@ void UDIVEInputComponent::ApplyOrbitFromMouseDelta()
 
 void UDIVEInputComponent::HandleOrbitPressed()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -504,7 +514,7 @@ void UDIVEInputComponent::HandleOrbitReleased()
 
 void UDIVEInputComponent::HandleOrbitDelta(FVector2D Delta)
 {
-	if (!IsLocallyControlledOwner() || bOrbitKeyHeld)
+	if (!IsLocallyControlledOwner() || bOrbitKeyHeld || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -552,7 +562,7 @@ void UDIVEInputComponent::HandleZoomOut()
 
 void UDIVEInputComponent::HandlePrimaryActionPressed()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -574,7 +584,7 @@ void UDIVEInputComponent::HandlePrimaryActionPressed()
 
 void UDIVEInputComponent::HandlePrimaryActionReleased()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -707,5 +717,47 @@ void UDIVEInputComponent::HandleToggleIsolate()
 		{
 			Subsystem->ToggleIsolateFocused();
 		}
+	}
+}
+
+bool UDIVEInputComponent::ShouldSuppressSessionInput() const
+{
+	const UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	return Subsystem && Subsystem->IsContextMenuOpen();
+}
+
+void UDIVEInputComponent::HandleContextMenuRequested()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	APlayerController* PlayerController = GetLocalPlayerController();
+	if (!Subsystem || !Subsystem->IsSessionActive() || !PlayerController)
+	{
+		return;
+	}
+
+	FVector2D ScreenPosition;
+	if (!TryGetCursorScreenPosition(ScreenPosition))
+	{
+		return;
+	}
+
+	if (!Subsystem->OpenContextMenuAtScreenPosition(ScreenPosition, PlayerController))
+	{
+		return;
+	}
+
+	bOrbitKeyHeld = false;
+	bPrimaryActionHeld = false;
+	bPrimaryActionDragActive = false;
+	bHasLastOrbitMousePosition = false;
+
+	if (Subsystem->IsProxyDriving())
+	{
+		Subsystem->EndProxyDrive(false);
 	}
 }

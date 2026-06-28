@@ -116,7 +116,7 @@ Available regardless of `EDIVESessionInteractionMode`:
 | Zoom | `HandleZoomIn`, `HandleZoomOut` | `IA_DIVE_Zoom` |
 | Undo focus step | `HandleNavigateBack` | `IA_DIVE_Back` |
 | Exit session | `HandleExitSession` | `IA_DIVE_Exit` |
-| Context menu at cursor | `HandleContextMenuRequested` *(planned)* | `IA_DIVE_ContextMenu` |
+| Context menu at cursor | `HandleContextMenuRequested` | `IA_DIVE_ContextMenu` |
 | Focus pick under cursor | `HandleFocusUnderCursor` | `IA_DIVE_FocusTarget` |
 | Scenario operation execute | `HandleOperationExecutePressed/Released` | `IA_DIVE_ExecuteOperation` |
 | Mesh isolate | `HandleToggleIsolate` | custom / UI |
@@ -204,7 +204,7 @@ v0.4-dev removes the **DIVE-local kinematic hinge** on `UDIVEAnchorComponent`. A
 |--------------------|------------------------|
 | `EDIVEManipulationKind::Hinge` | Device constraint + drive hook |
 | `DIVEManipulation` utils | `TryBeginProxyDriveAtScreenPosition` |
-| `ATSEP.DIVE.Manipulation.HingeSnap` test | `ATSEP.DIVE.Operations.ValidationRules` |
+| `ATSEP.DIVE.Manipulation.HingeSnap` test | `DIVE.Operations.ValidationRules` |
 
 | Current behaviour | Notes |
 |-------------------|-------|
@@ -212,20 +212,20 @@ v0.4-dev removes the **DIVE-local kinematic hinge** on `UDIVEAnchorComponent`. A
 | `HandlePrimaryAction*` + deprecated `HandleSelect*` alias | **Implemented** |
 | `HandleFocusUnderCursor` → `FocusAtScreenPosition` | **Implemented** |
 | Default: primary action no-op | **Implemented** |
-| Physical: proxy drive only | **Implemented** (no registry yet) |
+| Physical: proxy drive only | **Implemented** (registry optional) |
 | `HandleSelect*` naming in some EI assets | Migrate to `IA_DIVE_PrimaryAction` |
-| Context menu widget | Planned |
-| Device control registry | ATSEP |
+| Context menu API + widget | **Implemented** (v0.6) |
+| Device control registry | **Hook in DIVECore** (`IDIVEDeviceControlRegistry`); **implementations = host project** |
+| `IDIVEProxyDrive` backends | **Host project** (Blueprint or C++ on device controls) |
 
-### Target (v0.5+ roadmap)
+### Target (remaining)
 
 | Item | Owner |
 |------|--------|
-| Context menu API + widget | DIVE plugin |
-| `IA_DIVE_PrimaryAction`, `FocusTarget`, `ContextMenu` in Content | ATSEP |
-| Device control registry | ATSEP / device prefabs |
-| `IDIVEProxyDrive` or registry backends in **Physical** mode | ATSEP |
-| Optional virtual GRIP hand | ATSEP or `DIVEGRIPAdapter` |
+| `IA_DIVE_*` Content assets + `IMC_DIVE` mappings | Host project Content |
+| Registry / `IDIVEProxyDrive` on device prefabs | Host project / devices |
+| Context menu rows from registry metadata | Host via `AppendContextMenuEntries` |
+| Optional virtual GRIP hand | Host project or `DIVEGRIPAdapter` |
 
 ---
 

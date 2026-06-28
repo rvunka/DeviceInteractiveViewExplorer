@@ -71,6 +71,9 @@ public:
 	void HandleToggleIsolate();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleContextMenuRequested();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void SetInteractionMode(EDIVESessionInteractionMode NewMode);
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|Input")
@@ -106,6 +109,7 @@ protected:
 	bool TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const;
 	void RoutePrimaryActionPressed(const FVector2D& ScreenPosition);
 	void RoutePrimaryActionReleased();
+	bool ShouldSuppressSessionInput() const;
 
 	bool bOrbitKeyHeld = false;
 	bool bPrimaryActionHeld = false;

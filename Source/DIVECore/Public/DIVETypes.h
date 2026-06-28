@@ -187,3 +187,18 @@ struct DIVECORE_API FDIVEOperationResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
 	FText Message;
 };
+
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEContextMenuEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
+	FName ActionId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
+	FText DisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
+	bool bEnabled = true;
+};

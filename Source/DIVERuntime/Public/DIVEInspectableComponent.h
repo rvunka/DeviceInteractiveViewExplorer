@@ -120,6 +120,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
 	void GetAvailableOperationsForFocus(const FDIVEFocusTarget& FocusTarget, TArray<FDIVEOperationDescriptor>& OutOperations) const;
 
+	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
+	void AppendContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries);
+
+	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
+	bool ExecuteContextMenuAction(FName ActionId, const FDIVEFocusTarget& PickTarget);
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Operations")
 	bool ValidateOperation(FName OperationId, FText& OutFailureMessage) const;
 

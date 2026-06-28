@@ -18,6 +18,7 @@ class APlayerController;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionStarted, AActor*, DeviceHost, UDIVEInspectableComponent*, Inspectable);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionEnded, EDIVESessionEndReason, Reason, AActor*, DeviceHost);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEFocusChanged, const FDIVEFocusTarget&, FocusTarget);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEContextMenuVisibilityChanged, bool, bIsOpen);
 
 UCLASS()
 class DIVERUNTIME_API UDIVESessionSubsystem : public UGameInstanceSubsystem
@@ -66,6 +67,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
 	FOnDIVEFocusChanged OnFocusChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|ContextMenu")
+	FOnDIVEContextMenuVisibilityChanged OnContextMenuVisibilityChanged;
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
+	bool BuildContextMenuEntries(
+		const FVector2D& ScreenPosition,
+		APlayerController* PlayerController,
+		TArray<FDIVEContextMenuEntry>& OutEntries,
+		FDIVEFocusTarget& OutPickTarget) const;
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ApplyOrbitInput(const FVector2D& Delta);
 
@@ -92,6 +103,26 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool NavigateBack();
+
+	UFUNCTION(BlueprintPure, Category = "DIVE")
+	bool CanNavigateBack() const { return FocusStack.Num() > 1; }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
+	bool IsContextMenuOpen() const { return bContextMenuOpen; }
+
+	/** Opens the menu at the screen position. Returns true if the menu is open after the call (false if toggled closed or build failed). */
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
+	bool OpenContextMenuAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
+	bool ExecuteContextMenuAction(FName ActionId);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
+	void CloseContextMenu();
+
+	const TArray<FDIVEContextMenuEntry>& GetContextMenuEntries() const { return ContextMenuEntries; }
+
+	FVector2D GetContextMenuScreenPosition() const { return ContextMenuScreenPosition; }
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool ToggleIsolateFocused();
@@ -138,6 +169,11 @@ private:
 	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Default;
 
 	float SessionDefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
+
+	bool bContextMenuOpen = false;
+	FDIVEFocusTarget ContextMenuPickTarget;
+	TArray<FDIVEContextMenuEntry> ContextMenuEntries;
+	FVector2D ContextMenuScreenPosition = FVector2D::ZeroVector;
 
 	bool ResolveFocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController, FDIVEFocusTarget& OutTarget) const;
 	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bUseDefaultOrbitDistance = false);

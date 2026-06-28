@@ -1,7 +1,7 @@
 # DIVE Quickstart
 
 > **Interaction model:** `Docs/DeviceInteractionModel.md` §4 (session chrome + interaction mode).  
-> **v0.5 skeleton:** Default mode — focus is **explicit** (`HandleFocusUnderCursor`); Physical mode — primary action drives controls.
+> **v0.6:** in-session context menu at cursor (`HandleContextMenuRequested`); Default mode — focus via menu or explicit action.
 
 ## 1. Device actor setup
 
@@ -18,9 +18,9 @@ Add to your device Blueprint or C++ actor:
 Focus the mesh or anchor under the cursor via:
 
 - **`HandleFocusUnderCursor()`** — bind to `IA_DIVE_FocusTarget` in ATSEP
-- **Context menu** *(planned)* — `HandleContextMenuRequested` → «Сфокусироваться»
+- **`HandleContextMenuRequested()`** — bind to `IA_DIVE_ContextMenu` → Focus / Isolate / Back
 
-Legacy PIE dev mapping: **G** → focus under cursor.
+Legacy PIE dev mapping: **RMB** → context menu; **G** → focus shortcut.
 
 Pick filters on `UDIVEInspectableComponent`:
 
@@ -61,6 +61,8 @@ On `UACTSInteractableComponent`: **ActionId** `OpenDIVE` → `RequestSession()` 
 
 **`UDIVEInputComponent`** on pawn — semantic `Handle*` API (no `EKeys` in runtime).
 
+Add **`UDIVEContextMenuUIComponent`** on the same pawn for the in-session menu widget.
+
 Optional PIE: **`UDIVELegacyKbmInputComponent`** forwards dev keys only.
 
 ### Enhanced Input (ATSEP Content)
@@ -71,6 +73,7 @@ Optional PIE: **`UDIVELegacyKbmInputComponent`** forwards dev keys only.
 | `IA_DIVE_Zoom` | `HandleZoomIn` / `HandleZoomOut` |
 | `IA_DIVE_PrimaryAction` *(or legacy `IA_DIVE_Select`)* | `HandlePrimaryActionPressed` / `Released` |
 | `IA_DIVE_FocusTarget` | `HandleFocusUnderCursor` |
+| `IA_DIVE_ContextMenu` | `HandleContextMenuRequested` |
 | `IA_DIVE_SetMode_Physical` / `_Default` | `SetInteractionMode` |
 | `IA_DIVE_ExecuteOperation` | `HandleOperationExecute*` |
 | `IA_DIVE_Back` / `IA_DIVE_Exit` | `HandleNavigateBack` / `HandleExitSession` |
@@ -81,7 +84,8 @@ Optional PIE: **`UDIVELegacyKbmInputComponent`** forwards dev keys only.
 |-----|--------|
 | MMB + drag | Orbit |
 | Wheel | Zoom |
-| **G** | Focus under cursor |
+| **RMB** | Context menu (Focus / Isolate / Back) |
+| **G** | Focus under cursor (dev shortcut) |
 | **P** | Cycle Default ↔ Physical mode |
 | LMB | Primary action (Physical: drive; Default: no-op) |
 | F | Scenario operation |
@@ -96,6 +100,6 @@ Implement `OnOperationRequested` on `UDIVEInspectableComponent` for **scenario**
 ## 5. Test in PIE
 
 1. `RequestSession()` → camera blends to start focus.
-2. **G** → focus on mesh under cursor (orbit around target).
-3. **P** → Physical mode → primary action on proxy-drive control (when implemented on device).
+2. **RMB** → context menu → Focus on mesh under cursor.
+3. **P** → Physical mode → primary action on proxy-drive control (when registered on device).
 4. MMB orbit anytime; Ctrl+Z focus stack; Backspace exit.

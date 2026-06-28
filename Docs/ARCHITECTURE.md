@@ -16,6 +16,7 @@
 │  UDIVESessionSubsystem — focus stack      │
 │  UDIVEInputComponent — session input      │
 │  UDIVEOperationsUIComponent — ops list  │
+│  UDIVEContextMenuUIComponent — context menu │
 │  UDIVEInspectableComponent              │
 │  UDIVEAnchorComponent (optional)        │
 │  ADIVECameraRig                         │
@@ -41,7 +42,7 @@
 | **DIVE Operations UI** | `DIVERuntime` | Operation list + Hold progress during session |
 | **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** (PIE dev) |
 
-Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponent`** (+ optional **Legacy KBM** for PIE).
+Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponent`** + **`UDIVEContextMenuUIComponent`** (+ optional **Legacy KBM** for PIE).
 
 **Contract:** physical keys → `UInputAction` in **ATSEP Content** → `BindAction` on **PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Input_Architecture.md` and **`Docs/DeviceInteractionModel.md` §4**.
 
@@ -71,19 +72,19 @@ Full spec: **`DeviceInteractionModel.md` §4.2**.
 | `IA_DIVE_ExecuteOperation` | Started / Completed | `HandleOperationExecute*` |
 | `IA_DIVE_Back` / `IA_DIVE_Exit` | Started | `HandleNavigateBack` / `HandleExitSession` |
 | `IA_DIVE_SetMode_*` | Started | `SetInteractionMode` |
+| `IA_DIVE_ContextMenu` | Started | `HandleContextMenuRequested` |
 
-Legacy PIE: **G** = focus, **P** = cycle mode, **LMB** = primary action.
+Legacy PIE: **RMB** = context menu, **G** = focus (shortcut), **P** = cycle mode, **LMB** = primary action.
 
-### Enhanced Input — planned
+### Enhanced Input — optional
 
 | Input Action | Call |
 |--------------|------|
-| `IA_DIVE_ContextMenu` | `HandleContextMenuRequested` |
 | `IA_DIVE_ToggleIsolate` | `HandleToggleIsolate` |
 
-### DIVE context menu (target)
+### DIVE context menu (v0.6)
 
-In-session menu at cursor — **not** ACTS. Built-in: Focus, Isolate; device rows optional. Opened via `HandleContextMenuRequested`. See **`DeviceInteractionModel.md` §4.3**.
+In-session menu at cursor — **not** ACTS. Built-in: Focus, Isolate, Back (when stack > 1); device rows via `AppendContextMenuEntries`. Opened via `HandleContextMenuRequested`. See **`DeviceInteractionModel.md` §4.3**.
 
 ## Operations (v0.2)
 
@@ -101,7 +102,7 @@ Physical panel controls live on the **device** with constraints and game state. 
 
 **Today:** `HandlePrimaryAction*` routes by `GetInteractionMode()`. Default → no-op. Physical → `TryBeginProxyDrive*`.
 
-**Planned:** device registry as primary backend; context menu for focus/isolate.
+**Planned:** device registry as primary backend for Physical mode.
 
 No GRIP / ATSEP dependency in `DIVERuntime`. Full contract: **`Docs/DeviceInteractionModel.md` §4–§6**.
 
@@ -126,24 +127,25 @@ Device mesh isolate remains **`ToggleIsolateFocused()`** (explicit, separate fro
 
 ## Session flow
 
-### Today (v0.5 skeleton)
+### Today (v0.6)
 
 1. `RequestSession()` → mode **Default**; camera blends to start focus.
 2. **Chrome always:** orbit (MMB), zoom, Ctrl+Z, Backspace exit.
-3. **G** / `HandleFocusUnderCursor` → explicit focus on pick target.
-4. **P** / `SetInteractionMode(Physical)` → primary action enables proxy drive.
-5. **F** → scenario operation (unchanged).
+3. **RMB** / `HandleContextMenuRequested` → Focus, Isolate, Back at cursor.
+4. **G** / `HandleFocusUnderCursor` → dev shortcut for explicit focus.
+5. **P** / `SetInteractionMode(Physical)` → primary action enables proxy drive.
+6. **F** → scenario operation (unchanged).
 
-### Planned
+### Planned (host project)
 
-- Context menu (`HandleContextMenuRequested`) replaces dev-only **G** as primary focus UX.
-- Device control registry in ATSEP.
+- `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` on device prefabs.
+- `IA_DIVE_ContextMenu`, `IA_DIVE_FocusTarget`, mode actions in Content + PC `BindAction`.
 
 ## Editor
 
 Context menu on selected actor: **DIVE Scan Device** — logs anchors, operations, catalog warnings.
 
-Automation smoke test: `ATSEP.DIVE.Operations.ValidationRules`.
+Automation smoke tests: `DIVE.Operations.ValidationRules`, `DIVE.ContextMenu.BuiltInEntries`.
 
 ## Dependencies
 

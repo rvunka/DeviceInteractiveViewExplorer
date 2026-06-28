@@ -60,6 +60,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void ToggleIsolatePressed();
 
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void ContextMenuPressed();
+
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (
 		DisplayName = "Input Component",
 		ToolTip = "Leave empty to auto-find DIVE Input on the owner. Requires UDIVEInputComponent on the pawn."))
@@ -121,6 +124,12 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindIsolateInput"))
 	FKey IsolateKey;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bBindContextMenuInput = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindContextMenuInput"))
+	FKey ContextMenuKey;
 
 protected:
 	UPROPERTY(Transient)

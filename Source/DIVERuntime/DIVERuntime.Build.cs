@@ -20,7 +20,8 @@ public class DIVERuntime : ModuleRules
 		{
 			"UMG",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"InputCore"
 		});
 
 		if (Target.bBuildEditor)

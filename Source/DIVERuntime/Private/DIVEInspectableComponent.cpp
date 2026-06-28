@@ -437,3 +437,16 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 }
 
 #endif // WITH_EDITOR
+
+void UDIVEInspectableComponent::AppendContextMenuEntries_Implementation(
+	const FDIVEFocusTarget& /*PickTarget*/,
+	TArray<FDIVEContextMenuEntry>& /*InOutEntries*/)
+{
+}
+
+bool UDIVEInspectableComponent::ExecuteContextMenuAction_Implementation(
+	FName /*ActionId*/,
+	const FDIVEFocusTarget& /*PickTarget*/)
+{
+	return false;
+}

@@ -3,6 +3,7 @@
 #include "DIVEProxyDriveResolve.h"
 
 #include "DIVEProxyDrive.h"
+#include "DIVEDeviceControlRegistry.h"
 #include "Components/ActorComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Actor.h"
@@ -22,14 +23,30 @@ IDIVEProxyDrive* FindProxyDriveForHit(UPrimitiveComponent* HitComponent)
 		return nullptr;
 	}
 
+	TArray<UActorComponent*> OwnerComponents;
+	Owner->GetComponents(OwnerComponents);
+	for (UActorComponent* Component : OwnerComponents)
+	{
+		if (!Component || !Component->Implements<UDIVEDeviceControlRegistry>())
+		{
+			continue;
+		}
+
+		if (UObject* DriveObject = IDIVEDeviceControlRegistry::Execute_ResolveProxyDriveObject(Component, HitComponent))
+		{
+			if (DriveObject->GetClass()->ImplementsInterface(UDIVEProxyDrive::StaticClass()))
+			{
+				return Cast<IDIVEProxyDrive>(DriveObject);
+			}
+		}
+	}
+
 	if (Owner->Implements<UDIVEProxyDrive>())
 	{
 		return Cast<IDIVEProxyDrive>(Owner);
 	}
 
-	TArray<UActorComponent*> Components;
-	Owner->GetComponents(Components);
-	for (UActorComponent* Component : Components)
+	for (UActorComponent* Component : OwnerComponents)
 	{
 		if (Component && Component->Implements<UDIVEProxyDrive>())
 		{

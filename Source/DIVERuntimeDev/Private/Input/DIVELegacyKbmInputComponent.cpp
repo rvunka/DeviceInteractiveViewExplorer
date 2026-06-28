@@ -25,6 +25,7 @@ UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 	CameraUndoKey = EKeys::Z;
 	ExitKey = EKeys::BackSpace;
 	IsolateKey = EKeys::I;
+	ContextMenuKey = EKeys::RightMouseButton;
 }
 
 void UDIVELegacyKbmInputComponent::BeginPlay()
@@ -221,6 +222,16 @@ void UDIVELegacyKbmInputComponent::ToggleIsolatePressed()
 	}
 }
 
+void UDIVELegacyKbmInputComponent::ContextMenuPressed()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleContextMenuRequested();
+	}
+}
+
 void UDIVELegacyKbmInputComponent::UnbindInput()
 {
 	if (APawn* Pawn = Cast<APawn>(GetOwner()))
@@ -328,6 +339,12 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	if (bBindIsolateInput && IsolateKey.IsValid())
 	{
 		PawnInputComponent->BindKey(IsolateKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::ToggleIsolatePressed);
+		bBoundAny = true;
+	}
+
+	if (bBindContextMenuInput && ContextMenuKey.IsValid())
+	{
+		PawnInputComponent->BindKey(ContextMenuKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::ContextMenuPressed);
 		bBoundAny = true;
 	}
 
