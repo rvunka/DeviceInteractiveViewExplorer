@@ -37,25 +37,53 @@
 
 | Component | Module | Role |
 |-----------|--------|------|
-| **DIVE Input** | `DIVERuntime` | Orbit / zoom / select / back / exit / isolate / operation execute |
+| **DIVE Input** | `DIVERuntime` | Semantic `Handle*` API for Enhanced Input (no `EKeys` in runtime) |
 | **DIVE Operations UI** | `DIVERuntime` | Operation list + Hold progress during session |
-| **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** |
+| **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** (PIE dev) |
 
 Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEOperationsUIComponent`** (+ optional **Legacy KBM** for PIE).
 
-### Enhanced Input (game module)
+**Contract:** physical keys → `UInputAction` in **ATSEP Content** → `BindAction` on **PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Input_Architecture.md` and **`Docs/DeviceInteractionModel.md` §4**.
+
+### Session chrome (always available)
+
+Orbit, zoom, focus undo, exit, and (target) context menu work in **every** interaction mode. Camera navigation is **not** a separate «Navigate mode».
+
+### Interaction mode (v0.5 skeleton)
+
+`EDIVESessionInteractionMode` in **DIVECore**: **Default** | **Physical**.
+
+- **`GetInteractionMode` / `SetInteractionMode`** on `UDIVESessionSubsystem` and `UDIVEInputComponent`
+- Resets to **Default** on session start/end
+- **Physical:** `TryBeginProxyDrive*` allowed; **Default:** primary action no-op
+
+Full spec: **`DeviceInteractionModel.md` §4.2**.
+
+### Enhanced Input — implemented (v0.5 skeleton)
 
 | Input Action | Event | Call |
 |--------------|-------|------|
-| `IA_DIVE_Orbit` | Started / Completed | `HandleOrbitPressed` / `HandleOrbitReleased` |
-| `IA_DIVE_Orbit` | Triggered (Axis2D) | `HandleOrbitDelta` — **do not combine** with Pressed/Released on the same action |
+| `IA_DIVE_Orbit` | Started / Completed / Triggered | `HandleOrbit*` |
 | `IA_DIVE_Zoom` | Triggered | `HandleZoomIn` / `HandleZoomOut` |
-| `IA_DIVE_Select` | Started / Completed | `HandleSelectPressed` / `HandleSelectReleased` (proxy drive or pick/focus) |
-| `IA_DIVE_ExecuteOperation` | Started / Completed | `HandleOperationExecutePressed` / `HandleOperationExecuteReleased` |
-| `IA_DIVE_Back` | Started | `HandleNavigateBack` (camera / focus undo) |
-| `IA_DIVE_Exit` | Started | `HandleExitSession` |
+| `IA_DIVE_PrimaryAction` | Started / Completed | `HandlePrimaryActionPressed` / `Released` |
+| `IA_DIVE_Select` | Started / Completed | Same as PrimaryAction *(deprecated alias)* |
+| `IA_DIVE_FocusTarget` | Started | `HandleFocusUnderCursor` |
+| `IA_DIVE_ExecuteOperation` | Started / Completed | `HandleOperationExecute*` |
+| `IA_DIVE_Back` / `IA_DIVE_Exit` | Started | `HandleNavigateBack` / `HandleExitSession` |
+| `IA_DIVE_SetMode_*` | Started | `SetInteractionMode` |
 
-Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = select / proxy drag / focus.
+Legacy PIE: **G** = focus, **P** = cycle mode, **LMB** = primary action.
+
+### Enhanced Input — planned
+
+| Input Action | Call |
+|--------------|------|
+| `IA_DIVE_ContextMenu` | `HandleContextMenuRequested` |
+| `IA_DIVE_ToggleIsolate` | `HandleToggleIsolate` |
+
+### DIVE context menu (target)
+
+In-session menu at cursor — **not** ACTS. Built-in: Focus, Isolate; device rows optional. Opened via `HandleContextMenuRequested`. See **`DeviceInteractionModel.md` §4.3**.
 
 ## Operations (v0.2)
 
@@ -64,20 +92,18 @@ Legacy PIE defaults: **F** = execute operation, **I** = isolate, **LMB** = selec
 - `ValidationRules` on device definition gate operations by `RequiredCompletedOperationIds`.
 - `UDIVEOperationsUIComponent` shows the list; `RequestFocusedOperation` validates, dispatches `OnOperationRequested`, marks success in session state.
 
-## Proxy drive (v0.4-dev)
+## Proxy drive (v0.4-dev, interim)
 
-Physical panel controls (sliders, doors, knobs) live on the **device** with constraints and game state. DIVE exposes an extension point in **DIVECore**:
+Physical panel controls live on the **device** with constraints and game state. DIVECore exposes **`IDIVEProxyDrive`** as one backend for **Physical** mode (target), not as the primary UX model.
 
 - **`IDIVEProxyDrive`** — `CanProxyDrive`, `BeginProxyDrive`, `ApplyProxyDriveDelta`, `EndProxyDrive`
-- **`FDIVEProxyDriveContext`** — screen position, optional focus target snapshot, hit component
+- **`FDIVEProxyDriveContext`** — screen position, focus target snapshot, hit component
 
-**Select routing** (`UDIVEInputComponent`):
+**Today:** `HandlePrimaryAction*` routes by `GetInteractionMode()`. Default → no-op. Physical → `TryBeginProxyDrive*`.
 
-1. LMB down → `TryBeginProxyDriveAtScreenPosition` if hit actor/component implements `IDIVEProxyDrive`
-2. else → `SelectAtScreenPosition` (mesh orbit / anchor viewpoint)
-3. LMB up → `EndProxyDrive(true)`
+**Planned:** device registry as primary backend; context menu for focus/isolate.
 
-No GRIP / ATSEP dependency in `DIVERuntime`. Game modules implement the interface on device controls. Full contract: **`Docs/DeviceInteractionModel.md`**.
+No GRIP / ATSEP dependency in `DIVERuntime`. Full contract: **`Docs/DeviceInteractionModel.md` §4–§6**.
 
 ## Anchor (viewpoint + semantics)
 
@@ -100,12 +126,18 @@ Device mesh isolate remains **`ToggleIsolateFocused()`** (explicit, separate fro
 
 ## Session flow
 
-1. `RequestSession()` → `TryBeginSession` → `BuildSemanticRegistry()` (anchors only).
-2. Camera rig spawns at the player view, then blends to `InitialFocusId` / `DefaultStartFocusId` (anchor PartId or mesh component name) or device root.
-3. Optional world dim applied; focus stack initialized with `DeviceRoot`.
-4. LMB → proxy drive (if hit implements interface) **or** pick/focus; focused anchor → operations list; **F** → execute / hold.
-5. Ctrl+Z → pop focus stack; at root → no-op.
-6. Backspace → `EndSession`.
+### Today (v0.5 skeleton)
+
+1. `RequestSession()` → mode **Default**; camera blends to start focus.
+2. **Chrome always:** orbit (MMB), zoom, Ctrl+Z, Backspace exit.
+3. **G** / `HandleFocusUnderCursor` → explicit focus on pick target.
+4. **P** / `SetInteractionMode(Physical)` → primary action enables proxy drive.
+5. **F** → scenario operation (unchanged).
+
+### Planned
+
+- Context menu (`HandleContextMenuRequested`) replaces dev-only **G** as primary focus UX.
+- Device control registry in ATSEP.
 
 ## Editor
 

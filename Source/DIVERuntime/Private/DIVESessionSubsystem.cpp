@@ -52,6 +52,7 @@ bool UDIVESessionSubsystem::TryBeginSession(
 	FocusStack.Reset();
 	FocusStack.Add(FDIVEFocusTarget::MakeDeviceRoot());
 	FocusedTarget = FDIVEFocusTarget::MakeDeviceRoot();
+	InteractionMode = EDIVESessionInteractionMode::Default;
 
 	if (AActor* CurrentViewTarget = PlayerController->GetViewTarget())
 	{
@@ -117,6 +118,7 @@ void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 	ClearWorldDim();
 	ClearIsolation();
 	FocusStack.Reset();
+	InteractionMode = EDIVESessionInteractionMode::Default;
 
 	if (UWorld* World = GetWorld())
 	{
@@ -201,6 +203,11 @@ void UDIVESessionSubsystem::ApplyCameraInputFromInspectable()
 
 bool UDIVESessionSubsystem::SelectAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController)
 {
+	return FocusAtScreenPosition(ScreenPosition, PlayerController);
+}
+
+bool UDIVESessionSubsystem::FocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController)
+{
 	FDIVEFocusTarget SelectedTarget;
 	if (!ResolveFocusAtScreenPosition(ScreenPosition, PlayerController, SelectedTarget))
 	{
@@ -208,6 +215,21 @@ bool UDIVESessionSubsystem::SelectAtScreenPosition(const FVector2D& ScreenPositi
 	}
 
 	return FocusTarget(SelectedTarget, true);
+}
+
+void UDIVESessionSubsystem::SetInteractionMode(EDIVESessionInteractionMode NewMode)
+{
+	if (InteractionMode == NewMode)
+	{
+		return;
+	}
+
+	if (NewMode != EDIVESessionInteractionMode::Physical)
+	{
+		ClearProxyDrive();
+	}
+
+	InteractionMode = NewMode;
 }
 
 bool UDIVESessionSubsystem::FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack)
@@ -400,6 +422,11 @@ bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
 	APlayerController* PlayerController)
 {
 	if (!IsSessionActive() || bProxyDriving || !PlayerController)
+	{
+		return false;
+	}
+
+	if (InteractionMode != EDIVESessionInteractionMode::Physical)
 	{
 		return false;
 	}

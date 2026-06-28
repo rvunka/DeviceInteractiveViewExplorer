@@ -40,6 +40,12 @@ public:
 	void SelectReleased();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void FocusUnderCursorPressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void CycleInteractionModePressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void OperationExecutePressed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
@@ -79,6 +85,18 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindSelectInput"))
 	FKey SelectKey;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bBindFocusUnderCursorInput = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindFocusUnderCursorInput"))
+	FKey FocusUnderCursorKey;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bBindInteractionModeCycleInput = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindInteractionModeCycleInput"))
+	FKey InteractionModeCycleKey;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindOperationExecuteInput = true;

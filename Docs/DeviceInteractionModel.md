@@ -1,7 +1,7 @@
 # DIVE and physical device controls
 
 > **Audience:** device authors, game integration (ATSEP), VR planning.  
-> **Status:** architecture contract (v0.4-dev).  
+> **Status:** architecture contract (v0.5 skeleton in code).  
 > **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `Project_docs/Plugin_Input_Architecture.md`.
 
 ---
@@ -64,12 +64,15 @@ DIVE must **not** become the source of truth for knob position, door angle, or s
 | Sounds, haptics, MESS hooks | Device control component |
 | Reuse on another device | Same control prefab / component |
 
-Recommended **game interface** — now exported from **DIVECore** as `IDIVEProxyDrive`:
+Recommended **control wiring** (game / device layer):
+
+1. **Registry (primary)** — at session start or on prefab: map pickable primitive (or tag / component name) → control component.
+2. **`IDIVEProxyDrive` (optional C++ adapter)** — thin wrapper on the same control component when registry resolves to an interface.
 
 ```text
-IDIVEProxyDrive (DIVECore)
+IDIVEProxyDrive (DIVECore) — backend for Physical mode only
   CanProxyDrive() → bool
-  BeginProxyDrive(FDIVEProxyDriveContext)  // ScreenPosition, FocusTarget, HitComponent
+  BeginProxyDrive(FDIVEProxyDriveContext)
   ApplyProxyDriveDelta(ScreenDelta)
   EndProxyDrive(bCommit)
 ```
@@ -99,28 +102,156 @@ Do not model every physical handle as a Press/Hold **operation** unless it is tr
 
 ---
 
-## 4. DIVE v0.4-dev (current)
+## 4. Session UX: camera chrome + interaction mode (target)
+
+DIVE is a **camera-centric modal session**, not a Blender-style mode switch where orbit disappears. **Orbit, zoom, focus stack, and exit work in every interaction mode.** Modes change **session policy** (how semantic input actions are routed), not whether the camera exists.
+
+### 4.1. Persistent session chrome (always on)
+
+Available regardless of `EDIVESessionInteractionMode`:
+
+| Capability | Semantic API (plugin) | Typical `IA_*` (ATSEP Content) |
+|------------|----------------------|--------------------------------|
+| Orbit camera | `HandleOrbitPressed/Released`, `HandleOrbitDelta` | `IA_DIVE_Orbit` |
+| Zoom | `HandleZoomIn`, `HandleZoomOut` | `IA_DIVE_Zoom` |
+| Undo focus step | `HandleNavigateBack` | `IA_DIVE_Back` |
+| Exit session | `HandleExitSession` | `IA_DIVE_Exit` |
+| Context menu at cursor | `HandleContextMenuRequested` *(planned)* | `IA_DIVE_ContextMenu` |
+| Focus pick under cursor | `HandleFocusUnderCursor` | `IA_DIVE_FocusTarget` |
+| Scenario operation execute | `HandleOperationExecutePressed/Released` | `IA_DIVE_ExecuteOperation` |
+| Mesh isolate | `HandleToggleIsolate` | custom / UI |
+
+**Focus / «подъехать»** is an **explicit** action (context menu item or `IA_DIVE_FocusTarget`), not the default meaning of every click. That avoids fighting physical controls.
+
+**Physical keys live only in IMC** (`Plugin_Input_Architecture.md`). DIVE **must not** encode `EKeys` or «LMB tool» enums in its public contract.
+
+### 4.2. Interaction mode = session policy (not «Navigate mode»)
+
+```text
+EDIVESessionInteractionMode  (DIVECore)
+  Default   — inspect: primary action no-op; focus via HandleFocusUnderCursor / context menu
+  Physical  — primary action → continuous DOF (door, slider, knob)
+  Logical   — deferred (v1: use registry hit-type or context menu)
+```
+
+Mode is **not** tied to a single mouse button. It is **policy** for routing **multiple** semantic actions, for example:
+
+| Policy area | Example behaviour per mode |
+|-------------|----------------------------|
+| `HandlePrimaryAction*` | Physical → grab/drive; Logical → click; Default → no-op or highlight only |
+| Context menu contents | Always: Focus, Isolate; Physical may add device entries |
+| Hit highlight / filter | Physical may prefer grabbable primitives |
+| HUD / cursor | Show active mode label |
+| Operations UI | Scenario ops always available; not a substitute for Physical |
+
+Mode does **not** disable orbit, context menu, or focus stack.
+
+Switch mode via `SetInteractionMode` from ATSEP (`IA_DIVE_SetMode_*` or cycle action in IMC).
+
+### 4.3. DIVE context menu (not ACTS)
+
+**ACTS** = world interaction before session («Детальный осмотр»).  
+**DIVE context menu** = in-session, ray under cursor, **not** the ACTS radial/world menu.
+
+Flow *(planned)*:
+
+1. `HandleContextMenuRequested` → pick at screen position → build entry list.
+2. **Built-in entries** (plugin): Focus here, Isolate focused subtree, (optional) Back.
+3. **Device extensions** (game): extra rows from registry / anchor ops / control metadata.
+4. Player picks row → `ExecuteContextMenuAction(ActionId)`.
+
+Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
+
+### 4.4. Primary action (semantic, not Select/LMB)
+
+Target name: **`HandlePrimaryActionPressed/Released`** (replacing legacy `HandleSelect*`).
+
+| Mode | Primary action (press/hold/release) |
+|------|-------------------------------------|
+| **Default** | No grab; optional hover highlight |
+| **Physical** | Begin/update/end drive on hit control (registry, `IDIVEProxyDrive`, or virtual GRIP via ATSEP) |
+| **Logical** | Single fire on press (button mesh) |
+
+Drag delta while held is driven by the same action lifecycle + tick/Triggered axis if needed — still **semantic**, not «mouse moved».
+
+### 4.5. Layer diagram (target)
+
+```text
+  IMC (ATSEP)          IA_DIVE_*  ──►  UDIVEInputComponent::Handle*
+                                              │
+                    ┌─────────────────────────┴─────────────────────────┐
+                    │     EDIVESessionInteractionMode (session policy)     │
+                    └─────────────────────────┬─────────────────────────┘
+                                              │
+         ┌────────────────────────────────────┼────────────────────────────┐
+         │ chrome (always)                    │ mode-dependent              │
+         │ orbit · zoom · back · exit         │ primary action · menu extras│
+         │ context menu · focus under cursor  │ physical / logical backends │
+         └────────────────────────────────────┴────────────────────────────┘
+                                              │
+                              device controls · constraints · GRIP (VR)
+```
+
+---
+
+## 5. DIVE v0.4-dev (implemented) vs target
+
+### Implemented in v0.4-dev
 
 v0.4-dev removes the **DIVE-local kinematic hinge** on `UDIVEAnchorComponent`. Anchors remain for **viewpoint + PartId + scenario OperationIds**.
 
-| Removed in 0.4-dev | Replacement |
-|--------------------|-------------|
-| `EDIVEManipulationKind::Hinge` | Device constraint + `IDIVEProxyDrive` on control |
-| `DIVEManipulation` utils | Session routing: `TryBeginProxyDriveAtScreenPosition` |
+| Removed in 0.4-dev | Replacement (interim) |
+|--------------------|------------------------|
+| `EDIVEManipulationKind::Hinge` | Device constraint + drive hook |
+| `DIVEManipulation` utils | `TryBeginProxyDriveAtScreenPosition` |
 | `ATSEP.DIVE.Manipulation.HingeSnap` test | `ATSEP.DIVE.Operations.ValidationRules` |
 
 | Current behaviour | Notes |
 |-------------------|-------|
-| Pick mesh → orbit | Unchanged |
-| Pick anchor marker → viewpoint | Unchanged |
-| LMB on `IDIVEProxyDrive` hit → drag | Game implements interface; no default impl in plugin |
-| `OperationIds` on anchor | Scenario steps only (inspect, demount) |
+| `EDIVESessionInteractionMode` + `SetInteractionMode` | **Implemented** (Default / Physical) |
+| `HandlePrimaryAction*` + deprecated `HandleSelect*` alias | **Implemented** |
+| `HandleFocusUnderCursor` → `FocusAtScreenPosition` | **Implemented** |
+| Default: primary action no-op | **Implemented** |
+| Physical: proxy drive only | **Implemented** (no registry yet) |
+| `HandleSelect*` naming in some EI assets | Migrate to `IA_DIVE_PrimaryAction` |
+| Context menu widget | Planned |
+| Device control registry | ATSEP |
 
-Roadmap: ATSEP implements `IDIVEProxyDrive` on device controls; optional GRIP bridge for virtual-hand grab.
+### Target (v0.5+ roadmap)
+
+| Item | Owner |
+|------|--------|
+| Context menu API + widget | DIVE plugin |
+| `IA_DIVE_PrimaryAction`, `FocusTarget`, `ContextMenu` in Content | ATSEP |
+| Device control registry | ATSEP / device prefabs |
+| `IDIVEProxyDrive` or registry backends in **Physical** mode | ATSEP |
+| Optional virtual GRIP hand | ATSEP or `DIVEGRIPAdapter` |
 
 ---
 
-## 5. Reusing GRIP as the grab engine for DIVE
+## 6. `IDIVEProxyDrive` — backend, not UX
+
+`IDIVEProxyDrive` (DIVECore) is **one implementation path** for **Physical** mode, not the main interaction model:
+
+```text
+IDIVEProxyDrive (DIVECore)
+  CanProxyDrive() → bool
+  BeginProxyDrive(FDIVEProxyDriveContext)
+  ApplyProxyDriveDelta(ScreenDelta)
+  EndProxyDrive(bCommit)
+```
+
+Prefer **device registry** at session start (primitive / tag → control component) when Blueprint authoring is easier than `Implement Interface` on every part.
+
+- **GRIP path (VR):** hand grab → constraint → device state.
+- **DIVE Physical path:** `HandlePrimaryAction*` → registry or `IDIVEProxyDrive` → same device state.
+- **Sounds / MESS:** only in device component when value changes.
+
+**Do not** hang the interface on `UStaticMeshComponent` — put it on a **control component** on the actor and register which primitives it owns.
+
+---
+
+## 7. Reusing GRIP as the grab engine for DIVE
 
 ### What GRIP already provides
 
@@ -149,20 +280,20 @@ DIVERuntime          GRIPRuntime          ATSEP_Fundamental (game)
                           │
               ATSEP bridge / pawn setup
               - DIVE camera → aim provider for a «session hand»
-              - Or: pick → IDeviceProxyDrive on hit component
+              - Physical mode: registry / IDIVEProxyDrive / virtual GRIP (ATSEP)
               - VR: two UGRIPHandComponent, no DIVE grab
 ```
 
 **Option A — Proxy drive (preferred for sliders / hinged panels in DIVE)**
 
-1. Device implements `IDIVEProxyDrive` (game code on control actor/component).
-2. DIVE select + drag → `UDIVESessionSubsystem` routes to active proxy drive.
+1. Device registers controls (registry) or implements `IDIVEProxyDrive` on control components.
+2. In **Physical** mode, `HandlePrimaryAction*` routes to the active drive backend.
 3. GRIP not involved in the monitor session; VR still uses GRIP on the same mesh.
 
 **Option B — Virtual GRIP hand during DIVE (reuse grab PD)**
 
 1. Pawn keeps `UGRIPHandComponent` + `UGRIPHandAimComponent`.
-2. While DIVE active: aim = ray from **DIVE camera** (ManualOnly / external provider); grab button = DIVE select hold.
+2. While DIVE active: aim = ray from **DIVE camera**; grab = `IA_DIVE_PrimaryAction` (not a hardcoded mouse button).
 3. GRIP pulls the **same** constrained body VR would grab.
 4. Wiring lives in **ATSEP** (or a small optional `DIVEGRIPBridge` module), not in `DIVERuntime`.
 
@@ -192,7 +323,7 @@ Only ATSEP (or titles that need it) enable the adapter plugin. DIVE repo stays u
 
 ---
 
-## 6. Session interaction with GRIP in the world
+## 8. Session interaction with GRIP in the world
 
 While `UDIVESessionSubsystem` is active, ATSEP PlayerController **blocks** normal ACTS / GRIP gameplay input (early return). That matches «modal inspect» on monitor.
 
@@ -208,26 +339,29 @@ Exact VR policy (DIVE session in HMD or not) is a **game** decision; DIVE expose
 
 ---
 
-## 7. Authoring checklist (device team)
+## 9. Authoring checklist (device team)
 
 1. Build control prefab: mesh + constraint + state component + sounds.
 2. Mark moving part grabbable for GRIP (VR).
-3. Implement proxy drive interface (game) for monitor / DIVE.
+3. Register physical controls (registry or `IDIVEProxyDrive`) for **Physical** mode — not on raw mesh components.
 4. Add `UDIVEInspectableComponent` on device root for session entry only.
 5. Optional anchors for **viewpoints** and **non-physical** operations — not as a substitute for step 3.
 
 ---
 
-## 8. Open work (not in DIVE core)
+## 10. Open work
 
 | Item | Owner |
 |------|--------|
-| `IDIVEProxyDrive` implementations on device controls | ATSEP |
-| Optional virtual GRIP hand from DIVE camera | ATSEP or `DIVEGRIPAdapter` |
+| Interaction mode + context menu API | DIVE plugin (v0.5) |
+| `HandlePrimaryAction*` rename; mode-gated proxy routing | DIVE plugin |
+| `IA_DIVE_*` + IMC for DIVE session | ATSEP Content |
+| Control registry + drive backends | ATSEP / devices |
+| Optional virtual GRIP hand | ATSEP or `DIVEGRIPAdapter` |
 | VR two-hand + OpenXR | GRIPVR / game |
 
 ---
 
-## 9. One-line summary
+## 11. One-line summary
 
-**Sliders and doors are physical device controls (constraints + GRIP in VR); DIVE is the flat-screen adapter that drives the same controls — composed in the game layer, without a hard GRIP dependency inside the DIVE plugin.**
+**Sliders and doors are device controls (constraints + GRIP in VR). DIVE is the flat-screen adapter: persistent camera chrome, explicit focus via menu, interaction **modes** as session policy, Enhanced Input semantics in ATSEP — composed in the game layer without a hard GRIP dependency in the plugin.**

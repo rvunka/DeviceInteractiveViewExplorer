@@ -3,6 +3,7 @@
 #include "Input/DIVELegacyKbmInputComponent.h"
 
 #include "Components/InputComponent.h"
+#include "DIVETypes.h"
 #include "Input/DIVEInputComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -18,6 +19,8 @@ UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 	ZoomInKey = EKeys::MouseScrollUp;
 	ZoomOutKey = EKeys::MouseScrollDown;
 	SelectKey = EKeys::LeftMouseButton;
+	FocusUnderCursorKey = EKeys::G;
+	InteractionModeCycleKey = EKeys::P;
 	OperationExecuteKey = EKeys::F;
 	CameraUndoKey = EKeys::Z;
 	ExitKey = EKeys::BackSpace;
@@ -128,7 +131,7 @@ void UDIVELegacyKbmInputComponent::SelectPressed()
 
 	if (InputComponent)
 	{
-		InputComponent->HandleSelectPressed();
+		InputComponent->HandlePrimaryActionPressed();
 	}
 }
 
@@ -138,8 +141,34 @@ void UDIVELegacyKbmInputComponent::SelectReleased()
 
 	if (InputComponent)
 	{
-		InputComponent->HandleSelectReleased();
+		InputComponent->HandlePrimaryActionReleased();
 	}
+}
+
+void UDIVELegacyKbmInputComponent::FocusUnderCursorPressed()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleFocusUnderCursor();
+	}
+}
+
+void UDIVELegacyKbmInputComponent::CycleInteractionModePressed()
+{
+	EnsureInputReady();
+
+	if (!InputComponent)
+	{
+		return;
+	}
+
+	const EDIVESessionInteractionMode CurrentMode = InputComponent->GetInteractionMode();
+	InputComponent->SetInteractionMode(
+		CurrentMode == EDIVESessionInteractionMode::Default
+			? EDIVESessionInteractionMode::Physical
+			: EDIVESessionInteractionMode::Default);
 }
 
 void UDIVELegacyKbmInputComponent::OperationExecutePressed()
@@ -261,6 +290,18 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	{
 		PawnInputComponent->BindKey(SelectKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::SelectPressed);
 		PawnInputComponent->BindKey(SelectKey, IE_Released, this, &UDIVELegacyKbmInputComponent::SelectReleased);
+		bBoundAny = true;
+	}
+
+	if (bBindFocusUnderCursorInput && FocusUnderCursorKey.IsValid())
+	{
+		PawnInputComponent->BindKey(FocusUnderCursorKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::FocusUnderCursorPressed);
+		bBoundAny = true;
+	}
+
+	if (bBindInteractionModeCycleInput && InteractionModeCycleKey.IsValid())
+	{
+		PawnInputComponent->BindKey(InteractionModeCycleKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::CycleInteractionModePressed);
 		bBoundAny = true;
 	}
 

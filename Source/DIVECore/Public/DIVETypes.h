@@ -43,6 +43,14 @@ enum class EDIVEWorldDimPolicy : uint8
 	HideNonDeviceActors UMETA(DisplayName = "Hide Non-Device Actors")
 };
 
+/** Session policy for routing semantic input (Default / Physical). */
+UENUM(BlueprintType)
+enum class EDIVESessionInteractionMode : uint8
+{
+	Default UMETA(DisplayName = "Default"),
+	Physical UMETA(DisplayName = "Physical")
+};
+
 class UPrimitiveComponent;
 class USceneComponent;
 class AActor;

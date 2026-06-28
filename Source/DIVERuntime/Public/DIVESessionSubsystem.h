@@ -45,6 +45,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
 	bool IsProxyDriving() const { return bProxyDriving; }
 
+	UFUNCTION(BlueprintPure, Category = "DIVE|Session")
+	EDIVESessionInteractionMode GetInteractionMode() const { return InteractionMode; }
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Session")
+	void SetInteractionMode(EDIVESessionInteractionMode NewMode);
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool TryBeginSession(AActor* DeviceHost, UDIVEInspectableComponent* Inspectable, const FDIVESessionParams& Params);
 
@@ -72,8 +78,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ApplyCameraInputFromInspectable();
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE")
+	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DeprecatedFunction, DeprecationMessage = "Use FocusAtScreenPosition"))
 	bool SelectAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE")
+	bool FocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack = true);
@@ -125,6 +134,8 @@ private:
 
 	bool bProxyDriving = false;
 	TWeakInterfacePtr<IDIVEProxyDrive> ActiveProxyDrive;
+
+	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Default;
 
 	float SessionDefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
 

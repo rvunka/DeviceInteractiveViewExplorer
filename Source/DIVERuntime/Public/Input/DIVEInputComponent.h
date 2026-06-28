@@ -39,10 +39,21 @@ public:
 	void HandleZoomOut();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
-	void HandleSelectPressed();
+	void HandlePrimaryActionPressed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandlePrimaryActionReleased();
+
+	/** @deprecated Use HandlePrimaryActionPressed — legacy name kept for existing IA_DIVE_Select wiring. */
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input", meta = (DeprecatedFunction, DeprecationMessage = "Use HandlePrimaryActionPressed"))
+	void HandleSelectPressed();
+
+	/** @deprecated Use HandlePrimaryActionReleased — legacy name kept for existing IA_DIVE_Select wiring. */
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input", meta = (DeprecatedFunction, DeprecationMessage = "Use HandlePrimaryActionReleased"))
 	void HandleSelectReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleFocusUnderCursor();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandleOperationExecutePressed();
@@ -58,6 +69,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandleToggleIsolate();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void SetInteractionMode(EDIVESessionInteractionMode NewMode);
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Input")
+	EDIVESessionInteractionMode GetInteractionMode() const;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bShowMouseCursorInSession = true;
@@ -85,12 +102,15 @@ protected:
 	void UnbindSessionDelegates();
 	void BeginSessionPresentation();
 	class UDIVEOperationsUIComponent* GetOperationsUIComponent() const;
-	void ApplyProxyDriveFromMouse();
+	void ApplyPrimaryActionDragFromMouse();
+	bool TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const;
+	void RoutePrimaryActionPressed(const FVector2D& ScreenPosition);
+	void RoutePrimaryActionReleased();
 
 	bool bOrbitKeyHeld = false;
-	bool bSelectKeyHeld = false;
-	bool bSelectDragActive = false;
-	FVector2D SelectDragLastPosition = FVector2D::ZeroVector;
+	bool bPrimaryActionHeld = false;
+	bool bPrimaryActionDragActive = false;
+	FVector2D PrimaryActionLastPosition = FVector2D::ZeroVector;
 	bool bSessionPresentationActive = false;
 	bool bHasLastOrbitMousePosition = false;
 	FVector2D LastOrbitMousePosition = FVector2D::ZeroVector;
