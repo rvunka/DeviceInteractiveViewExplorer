@@ -4,13 +4,20 @@
 
 #include "DIVETypes.h"
 
+class AActor;
 class UDIVESessionSubsystem;
 
 namespace DIVEContextMenu
 {
-DIVERUNTIME_API void BuildBuiltInEntries(
+DIVERUNTIME_API void BuildStandardEntries(
 	const UDIVESessionSubsystem* Subsystem,
 	const FDIVEFocusTarget& PickTarget,
 	bool bHasValidPick,
+	TArray<FDIVEContextMenuEntry>& InOutEntries);
+
+DIVERUNTIME_API void AppendCustomEntries(
+	AActor* DeviceHost,
+	const UDIVESessionSubsystem* Subsystem,
+	const FDIVEFocusTarget& PickTarget,
 	TArray<FDIVEContextMenuEntry>& InOutEntries);
 }

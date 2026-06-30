@@ -6,11 +6,13 @@
 #include "DIVETypes.h"
 #include "Engine/EngineTypes.h"
 #include "Math/Vector2D.h"
+#include "UI/DIVESessionChromeStyle.h"
 
 #include "DIVEInputComponent.generated.h"
 
 class APlayerController;
 class UDIVEContextMenuUIComponent;
+class UDIVESessionChromeWidget;
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Input"))
 class DIVERUNTIME_API UDIVEInputComponent : public UActorComponent
@@ -46,6 +48,12 @@ public:
 	void HandlePrimaryActionReleased();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleManualRotatePressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleManualRotateReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void HandleFocusUnderCursor();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
@@ -63,8 +71,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void SetInteractionMode(EDIVESessionInteractionMode NewMode);
 
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void HandleCycleInteractionMode();
+
 	UFUNCTION(BlueprintPure, Category = "DIVE|Input")
 	EDIVESessionInteractionMode GetInteractionMode() const;
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void ReapplySessionInputMode();
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (
 		DisplayName = "Context Menu UI Component",
@@ -73,6 +86,15 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bShowMouseCursorInSession = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Session Chrome")
+	bool bShowSessionChrome = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Session Chrome", meta = (EditCondition = "bShowSessionChrome"))
+	int32 ChromeViewportZOrder = 10;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Session Chrome", meta = (EditCondition = "bShowSessionChrome"))
+	FDIVESessionChromeStyle ChromeStyle;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bIgnoreMoveInputInSession = true;
@@ -93,11 +115,17 @@ protected:
 	UFUNCTION()
 	void HandleSessionEnded(EDIVESessionEndReason Reason, AActor* DeviceHost);
 
+	UFUNCTION()
+	void HandleInteractionModeChanged(EDIVESessionInteractionMode NewMode);
+
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();
 	void BeginSessionPresentation();
 	void ResolveComponentReferences();
 	void WarnMissingContextMenuUIOnce();
+	void ShowSessionChrome();
+	void HideSessionChrome();
+	void UpdateSessionChromeMode(EDIVESessionInteractionMode NewMode);
 	void ApplyPrimaryActionDragFromMouse();
 	bool TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const;
 	void RoutePrimaryActionPressed(const FVector2D& ScreenPosition);
@@ -107,10 +135,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UDIVEContextMenuUIComponent> ContextMenuUIComponent;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UDIVESessionChromeWidget> SessionChromeWidget;
+
 	bool bLoggedMissingContextMenuUI = false;
 	bool bOrbitKeyHeld = false;
 	bool bPrimaryActionHeld = false;
-	bool bPrimaryActionDragActive = false;
 	FVector2D PrimaryActionLastPosition = FVector2D::ZeroVector;
 	bool bSessionPresentationActive = false;
 	bool bHasLastOrbitMousePosition = false;

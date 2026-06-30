@@ -131,4 +131,29 @@ struct DIVECORE_API FDIVEContextMenuEntry
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
 	bool bEnabled = true;
+
+	/** When true, renders a section divider instead of a clickable row. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE")
+	bool bIsSeparator = false;
+};
+
+/** Authored per-mesh context menu row on the device inspectable (match by component name from the Components tab). */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEPickContextMenuActionBinding
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		DisplayName = "Component Name",
+	ToolTip = "Anchor PartId or pickable mesh component name (Components tab), e.g. DoorMesh or Door."))
+	FName ComponentName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	FName ActionId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	FText DisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	bool bEnabled = true;
 };

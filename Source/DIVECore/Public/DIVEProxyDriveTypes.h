@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "DIVETypes.h"
+#include "Engine/HitResult.h"
 
 #include "DIVEProxyDriveTypes.generated.h"
 
@@ -22,4 +23,7 @@ struct DIVECORE_API FDIVEProxyDriveContext
 
 	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
 	TObjectPtr<UPrimitiveComponent> HitComponent = nullptr;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FHitResult PickHit;
 };

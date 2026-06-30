@@ -4,6 +4,7 @@
 
 #include "Components/ActorComponent.h"
 #include "DIVETypes.h"
+#include "UI/DIVEContextMenuStyle.h"
 
 #include "DIVEContextMenuUIComponent.generated.h"
 
@@ -22,6 +23,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|ContextMenu")
 	int32 ViewportZOrder = 20;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|ContextMenu")
+	FDIVEContextMenuStyle MenuStyle;
 
 protected:
 	UFUNCTION()

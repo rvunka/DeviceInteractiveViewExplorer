@@ -30,6 +30,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker", meta = (ClampMin = "0.01", EditCondition = "bShowSessionMarker"))
 	float MarkerScale = 0.12f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker", meta = (EditCondition = "bShowSessionMarker"))
+	FLinearColor MarkerColor = FLinearColor(1.f, 0.92f, 0.15f, 0.10f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker")
 	bool bShowViewDirection = true;
 

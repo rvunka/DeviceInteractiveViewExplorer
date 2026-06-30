@@ -134,6 +134,7 @@ void UDIVEContextMenuUIComponent::ShowContextMenu()
 		return;
 	}
 
+	ContextMenuWidget->SetStyle(MenuStyle);
 	ContextMenuWidget->SetEntries(Subsystem->GetContextMenuEntries());
 	ContextMenuWidget->SetScreenPosition(Subsystem->GetContextMenuScreenPosition());
 
@@ -141,6 +142,9 @@ void UDIVEContextMenuUIComponent::ShowContextMenu()
 	{
 		ContextMenuWidget->AddToViewport(ViewportZOrder);
 	}
+
+	ContextMenuWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
+	ContextMenuWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
 
 	ContextMenuWidget->SetVisibility(ESlateVisibility::Visible);
 	ContextMenuWidget->SetKeyboardFocus();

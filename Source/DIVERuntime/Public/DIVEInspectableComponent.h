@@ -63,6 +63,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Presentation")
 	EDIVEWorldDimPolicy WorldDimPolicy = EDIVEWorldDimPolicy::None;
 
+	/** Per-mesh menu rows. Match `ComponentName` to the picked StaticMesh / primitive component name. Handle in BP via `ExecuteContextMenuAction`. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|ContextMenu")
+	TArray<FDIVEPickContextMenuActionBinding> PickContextMenuActions;
+
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
 	FOnDIVESessionLifecycle OnSessionLifecycle;
 
@@ -115,6 +119,15 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
 	bool ExecuteContextMenuAction(FName ActionId, const FDIVEFocusTarget& PickTarget);
+
+	/** Override in BP to drive the `*` active suffix on authored pick actions (e.g. door open, lamp on). */
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "DIVE|ContextMenu")
+	bool IsPickContextMenuActionActive(FName ActionId, const FDIVEFocusTarget& PickTarget) const;
+
+	void AppendConfiguredPickContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries) const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
+	bool MatchesPickContextMenuBinding(const FDIVEPickContextMenuActionBinding& Binding, const FDIVEFocusTarget& PickTarget) const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;

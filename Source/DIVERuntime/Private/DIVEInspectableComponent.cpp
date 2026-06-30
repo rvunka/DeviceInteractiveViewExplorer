@@ -4,6 +4,7 @@
 
 #include "DIVEAnchorComponent.h"
 #include "DIVEDeviceDefinitionAsset.h"
+#include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
 #include "DIVESessionSubsystem.h"
 #include "Components/PrimitiveComponent.h"
@@ -338,6 +339,48 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		}
 	}
 
+	for (const FDIVEPickContextMenuActionBinding& Binding : PickContextMenuActions)
+	{
+		if (Binding.ActionId.IsNone())
+		{
+			Context.AddError(FText::FromString(
+				TEXT("PickContextMenuActions entry has an empty ActionId.")));
+			Result = EDataValidationResult::Invalid;
+		}
+		else if (Binding.ActionId == DIVE::kContextFocus
+			|| Binding.ActionId == DIVE::kContextIsolate
+			|| Binding.ActionId == DIVE::kContextToggleMeshPhysics
+			|| Binding.ActionId == DIVE::kContextDeleteMesh)
+		{
+			Context.AddError(FText::FromString(FString::Printf(
+				TEXT("PickContextMenuActions ActionId '%s' is reserved by DIVE built-in menu rows."),
+				*Binding.ActionId.ToString())));
+			Result = EDataValidationResult::Invalid;
+		}
+
+		if (Binding.DisplayName.IsEmpty())
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickContextMenuActions entry for '%s' has an empty DisplayName."),
+				*Binding.ComponentName.ToString())));
+		}
+
+		if (Binding.ComponentName.IsNone())
+		{
+			Context.AddWarning(FText::FromString(
+				TEXT("PickContextMenuActions entry has an empty ComponentName and will never match a pick.")));
+			continue;
+		}
+
+		FDIVEFocusTarget ResolvedTarget;
+		if (!TryResolveStartFocusTarget(Binding.ComponentName, ResolvedTarget))
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickContextMenuActions ComponentName '%s' does not match any anchor PartId or pickable mesh component on this actor."),
+				*Binding.ComponentName.ToString())));
+		}
+	}
+
 	return Result;
 }
 
@@ -354,4 +397,56 @@ bool UDIVEInspectableComponent::ExecuteContextMenuAction_Implementation(
 	const FDIVEFocusTarget& /*PickTarget*/)
 {
 	return false;
+}
+
+bool UDIVEInspectableComponent::IsPickContextMenuActionActive_Implementation(
+	FName /*ActionId*/,
+	const FDIVEFocusTarget& /*PickTarget*/) const
+{
+	return false;
+}
+
+bool UDIVEInspectableComponent::MatchesPickContextMenuBinding(
+	const FDIVEPickContextMenuActionBinding& Binding,
+	const FDIVEFocusTarget& PickTarget) const
+{
+	if (Binding.ComponentName.IsNone() || Binding.ActionId.IsNone() || PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return false;
+	}
+
+	const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
+	if (!Primitive)
+	{
+		return false;
+	}
+
+	return Primitive->GetFName() == Binding.ComponentName || PickTarget.SemanticPartId == Binding.ComponentName;
+}
+
+void UDIVEInspectableComponent::AppendConfiguredPickContextMenuEntries(
+	const FDIVEFocusTarget& PickTarget,
+	TArray<FDIVEContextMenuEntry>& InOutEntries) const
+{
+	for (const FDIVEPickContextMenuActionBinding& Binding : PickContextMenuActions)
+	{
+		if (!MatchesPickContextMenuBinding(Binding, PickTarget))
+		{
+			continue;
+		}
+
+		FDIVEContextMenuEntry Entry;
+		Entry.ActionId = Binding.ActionId;
+		Entry.DisplayName = Binding.DisplayName;
+		Entry.bEnabled = Binding.bEnabled;
+
+		if (IsPickContextMenuActionActive(Binding.ActionId, PickTarget))
+		{
+			Entry.DisplayName = FText::Format(
+				NSLOCTEXT("DIVE", "ContextMenuActiveSuffix", "{0}*"),
+				Binding.DisplayName);
+		}
+
+		InOutEntries.Add(Entry);
+	}
 }

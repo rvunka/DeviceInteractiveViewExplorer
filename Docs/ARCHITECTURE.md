@@ -66,18 +66,18 @@ Orbit, zoom, focus undo, exit, and context menu work in **every** interaction mo
 | `IA_DIVE_SetMode_*` | Started | `SetInteractionMode` |
 | `IA_DIVE_ContextMenu` | Started | `HandleContextMenuRequested` |
 
-Legacy PIE: **RMB** = context menu, **G** = focus shortcut, **P** = cycle mode, **LMB** = primary action.
+Legacy PIE: **RMB** = context menu, **G** = focus shortcut, **Left Alt** = cycle mode, **LMB** = primary action (Physical).
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Built-in: Focus, Isolate, Back (when stack > 1); device rows via `AppendContextMenuEntries`. Opened via `HandleContextMenuRequested`.
+In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**, dev **Physics/Delete** on primitive pick; device rows via **`PickContextMenuActions`** on inspectable + optional **`AppendContextMenuEntries`**. Styling on `UDIVEContextMenuUIComponent::MenuStyle`. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — LMB focuses anchor in Default mode.
 
 ## Device interaction (direct manipulation)
 
 | Intent | Mechanism |
 |--------|-----------|
 | Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
-| Read label, use control | Context menu row on pick (`AppendContextMenuEntries`) |
+| Read label, use control | Context menu row on pick (`PickContextMenuActions` + `ExecuteContextMenuAction`) |
 | Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
 | Cable, grab | GRIP + MESS in host project |
 
@@ -99,8 +99,8 @@ Device mesh isolate: **`ToggleIsolateFocused()`** via context menu.
 
 1. `RequestSession()` → mode **Default**; camera blends to start focus.
 2. Orbit (MMB), zoom, Ctrl+Z, Backspace exit — always.
-3. **RMB** / `HandleContextMenuRequested` → Focus, Isolate, Back at cursor.
-4. **P** / `SetInteractionMode(Physical)` → LMB drives device controls.
+3. **RMB** / `HandleContextMenuRequested` → Focus, Isolate at cursor pick.
+4. **Left Alt** / `SetInteractionMode(Physical)` → LMB drives device controls.
 
 ## Editor
 

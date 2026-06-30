@@ -1,6 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "DIVEConvention.h"
+#include "DIVETypes.h"
 #include "Utils/DIVEContextMenu.h"
 
 #include "Misc/AutomationTest.h"
@@ -17,17 +18,18 @@ bool FDIVEContextMenuBuiltInEntriesSmokeTest::RunTest(const FString& Parameters)
 	TArray<FDIVEContextMenuEntry> Entries;
 	FDIVEFocusTarget PickTarget = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
 
-	DIVEContextMenu::BuildBuiltInEntries(nullptr, PickTarget, false, Entries);
-	TestEqual(TEXT("Built-in entries without pick"), Entries.Num(), 2);
+	DIVEContextMenu::BuildStandardEntries(nullptr, PickTarget, false, Entries);
+	TestEqual(TEXT("Standard entries without pick"), Entries.Num(), 2);
 	TestEqual(TEXT("Focus entry id"), Entries[0].ActionId, DIVE::kContextFocus);
 	TestFalse(TEXT("Focus disabled without pick"), Entries[0].bEnabled);
+	TestFalse(TEXT("Isolate disabled without pick"), Entries[1].bEnabled);
 
 	Entries.Reset();
-	const FDIVEFocusTarget ValidPickTarget = FDIVEFocusTarget::MakeDeviceRoot();
-	DIVEContextMenu::BuildBuiltInEntries(nullptr, ValidPickTarget, true, Entries);
-	TestTrue(TEXT("Focus enabled with valid pick target"), Entries[0].bEnabled);
-
-	TestEqual(TEXT("Back action id constant"), DIVE::kContextBack, FName(TEXT("DIVE.Context.Back")));
+	const FDIVEFocusTarget DeviceRootPick = FDIVEFocusTarget::MakeDeviceRoot();
+	DIVEContextMenu::BuildStandardEntries(nullptr, DeviceRootPick, true, Entries);
+	TestEqual(TEXT("Device root has navigation only"), Entries.Num(), 2);
+	TestFalse(TEXT("Focus disabled for device root pick"), Entries[0].bEnabled);
+	TestFalse(TEXT("Isolate disabled for device root pick"), Entries[1].bEnabled);
 
 	return true;
 }

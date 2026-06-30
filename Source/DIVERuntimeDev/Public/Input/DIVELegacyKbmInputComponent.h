@@ -40,6 +40,12 @@ public:
 	void SelectReleased();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void ManualRotatePressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
+	void ManualRotateReleased();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
 	void FocusUnderCursorPressed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Input")
@@ -82,6 +88,12 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindSelectInput"))
 	FKey SelectKey;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
+	bool bBindManualRotateInput = true;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindManualRotateInput"))
+	FKey ManualRotateKey;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindFocusUnderCursorInput = true;

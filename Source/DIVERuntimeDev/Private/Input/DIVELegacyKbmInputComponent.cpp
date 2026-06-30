@@ -19,8 +19,9 @@ UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 	ZoomInKey = EKeys::MouseScrollUp;
 	ZoomOutKey = EKeys::MouseScrollDown;
 	SelectKey = EKeys::LeftMouseButton;
+	ManualRotateKey = EKeys::R;
 	FocusUnderCursorKey = EKeys::G;
-	InteractionModeCycleKey = EKeys::P;
+	InteractionModeCycleKey = EKeys::LeftAlt;
 	CameraUndoKey = EKeys::Z;
 	ExitKey = EKeys::BackSpace;
 	IsolateKey = EKeys::I;
@@ -145,6 +146,26 @@ void UDIVELegacyKbmInputComponent::SelectReleased()
 	}
 }
 
+void UDIVELegacyKbmInputComponent::ManualRotatePressed()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleManualRotatePressed();
+	}
+}
+
+void UDIVELegacyKbmInputComponent::ManualRotateReleased()
+{
+	EnsureInputReady();
+
+	if (InputComponent)
+	{
+		InputComponent->HandleManualRotateReleased();
+	}
+}
+
 void UDIVELegacyKbmInputComponent::FocusUnderCursorPressed()
 {
 	EnsureInputReady();
@@ -164,11 +185,7 @@ void UDIVELegacyKbmInputComponent::CycleInteractionModePressed()
 		return;
 	}
 
-	const EDIVESessionInteractionMode CurrentMode = InputComponent->GetInteractionMode();
-	InputComponent->SetInteractionMode(
-		CurrentMode == EDIVESessionInteractionMode::Default
-			? EDIVESessionInteractionMode::Physical
-			: EDIVESessionInteractionMode::Default);
+	InputComponent->HandleCycleInteractionMode();
 }
 
 void UDIVELegacyKbmInputComponent::NavigateBackPressed()
@@ -280,6 +297,13 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	{
 		PawnInputComponent->BindKey(SelectKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::SelectPressed);
 		PawnInputComponent->BindKey(SelectKey, IE_Released, this, &UDIVELegacyKbmInputComponent::SelectReleased);
+		bBoundAny = true;
+	}
+
+	if (bBindManualRotateInput && ManualRotateKey.IsValid())
+	{
+		PawnInputComponent->BindKey(ManualRotateKey, IE_Pressed, this, &UDIVELegacyKbmInputComponent::ManualRotatePressed);
+		PawnInputComponent->BindKey(ManualRotateKey, IE_Released, this, &UDIVELegacyKbmInputComponent::ManualRotateReleased);
 		bBoundAny = true;
 	}
 

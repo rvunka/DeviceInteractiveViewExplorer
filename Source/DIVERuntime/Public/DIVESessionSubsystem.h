@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "DIVEConvention.h"
+#include "DIVEPawnPhysicalDrive.h"
 #include "DIVEProxyDrive.h"
 #include "DIVETypes.h"
 #include "DIVESessionSubsystem.generated.h"
@@ -19,6 +20,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionStarted, AActor*, Dev
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionEnded, EDIVESessionEndReason, Reason, AActor*, DeviceHost);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEFocusChanged, const FDIVEFocusTarget&, FocusTarget);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEContextMenuVisibilityChanged, bool, bIsOpen);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEInteractionModeChanged, EDIVESessionInteractionMode, NewMode);
 
 UCLASS()
 class DIVERUNTIME_API UDIVESessionSubsystem : public UGameInstanceSubsystem
@@ -43,8 +45,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsIsolationActive() const { return bIsolationActive; }
 
+	UFUNCTION(BlueprintPure, Category = "DIVE")
+	FDIVEFocusTarget GetIsolationTarget() const { return IsolationTarget; }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE")
+	bool IsIsolationActiveForTarget(const FDIVEFocusTarget& Target) const;
+
 	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
 	bool IsProxyDriving() const { return bProxyDriving; }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
+	bool IsPawnPhysicalDriveActive() const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|Session")
 	EDIVESessionInteractionMode GetInteractionMode() const { return InteractionMode; }
@@ -70,6 +81,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|ContextMenu")
 	FOnDIVEContextMenuVisibilityChanged OnContextMenuVisibilityChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
+	FOnDIVEInteractionModeChanged OnInteractionModeChanged;
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
 	bool BuildContextMenuEntries(
 		const FVector2D& ScreenPosition,
@@ -91,6 +105,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Pick")
+	bool ResolvePickAtScreenPosition(
+		const FVector2D& ScreenPosition,
+		APlayerController* PlayerController,
+		FDIVEFocusTarget& OutPickTarget) const;
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack = true);
@@ -125,6 +145,15 @@ public:
 	bool ToggleIsolateFocused();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
+	bool ToggleIsolationForTarget(const FDIVEFocusTarget& Target);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu|Admin")
+	bool ToggleMeshPhysicsForTarget(const FDIVEFocusTarget& Target);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu|Admin")
+	bool DeleteMeshForTarget(const FDIVEFocusTarget& Target);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ClearIsolation();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
@@ -136,7 +165,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void EndProxyDrive(bool bCommit);
 
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	void HandleActivePawnPhysicalManualRotatePressed();
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	void HandleActivePawnPhysicalManualRotateReleased();
+
 private:
+	enum class EDIVEActivePhysicalDriveKind : uint8
+	{
+		None,
+		DeviceProxy,
+		PawnBridge
+	};
+
 	EDIVESessionState SessionState = EDIVESessionState::Inactive;
 
 	TWeakObjectPtr<AActor> ActiveDeviceHost;
@@ -148,11 +190,14 @@ private:
 	TArray<FDIVEFocusTarget> FocusStack;
 
 	bool bIsolationActive = false;
+	FDIVEFocusTarget IsolationTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> IsolatedHiddenPrimitives;
 	TArray<TWeakObjectPtr<AActor>> WorldDimHiddenActors;
 
 	bool bProxyDriving = false;
+	EDIVEActivePhysicalDriveKind ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::None;
 	TWeakInterfacePtr<IDIVEProxyDrive> ActiveProxyDrive;
+	TWeakInterfacePtr<IDIVEPawnPhysicalDrive> ActivePawnPhysicalDrive;
 
 	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Default;
 
@@ -163,12 +208,13 @@ private:
 	TArray<FDIVEContextMenuEntry> ContextMenuEntries;
 	FVector2D ContextMenuScreenPosition = FVector2D::ZeroVector;
 
-	bool ResolveFocusAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController, FDIVEFocusTarget& OutTarget) const;
 	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bUseDefaultOrbitDistance = false);
 	bool ApplyInitialSessionFocus(FName InitialFocusId);
-	bool ApplyIsolation();
+	bool ApplyIsolationForTarget(const FDIVEFocusTarget& Target);
 	void CollectIsolationVisiblePrimitives(const FDIVEFocusTarget& Target, TArray<UPrimitiveComponent*>& OutVisible) const;
 	void ApplyWorldDim();
 	void ClearWorldDim();
 	void ClearProxyDrive();
+	void EndActivePhysicalDrive(bool bCommit);
+	void ResetPhysicalDriveState();
 };

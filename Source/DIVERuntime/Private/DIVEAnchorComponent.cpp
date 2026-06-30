@@ -7,6 +7,24 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInstanceDynamic.h"
+
+namespace
+{
+bool CanRegisterEditorSubcomponent()
+{
+#if WITH_EDITOR
+	if (IsRunningCommandlet() || GIsAutomationTesting)
+	{
+		return false;
+	}
+
+	return true;
+#else
+	return false;
+#endif
+}
+}
 
 UDIVEAnchorComponent::UDIVEAnchorComponent()
 {
@@ -18,11 +36,29 @@ void UDIVEAnchorComponent::OnRegister()
 	Super::OnRegister();
 
 #if WITH_EDITOR
-	if (bShowViewDirection && GetWorld() && !GetWorld()->IsGameWorld())
+	if (!bShowViewDirection || !CanOwnRuntimeVisuals())
 	{
-		EnsureEditorViewDirectionArrow();
-		RefreshViewDirectionArrow();
+		return;
 	}
+
+	UWorld* World = GetWorld();
+	if (!World || World->IsGameWorld() || !CanRegisterEditorSubcomponent())
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+		this,
+		[this]()
+		{
+			if (!IsValid(this) || !bShowViewDirection)
+			{
+				return;
+			}
+
+			EnsureEditorViewDirectionArrow();
+			RefreshViewDirectionArrow();
+		}));
 #endif
 }
 
@@ -35,6 +71,11 @@ bool UDIVEAnchorComponent::CanOwnRuntimeVisuals() const
 void UDIVEAnchorComponent::EnsureEditorViewDirectionArrow()
 {
 #if WITH_EDITOR
+	if (!CanRegisterEditorSubcomponent())
+	{
+		return;
+	}
+
 	if (ViewDirectionArrow && ViewDirectionArrow->IsRegistered())
 	{
 		return;
@@ -59,9 +100,7 @@ void UDIVEAnchorComponent::EnsureEditorViewDirectionArrow()
 	ViewDirectionArrow->SetupAttachment(this);
 	ViewDirectionArrow->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ViewDirectionArrow->SetHiddenInGame(true);
-	ViewDirectionArrow->SetArrowColor(FLinearColor(0.1f, 0.85f, 1.f));
 	ViewDirectionArrow->RegisterComponent();
-	RefreshViewDirectionArrow();
 #endif
 }
 
@@ -84,6 +123,17 @@ void UDIVEAnchorComponent::EnsureSessionMarkerMesh()
 	}
 
 	if (!CanOwnRuntimeVisuals())
+	{
+		return;
+	}
+
+	if (GIsAutomationTesting || IsRunningCommandlet())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World || !World->IsGameWorld())
 	{
 		return;
 	}
@@ -111,16 +161,16 @@ void UDIVEAnchorComponent::EnsureSessionMarkerMesh()
 
 void UDIVEAnchorComponent::DestroyTransientVisuals()
 {
-	if (SessionMarkerMesh)
-	{
-		SessionMarkerMesh->DestroyComponent();
-		SessionMarkerMesh = nullptr;
-	}
-
 	if (ViewDirectionArrow)
 	{
 		ViewDirectionArrow->DestroyComponent();
 		ViewDirectionArrow = nullptr;
+	}
+
+	if (SessionMarkerMesh)
+	{
+		SessionMarkerMesh->DestroyComponent();
+		SessionMarkerMesh = nullptr;
 	}
 }
 
@@ -144,6 +194,19 @@ void UDIVEAnchorComponent::ConfigureSessionMarker()
 
 	const float ClampedScale = FMath::Max(MarkerScale, 0.01f);
 	SessionMarkerMesh->SetRelativeScale3D(FVector(ClampedScale));
+
+	if (UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(
+			nullptr,
+			TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial")))
+	{
+		UMaterialInstanceDynamic* MarkerMaterial = UMaterialInstanceDynamic::Create(BaseMaterial, SessionMarkerMesh);
+		if (MarkerMaterial)
+		{
+			MarkerMaterial->SetVectorParameterValue(TEXT("Color"), MarkerColor);
+			MarkerMaterial->SetScalarParameterValue(TEXT("Opacity"), MarkerColor.A);
+			SessionMarkerMesh->SetMaterial(0, MarkerMaterial);
+		}
+	}
 }
 
 FRotator UDIVEAnchorComponent::GetViewRotation() const

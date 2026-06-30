@@ -8,6 +8,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/DIVEContextMenuUIComponent.h"
+#include "UI/DIVESessionChromeWidget.h"
 #include "Utils/DIVEComponentResolve.h"
 
 UDIVEInputComponent::UDIVEInputComponent()
@@ -55,7 +56,6 @@ void UDIVEInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	SetComponentTickEnabled(false);
 	bOrbitKeyHeld = false;
 	bPrimaryActionHeld = false;
-	bPrimaryActionDragActive = false;
 	bHasLastOrbitMousePosition = false;
 	Super::EndPlay(EndPlayReason);
 }
@@ -69,12 +69,14 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		return;
 	}
 
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+
 	if (bOrbitKeyHeld)
 	{
 		ApplyOrbitFromMouseDelta();
 	}
 
-	if (bPrimaryActionHeld && !ShouldSuppressSessionInput())
+	if (Subsystem && Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive() && !ShouldSuppressSessionInput())
 	{
 		ApplyPrimaryActionDragFromMouse();
 	}
@@ -86,6 +88,7 @@ void UDIVEInputComponent::BindSessionDelegates()
 	{
 		Subsystem->OnSessionStarted.AddDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
 		Subsystem->OnSessionEnded.AddDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
+		Subsystem->OnInteractionModeChanged.AddDynamic(this, &UDIVEInputComponent::HandleInteractionModeChanged);
 	}
 }
 
@@ -95,6 +98,7 @@ void UDIVEInputComponent::UnbindSessionDelegates()
 	{
 		Subsystem->OnSessionStarted.RemoveDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
 		Subsystem->OnSessionEnded.RemoveDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
+		Subsystem->OnInteractionModeChanged.RemoveDynamic(this, &UDIVEInputComponent::HandleInteractionModeChanged);
 	}
 }
 
@@ -123,7 +127,6 @@ void UDIVEInputComponent::HandleSessionEnded(EDIVESessionEndReason /*Reason*/, A
 
 	bOrbitKeyHeld = false;
 	bPrimaryActionHeld = false;
-	bPrimaryActionDragActive = false;
 	bHasLastOrbitMousePosition = false;
 	SetComponentTickEnabled(false);
 }
@@ -155,6 +158,7 @@ void UDIVEInputComponent::BeginSessionPresentation()
 	}
 
 	bSessionPresentationActive = true;
+	ShowSessionChrome();
 }
 
 UDIVESessionSubsystem* UDIVEInputComponent::GetSessionSubsystem() const
@@ -212,26 +216,30 @@ void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
 		return;
 	}
 
+	APlayerController* PlayerController = GetLocalPlayerController();
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	float MouseDeltaX = 0.f;
+	float MouseDeltaY = 0.f;
+	PlayerController->GetInputMouseDelta(MouseDeltaX, MouseDeltaY);
+	if (!FMath::IsNearlyZero(MouseDeltaX) || !FMath::IsNearlyZero(MouseDeltaY))
+	{
+		Subsystem->UpdateProxyDrive(FVector2D(MouseDeltaX, MouseDeltaY));
+		return;
+	}
+
 	FVector2D CurrentPosition;
 	if (!TryGetCursorScreenPosition(CurrentPosition))
 	{
 		return;
 	}
 
-	if (!bPrimaryActionDragActive)
-	{
-		if (FVector2D::DistSquared(CurrentPosition, PrimaryActionLastPosition) >= 4.f)
-		{
-			bPrimaryActionDragActive = true;
-		}
-		else
-		{
-			return;
-		}
-	}
-
 	const FVector2D Delta = CurrentPosition - PrimaryActionLastPosition;
 	PrimaryActionLastPosition = CurrentPosition;
+
 	if (!Delta.IsNearlyZero())
 	{
 		Subsystem->UpdateProxyDrive(Delta);
@@ -240,21 +248,31 @@ void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
 
 bool UDIVEInputComponent::TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const
 {
-	APlayerController* PlayerController = GetLocalPlayerController();
-	if (!PlayerController)
+	if (const APlayerController* PlayerController = GetLocalPlayerController())
 	{
-		return false;
+		float MouseX = 0.f;
+		float MouseY = 0.f;
+		if (PlayerController->GetMousePosition(MouseX, MouseY))
+		{
+			OutScreenPosition = FVector2D(MouseX, MouseY);
+			return true;
+		}
 	}
 
-	float MouseX = 0.f;
-	float MouseY = 0.f;
-	if (!PlayerController->GetMousePosition(MouseX, MouseY))
+	if (const UWorld* World = GetWorld())
 	{
-		return false;
+		if (const UGameViewportClient* ViewportClient = World->GetGameViewport())
+		{
+			FVector2D ViewportPosition;
+			if (ViewportClient->GetMousePosition(ViewportPosition))
+			{
+				OutScreenPosition = ViewportPosition;
+				return true;
+			}
+		}
 	}
 
-	OutScreenPosition = FVector2D(MouseX, MouseY);
-	return true;
+	return false;
 }
 
 void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosition)
@@ -273,17 +291,29 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 
 	PrimaryActionLastPosition = ScreenPosition;
 	bPrimaryActionHeld = true;
-	bPrimaryActionDragActive = false;
 
-	if (Subsystem->GetInteractionMode() != EDIVESessionInteractionMode::Physical)
+	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Physical)
 	{
+		if (Subsystem->TryBeginProxyDriveAtScreenPosition(ScreenPosition, PlayerController))
+		{
+			if (UGameViewportClient* ViewportClient = GetWorld() ? GetWorld()->GetGameViewport() : nullptr)
+			{
+				ViewportClient->SetMouseCaptureMode(EMouseCaptureMode::CaptureDuringMouseDown);
+			}
+			TryGetCursorScreenPosition(PrimaryActionLastPosition);
+			return;
+		}
+
 		bPrimaryActionHeld = false;
 		return;
 	}
 
-	if (Subsystem->TryBeginProxyDriveAtScreenPosition(ScreenPosition, PlayerController))
+	FDIVEFocusTarget PickTarget;
+	if (Subsystem->ResolvePickAtScreenPosition(ScreenPosition, PlayerController, PickTarget)
+		&& PickTarget.Kind == EDIVEFocusKind::Anchor
+		&& PickTarget.IsValidFocus())
 	{
-		return;
+		Subsystem->FocusTarget(PickTarget, true);
 	}
 
 	bPrimaryActionHeld = false;
@@ -293,14 +323,23 @@ void UDIVEInputComponent::RoutePrimaryActionReleased()
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		if (Subsystem->IsProxyDriving())
+		const bool bWasProxyDriving = Subsystem->IsProxyDriving();
+		if (bWasProxyDriving)
 		{
+			Subsystem->HandleActivePawnPhysicalManualRotateReleased();
 			Subsystem->EndProxyDrive(true);
+		}
+
+		if (bWasProxyDriving && bSessionPresentationActive)
+		{
+			if (APlayerController* PlayerController = GetLocalPlayerController())
+			{
+				ApplySessionInputMode(PlayerController);
+			}
 		}
 	}
 
 	bPrimaryActionHeld = false;
-	bPrimaryActionDragActive = false;
 }
 
 void UDIVEInputComponent::CapturePreSessionInputState(APlayerController* PlayerController)
@@ -438,8 +477,8 @@ void UDIVEInputComponent::ClearSessionPresentation(APlayerController* PlayerCont
 
 	bOrbitKeyHeld = false;
 	bPrimaryActionHeld = false;
-	bPrimaryActionDragActive = false;
 	bHasLastOrbitMousePosition = false;
+	HideSessionChrome();
 	bSessionPresentationActive = false;
 	bSessionAppliedInputFlags = false;
 }
@@ -581,7 +620,12 @@ void UDIVEInputComponent::HandleZoomOut()
 
 void UDIVEInputComponent::HandlePrimaryActionPressed()
 {
-	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -603,12 +647,60 @@ void UDIVEInputComponent::HandlePrimaryActionPressed()
 
 void UDIVEInputComponent::HandlePrimaryActionReleased()
 {
-	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		if (Subsystem->IsContextMenuOpen())
+		{
+			return;
+		}
+	}
+
+	if (ShouldSuppressSessionInput())
 	{
 		return;
 	}
 
 	RoutePrimaryActionReleased();
+}
+
+void UDIVEInputComponent::HandleManualRotatePressed()
+{
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
+	{
+		return;
+	}
+
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	if (!Subsystem || !Subsystem->IsPawnPhysicalDriveActive())
+	{
+		return;
+	}
+
+	Subsystem->HandleActivePawnPhysicalManualRotatePressed();
+}
+
+void UDIVEInputComponent::HandleManualRotateReleased()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	if (!Subsystem)
+	{
+		return;
+	}
+
+	if (Subsystem->IsPawnPhysicalDriveActive())
+	{
+		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
+	}
 }
 
 void UDIVEInputComponent::HandleFocusUnderCursor()
@@ -647,12 +739,103 @@ EDIVESessionInteractionMode UDIVEInputComponent::GetInteractionMode() const
 	return EDIVESessionInteractionMode::Default;
 }
 
+void UDIVEInputComponent::ReapplySessionInputMode()
+{
+	if (!IsLocallyControlledOwner() || !bSessionPresentationActive)
+	{
+		return;
+	}
+
+	if (APlayerController* PlayerController = GetLocalPlayerController())
+	{
+		ApplySessionInputMode(PlayerController);
+	}
+}
+
+void UDIVEInputComponent::HandleInteractionModeChanged(EDIVESessionInteractionMode NewMode)
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	UpdateSessionChromeMode(NewMode);
+}
+
+void UDIVEInputComponent::ShowSessionChrome()
+{
+	if (!bShowSessionChrome || !bSessionPresentationActive)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = GetLocalPlayerController();
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	if (!PlayerController || !Subsystem || !Subsystem->IsSessionActive())
+	{
+		return;
+	}
+
+	if (!SessionChromeWidget)
+	{
+		SessionChromeWidget = CreateWidget<UDIVESessionChromeWidget>(PlayerController, UDIVESessionChromeWidget::StaticClass());
+	}
+
+	if (!SessionChromeWidget)
+	{
+		return;
+	}
+
+	SessionChromeWidget->SetStyle(ChromeStyle);
+	SessionChromeWidget->SetInteractionMode(Subsystem->GetInteractionMode());
+
+	if (!SessionChromeWidget->IsInViewport())
+	{
+		SessionChromeWidget->AddToViewport(ChromeViewportZOrder);
+	}
+
+	SessionChromeWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
+	SessionChromeWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+	SessionChromeWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UDIVEInputComponent::HideSessionChrome()
+{
+	if (SessionChromeWidget)
+	{
+		SessionChromeWidget->RemoveFromParent();
+		SessionChromeWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UDIVEInputComponent::UpdateSessionChromeMode(EDIVESessionInteractionMode NewMode)
+{
+	if (SessionChromeWidget && SessionChromeWidget->IsInViewport())
+	{
+		SessionChromeWidget->SetInteractionMode(NewMode);
+	}
+}
+
 void UDIVEInputComponent::SetInteractionMode(EDIVESessionInteractionMode NewMode)
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
 		Subsystem->SetInteractionMode(NewMode);
 	}
+}
+
+void UDIVEInputComponent::HandleCycleInteractionMode()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	const EDIVESessionInteractionMode CurrentMode = GetInteractionMode();
+	SetInteractionMode(
+		CurrentMode == EDIVESessionInteractionMode::Default
+			? EDIVESessionInteractionMode::Physical
+			: EDIVESessionInteractionMode::Default);
 }
 
 void UDIVEInputComponent::HandleNavigateBack()
@@ -740,11 +923,11 @@ void UDIVEInputComponent::HandleContextMenuRequested()
 
 	bOrbitKeyHeld = false;
 	bPrimaryActionHeld = false;
-	bPrimaryActionDragActive = false;
 	bHasLastOrbitMousePosition = false;
 
 	if (Subsystem->IsProxyDriving())
 	{
+		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
 		Subsystem->EndProxyDrive(false);
 	}
 }

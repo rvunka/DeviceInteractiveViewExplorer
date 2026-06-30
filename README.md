@@ -9,7 +9,7 @@ DIVE provides:
 - Orbit camera rig for device-focused sessions
 - **Explicit focus** — context menu or `HandleFocusUnderCursor` (not default LMB)
 - **Interaction modes** — Default (inspect) / Physical (proxy drive on device controls)
-- **In-session context menu** — Focus, Isolate, Back at cursor; device rows via `AppendContextMenuEntries`
+- **In-session context menu** — Focus, Isolate on pick; device rows via **`PickContextMenuActions`** catalog + optional `AppendContextMenuEntries`; style via `MenuStyle` on `UDIVEContextMenuUIComponent`
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
 - **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (host implements)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (DIVE | Camera)
@@ -33,7 +33,7 @@ DIVE provides:
 4. On pawn: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (Input auto-finds UI by class).
 5. Optional PIE: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — RMB context menu, MMB orbit, etc.
 6. Open session via ACTS `OpenDIVE` or `RequestSession()` in game code.
-7. Device-specific actions: override `AppendContextMenuEntries` / `ExecuteContextMenuAction` on inspectable.
+7. Device-specific actions: fill **`PickContextMenuActions`** on inspectable; override **`ExecuteContextMenuAction`** / optional **`AppendContextMenuEntries`** in Blueprint.
 8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `DeviceInteractionModel.md` §6).
 
 See `Docs/QUICKSTART.md`, `Docs/DeviceInteractionModel.md`, and `Project_docs/DIVE_Plugin_Design.md`.

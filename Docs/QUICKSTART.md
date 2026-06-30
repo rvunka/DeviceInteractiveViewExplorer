@@ -14,7 +14,7 @@ Add to your device Blueprint or C++ actor:
 
 **Default mode:** primary action does **not** move the camera.
 
-Focus via context menu (**Focus here**) or **`HandleFocusUnderCursor()`** (`IA_DIVE_FocusTarget`).
+Focus via context menu (**Focus**) or **`HandleFocusUnderCursor()`** (`IA_DIVE_FocusTarget`).
 
 Pick filters on `UDIVEInspectableComponent`:
 
@@ -38,14 +38,40 @@ Override on `UDIVEInspectableComponent`:
 - `AppendContextMenuEntries(PickTarget, …)` — add rows for picked mesh/part
 - `ExecuteContextMenuAction(ActionId, PickTarget)` — handle custom ActionId
 
+### Per-mesh context menu (extension)
+
+On **`UDIVEInspectableComponent`**, fill **`PickContextMenuActions`** — one row per mesh component name (Components tab):
+
+| Field | Example |
+|-------|---------|
+| `ComponentName` | `DoorMesh` |
+| `ActionId` | `Door.Open` |
+| `DisplayName` | `Open` |
+
+Override in the device Blueprint:
+
+- **`ExecuteContextMenuAction(ActionId, PickTarget)`** — door open, lamp toggle, etc.
+- **`IsPickContextMenuActionActive`** — drives the `*` suffix when the action is already on (optional)
+- **`AppendContextMenuEntries`** — extra dynamic rows beyond the catalog (optional)
+
+Built-in rows (Focus, Isolate, Simulate Physics, Delete Mesh) stay in the plugin; custom rows appear below a separator when the picked component name matches.
+
+**Dismiss:** Escape, **LMB outside the panel**, or RMB again (toggle). LMB on a menu row runs that action; the same click does not pass through to the world.
+
 ### Physical controls
 
-Sliders, doors, knobs — on device prefabs (constraints + game state).
+**Device DOF** (sliders, doors, knobs) — constraints + game state on device prefabs:
 
-1. `SetInteractionMode(Physical)` (PIE: **P** cycles Default ↔ Physical).
-2. Primary action on `IDIVEProxyDrive` / registry hit → drag DOF.
+1. `SetInteractionMode(Physical)` (PIE: **Left Alt** cycles Default ↔ Physical).
+2. Register via `IDIVEDeviceControlRegistry` or implement `IDIVEProxyDrive` on a **control component** (not raw mesh).
 
-See `DeviceInteractionModel.md` §6.
+**Generic simulating-mesh drag** — pawn bridge (no device component):
+
+1. Pawn: `UGRIPHandComponent` (`GrabPolicy = AllowSimulatingPhysics`) + `UDIVEGRIPBridgeComponent`.
+2. Admin context menu → **Simulate Physics** on a mesh.
+3. Physical mode → LMB drag moves the body via GRIP PD. While dragging, **hold R** + mouse move rotates the grabbed body.
+
+See `DeviceInteractionModel.md` §6–§7 and `Source/DIVEGRIPBridge/README.md`.
 
 ### Camera sensitivity
 
@@ -56,6 +82,16 @@ On `UDIVEInspectableComponent` → **DIVE | Camera**, or shared `UDIVEDeviceDefi
 On `UACTSInteractableComponent`: **ActionId** `OpenDIVE` → `RequestSession()` in game code.
 
 ## 3. Pawn input
+
+**Monitor DIVE session pawn stack:**
+
+```text
+UDIVEInputComponent
+UDIVEContextMenuUIComponent   (optional UI host)
+UGRIPHandComponent            (GrabPolicy = AllowSimulatingPhysics)
+UGRIPHandAimComponent         (optional)
+UDIVEGRIPBridgeComponent      (generic Physical drag — not on device actors)
+```
 
 **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** on pawn.
 
@@ -82,8 +118,9 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 | MMB + drag | Orbit |
 | Wheel | Zoom |
 | **RMB** | Context menu |
+| **LMB** (menu open, outside panel) | Dismiss context menu |
 | **G** | Focus under cursor |
-| **P** | Cycle Default ↔ Physical |
+| **Left Alt** | Cycle Default ↔ Physical |
 | LMB | Primary action |
 | Ctrl+Z | Focus stack back |
 | Backspace | Exit session |
@@ -93,5 +130,12 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 
 1. `RequestSession()` → camera blends to start focus.
 2. **RMB** → context menu → Focus on mesh under cursor.
-3. **P** → Physical → LMB on proxy-drive control (when registered).
+3. **Left Alt** → Physical → LMB on registered proxy-drive control **or** simulating mesh (with pawn GRIP bridge).
 4. MMB orbit anytime; Ctrl+Z focus stack; Backspace exit.
+
+### GRIP drag smoke (4 cubes)
+
+1. Device: `UDIVEInspectableComponent` only (no GRIP bridge on device).
+2. Pawn: `UGRIPHandComponent` + `UDIVEGRIPBridgeComponent` + `UDIVEInputComponent`.
+3. RMB → **Simulate Physics** on a cube → **Left Alt** (Physical) → LMB drag. **Hold R** while dragging to rotate.
+4. **Left Alt** back to Default → drag ends, aim restores.
