@@ -13,7 +13,7 @@ DIVE provides:
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
 - **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (host implements)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (DIVE | Camera)
-- Self-contained runtime (no ACTS / GRIP / MESS dependencies)
+- Self-contained **DIVERuntime** (no ACTS / MESS); optional **GRIP** via **DIVEGRIPBridge** for Physical-mode pawn grab (§7)
 
 **Input:** `UDIVEInputComponent` on pawn — BlueprintCallable `Handle*` methods (target for Enhanced Input). Legacy dev component forwards `BindKey` only.
 
@@ -24,6 +24,7 @@ DIVE provides:
 | **DIVECore** | Shared types, `FDIVEFocusTarget`, `IDIVEProxyDrive`, `IDIVEDeviceControlRegistry`, conventions |
 | **DIVERuntime** | Subsystem, components, camera rig, context menu UI, **`UDIVEInputComponent`** |
 | **DIVERuntimeDev** | `UDIVELegacyKbmInputComponent` — BindKey → **DIVE Input** |
+| **DIVEGRIPBridge** | `UDIVEGRIPBridgeComponent` — pawn physical drive via GRIP (optional) |
 
 ## Quick start
 

@@ -8,9 +8,14 @@
 ├─────────────────────────────────────────┤
 │ DIVERuntimeDev (optional, debug only)   │
 │  UDIVELegacyKbmInputComponent — BindKey │
+│  DIVEGripLegacyDevQuery (PIE wheel glue)│
 ├─────────────────────────────────────────┤
 │ DIVEUnrealEditor (editor only)          │
 │  DIVE Scan Device · validation reports  │
+├─────────────────────────────────────────┤
+│ DIVEGRIPBridge (optional §7)            │
+│  UDIVEGRIPBridgeComponent — pawn physical │
+│  drive via GRIP Hand API                │
 ├─────────────────────────────────────────┤
 │ DIVERuntime                             │
 │  UDIVESessionSubsystem — focus stack      │
@@ -110,4 +115,12 @@ Automation smoke tests: `DIVE.ContextMenu.BuiltInEntries`, `DIVE.PawnPhysicalDri
 
 ## Dependencies
 
-DIVE **must not** link ACTS, GRIP, or MESS in **DIVERuntime**. No Enhanced Input in plugin modules.
+| Module | ACTS | GRIP | MESS |
+|--------|------|------|------|
+| **DIVERuntime** | no | no | no |
+| **DIVEGRIPBridge** | no | yes (§7 bridge) | no |
+| **DIVERuntimeDev** | no | co-location only (§3.3 PIE) | no |
+
+**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is the documented exception for Physical-mode pawn grab; disable the module in `.uplugin` if GRIP is not used. No Enhanced Input assets or `BindKey` in production Runtime modules.
+
+Normative principles: [`Project_docs/Plugin_Architecture_Principles.md`](../../../Project_docs/Plugin_Architecture_Principles.md).
