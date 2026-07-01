@@ -3,8 +3,11 @@
 #include "Input/DIVELegacyKbmInputComponent.h"
 
 #include "Components/InputComponent.h"
+#include "DIVESessionSubsystem.h"
 #include "DIVETypes.h"
+#include "DIVEInspectableComponent.h"
 #include "Input/DIVEInputComponent.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
@@ -38,17 +41,94 @@ void UDIVELegacyKbmInputComponent::BeginPlay()
 		WarnMissingInputOnce();
 	}
 
-	BindInput();
-	if (!bInputBound && GetWorld())
-	{
-		GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput));
-	}
+	BindSessionDelegates();
+	RefreshSessionInputBindings();
 }
 
 void UDIVELegacyKbmInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	UnbindSessionDelegates();
 	UnbindInput();
 	Super::EndPlay(EndPlayReason);
+}
+
+bool UDIVELegacyKbmInputComponent::IsDiveSessionActive() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	if (!GameInstance)
+	{
+		return false;
+	}
+
+	const UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>();
+	return DiveSubsystem && DiveSubsystem->IsSessionActive();
+}
+
+void UDIVELegacyKbmInputComponent::BindSessionDelegates()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+			{
+				DiveSubsystem->OnSessionStarted.AddDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
+				DiveSubsystem->OnSessionEnded.AddDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
+			}
+		}
+	}
+}
+
+void UDIVELegacyKbmInputComponent::UnbindSessionDelegates()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+			{
+				DiveSubsystem->OnSessionStarted.RemoveDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
+				DiveSubsystem->OnSessionEnded.RemoveDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
+			}
+		}
+	}
+}
+
+void UDIVELegacyKbmInputComponent::RefreshSessionInputBindings()
+{
+	if (IsDiveSessionActive())
+	{
+		BindInput();
+		if (!bInputBound && GetWorld())
+		{
+			GetWorld()->GetTimerManager().SetTimerForNextTick(
+				FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput));
+		}
+	}
+	else
+	{
+		UnbindInput();
+	}
+}
+
+void UDIVELegacyKbmInputComponent::HandleDiveSessionStarted(
+	AActor* /*DeviceHost*/,
+	UDIVEInspectableComponent* /*Inspectable*/)
+{
+	RefreshSessionInputBindings();
+}
+
+void UDIVELegacyKbmInputComponent::HandleDiveSessionEnded(
+	EDIVESessionEndReason /*Reason*/,
+	AActor* /*DeviceHost*/)
+{
+	UnbindInput();
 }
 
 void UDIVELegacyKbmInputComponent::ResolveComponentReferences()
@@ -251,7 +331,7 @@ void UDIVELegacyKbmInputComponent::UnbindInput()
 
 void UDIVELegacyKbmInputComponent::BindInput()
 {
-	if (bInputBound)
+	if (bInputBound || !IsDiveSessionActive())
 	{
 		return;
 	}

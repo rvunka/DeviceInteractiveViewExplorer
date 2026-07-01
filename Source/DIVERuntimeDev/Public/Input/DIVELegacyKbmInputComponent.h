@@ -3,12 +3,15 @@
 #pragma once
 
 #include "Components/ActorComponent.h"
+#include "DIVETypes.h"
 #include "InputCoreTypes.h"
 
 #include "DIVELegacyKbmInputComponent.generated.h"
 
 class UDIVEInputComponent;
 class UInputComponent;
+class UDIVESessionSubsystem;
+class UDIVEInspectableComponent;
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Legacy KBM Input"))
 class DIVERUNTIMEDEV_API UDIVELegacyKbmInputComponent : public UActorComponent
@@ -146,4 +149,14 @@ protected:
 	void BindInput();
 	void UnbindInput();
 	void WarnMissingInputOnce();
+	void BindSessionDelegates();
+	void UnbindSessionDelegates();
+	void RefreshSessionInputBindings();
+	bool IsDiveSessionActive() const;
+
+	UFUNCTION()
+	void HandleDiveSessionStarted(AActor* DeviceHost, UDIVEInspectableComponent* Inspectable);
+
+	UFUNCTION()
+	void HandleDiveSessionEnded(EDIVESessionEndReason Reason, AActor* DeviceHost);
 };
