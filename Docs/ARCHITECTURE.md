@@ -41,7 +41,7 @@ One active DIVE session per game instance. Input components guard with `IsLocall
 
 Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (+ optional **Legacy KBM** for PIE).
 
-**Contract:** physical keys → `UInputAction` in host Content → `BindAction` on **PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Input_Architecture.md` and **`Docs/DeviceInteractionModel.md` §4**.
+**Contract:** physical keys → `UInputAction` in host Content → Enhanced Input on **Pawn / PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Architecture_Principles.md` §4 and **`Docs/DeviceInteractionModel.md` §4**.
 
 ### Session chrome (always available)
 
@@ -106,7 +106,7 @@ Device mesh isolate: **`ToggleIsolateFocused()`** via context menu.
 
 **DIVE Scan Device** — logs anchors and focus warnings.
 
-Automation smoke test: `DIVE.ContextMenu.BuiltInEntries`.
+Automation smoke tests: `DIVE.ContextMenu.BuiltInEntries`, `DIVE.PawnPhysicalDrive.Resolve` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
 
 ## Dependencies
 

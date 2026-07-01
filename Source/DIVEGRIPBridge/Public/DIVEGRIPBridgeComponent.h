@@ -34,6 +34,9 @@ public:
 	virtual void HandlePawnPhysicalManualRotatePressed_Implementation() override;
 	virtual void HandlePawnPhysicalManualRotateReleased_Implementation() override;
 
+	/** RuntimeDev wheel routing: adjusts bridge grab depth while cursor-driven drag is active. */
+	void ApplyGrabHoldDistanceScroll(float WheelDelta);
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 

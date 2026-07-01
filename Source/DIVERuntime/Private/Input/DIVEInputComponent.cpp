@@ -595,7 +595,7 @@ void UDIVEInputComponent::HandleZoomIn()
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		if (Subsystem->IsSessionActive())
+		if (Subsystem->IsSessionActive() && !Subsystem->IsProxyDriving())
 		{
 			Subsystem->ApplyZoomInput(1.f);
 		}
@@ -611,7 +611,7 @@ void UDIVEInputComponent::HandleZoomOut()
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		if (Subsystem->IsSessionActive())
+		if (Subsystem->IsSessionActive() && !Subsystem->IsProxyDriving())
 		{
 			Subsystem->ApplyZoomInput(-1.f);
 		}

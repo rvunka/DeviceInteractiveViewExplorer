@@ -13,6 +13,7 @@
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "Utils/DIVEComponentResolve.h"
+#include "Utils/DIVEGripLegacyDevQuery.h"
 
 UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 {
@@ -186,9 +187,42 @@ void UDIVELegacyKbmInputComponent::OrbitReleased()
 	}
 }
 
+bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
+{
+#if DIVE_WITH_GRIP
+	if (DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(GetOwner(), WheelDelta))
+	{
+		return true;
+	}
+#else
+	(void)WheelDelta;
+#endif
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	if (!GameInstance)
+	{
+		return false;
+	}
+
+	const UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>();
+	// Suppress orbit zoom while physical drive is active (GRIP hold-distance via ACTS or forward above).
+	return DiveSubsystem && DiveSubsystem->IsProxyDriving();
+}
+
 void UDIVELegacyKbmInputComponent::ZoomIn()
 {
 	EnsureInputReady();
+
+	if (TryRouteZoomWheel(1.0f))
+	{
+		return;
+	}
 
 	if (InputComponent)
 	{
@@ -199,6 +233,11 @@ void UDIVELegacyKbmInputComponent::ZoomIn()
 void UDIVELegacyKbmInputComponent::ZoomOut()
 {
 	EnsureInputReady();
+
+	if (TryRouteZoomWheel(-1.0f))
+	{
+		return;
+	}
 
 	if (InputComponent)
 	{

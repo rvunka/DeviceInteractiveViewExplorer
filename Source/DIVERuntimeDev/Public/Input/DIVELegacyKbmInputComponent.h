@@ -148,6 +148,7 @@ protected:
 	void EnsureInputReady();
 	void BindInput();
 	void UnbindInput();
+	bool TryRouteZoomWheel(float WheelDelta);
 	void WarnMissingInputOnce();
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();

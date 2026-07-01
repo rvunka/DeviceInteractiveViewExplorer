@@ -377,6 +377,27 @@ bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVE
 	return true;
 }
 
+void UDIVEGRIPBridgeComponent::ApplyGrabHoldDistanceScroll(const float WheelDelta)
+{
+	if (!bDriving || FMath::IsNearlyZero(WheelDelta))
+	{
+		return;
+	}
+
+	UGRIPHandComponent* Hand = ResolveGripHand();
+	if (!Hand || !Hand->IsGrabbing() || Hand->IsManualRotateActive())
+	{
+		return;
+	}
+
+	const float DeltaCm = WheelDelta * Hand->GetGrabHoldDistanceScrollStepCm();
+	GrabHoldDistance = FMath::Clamp(
+		GrabHoldDistance + DeltaCm,
+		Hand->MinGrabHoldDistance,
+		Hand->MaxGrabHoldDistance);
+	UpdateHandTargetFromCursor();
+}
+
 void UDIVEGRIPBridgeComponent::ApplyPawnPhysicalDriveDelta_Implementation(FVector2D ScreenDelta)
 {
 	(void)ScreenDelta;

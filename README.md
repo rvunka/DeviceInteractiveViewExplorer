@@ -36,7 +36,7 @@ DIVE provides:
 7. Device-specific actions: fill **`PickContextMenuActions`** on inspectable; override **`ExecuteContextMenuAction`** / optional **`AppendContextMenuEntries`** in Blueprint.
 8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `DeviceInteractionModel.md` §6).
 
-See `Docs/QUICKSTART.md`, `Docs/DeviceInteractionModel.md`, and `Project_docs/DIVE_Plugin_Design.md`.
+See `Docs/QUICKSTART.md`, `Docs/ARCHITECTURE.md`, and `Docs/DeviceInteractionModel.md`.
 
 ## Version
 

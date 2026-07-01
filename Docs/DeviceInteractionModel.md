@@ -2,7 +2,7 @@
 
 > **Audience:** device authors, game integration (ATSEP), VR planning.  
 > **Status:** architecture contract (v0.7).  
-> **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `Project_docs/Plugin_Input_Architecture.md`.
+> **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `Project_docs/Plugin_Architecture_Principles.md`.
 
 ---
 
@@ -121,7 +121,7 @@ Available regardless of `EDIVESessionInteractionMode`:
 
 **Focus / «подъехать»** is an **explicit** action (context menu item or `IA_DIVE_FocusTarget`), not the default meaning of every click. That avoids fighting physical controls.
 
-**Physical keys live only in IMC** (`Plugin_Input_Architecture.md`). DIVE **must not** encode `EKeys` or «LMB tool» enums in its public contract.
+**Physical keys live only in IMC** (`Plugin_Architecture_Principles.md`). DIVE **must not** encode `EKeys` or «LMB tool» enums in its public contract.
 
 ### 4.2. Interaction mode = session policy (not «Navigate mode»)
 
