@@ -338,29 +338,21 @@ bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVE
 	FRotator ViewRotation = FRotator::ZeroRotator;
 	FVector ViewLocation = FVector::ZeroVector;
 	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FVector ViewDirection = ViewRotation.Vector().GetSafeNormal();
 
 	const FHitResult& Hit = Context.PickHit;
 	const FVector GrabPoint = Hit.bBlockingHit ? Hit.ImpactPoint : Hit.Location;
 
-	FVector WorldOrigin = FVector::ZeroVector;
-	FVector WorldDirection = FVector::ZeroVector;
-	if (UGameplayStatics::DeprojectScreenToWorld(PlayerController, Context.ScreenPosition, WorldOrigin, WorldDirection))
-	{
-		const float RayLength = WorldDirection.Size();
-		if (RayLength > KINDA_SMALL_NUMBER)
-		{
-			WorldDirection /= RayLength;
-			GrabHoldDistance = FVector::DotProduct(GrabPoint - WorldOrigin, WorldDirection);
-		}
-	}
-
+	GrabHoldDistance = FVector::DotProduct(GrabPoint - ViewLocation, ViewDirection);
 	if (GrabHoldDistance <= KINDA_SMALL_NUMBER)
 	{
 		GrabHoldDistance = FVector::Distance(ViewLocation, GrabPoint);
 	}
+	GrabHoldDistance = FMath::Clamp(GrabHoldDistance, Hand->MinGrabHoldDistance, Hand->MaxGrabHoldDistance);
 
 	SuspendGripAimUpdates();
-	Hand->SetHandWorldTransform(FTransform(ViewRotation, GrabPoint));
+	const FVector HandLocation = ViewLocation + ViewDirection * GrabHoldDistance;
+	Hand->SetHandWorldTransform(FTransform(ViewRotation, HandLocation));
 
 	const EGRIPGrabResult Result = Hand->TryGrabFromHit(Hit);
 	if (Result != EGRIPGrabResult::Success)
@@ -371,6 +363,8 @@ bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVE
 			*UGRIPGrabDiagnostics::GetGrabResultLogString(Result));
 		return false;
 	}
+
+	UpdateHandTargetFromCursor();
 
 	bDriving = true;
 	SetDriveTickEnabled(true);
