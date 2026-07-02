@@ -22,18 +22,10 @@ struct FSessionPickContext
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
 };
 
-DIVERUNTIME_API bool IsComponentPartOfDeviceHost(const USceneComponent* Component, const AActor* DeviceHost);
-
 DIVERUNTIME_API bool PickAtScreenPosition(
 	const FSessionPickContext& Context,
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController,
 	FHitResult& OutHit,
-	FDIVEFocusTarget& OutTarget);
-
-DIVERUNTIME_API bool ResolveFocusAtScreenPosition(
-	const FSessionPickContext& Context,
-	const FVector2D& ScreenPosition,
-	APlayerController* PlayerController,
 	FDIVEFocusTarget& OutTarget);
 }

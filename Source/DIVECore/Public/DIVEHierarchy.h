@@ -47,29 +47,6 @@ inline void CollectDevicePrimitives(AActor* DeviceHost, TArray<UPrimitiveCompone
 	});
 }
 
-inline bool IsDeviceActor(const AActor* DeviceHost, const AActor* Actor)
-{
-	if (!DeviceHost || !Actor)
-	{
-		return false;
-	}
-
-	if (Actor == DeviceHost || Actor->IsAttachedTo(DeviceHost))
-	{
-		return true;
-	}
-
-	for (const AActor* Current = Actor; Current; Current = Current->GetAttachParentActor())
-	{
-		if (Current == DeviceHost)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
 inline int32 GetAttachDepthToAncestor(const USceneComponent* Component, const USceneComponent* Ancestor)
 {
 	int32 Depth = 0;

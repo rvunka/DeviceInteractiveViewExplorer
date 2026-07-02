@@ -9,9 +9,7 @@
 
 namespace DIVEContextMenu
 {
-namespace
-{
-FText LabelWithActiveSuffix(const FText& BaseLabel, bool bActive)
+FText FormatActiveLabelSuffix(const FText& BaseLabel, const bool bActive)
 {
 	if (!bActive)
 	{
@@ -21,6 +19,8 @@ FText LabelWithActiveSuffix(const FText& BaseLabel, bool bActive)
 	return FText::Format(NSLOCTEXT("DIVE", "ContextMenuActiveSuffix", "{0}*"), BaseLabel);
 }
 
+namespace
+{
 void AppendSeparator(TArray<FDIVEContextMenuEntry>& InOutEntries)
 {
 	if (!InOutEntries.IsEmpty() && InOutEntries.Last().bIsSeparator)
@@ -45,7 +45,7 @@ void AppendStandardMeshEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEC
 
 	FDIVEContextMenuEntry PhysicsEntry;
 	PhysicsEntry.ActionId = DIVE::kContextToggleMeshPhysics;
-	PhysicsEntry.DisplayName = LabelWithActiveSuffix(
+	PhysicsEntry.DisplayName = FormatActiveLabelSuffix(
 		NSLOCTEXT("DIVE", "ContextMenuSimulatePhysics", "Simulate Physics"),
 		Primitive->IsSimulatingPhysics());
 	PhysicsEntry.bEnabled = true;
@@ -79,7 +79,7 @@ void BuildStandardEntries(
 
 	FDIVEContextMenuEntry IsolateEntry;
 	IsolateEntry.ActionId = DIVE::kContextIsolate;
-	IsolateEntry.DisplayName = LabelWithActiveSuffix(
+	IsolateEntry.DisplayName = FormatActiveLabelSuffix(
 		NSLOCTEXT("DIVE", "ContextMenuIsolate", "Isolate"),
 		bIsolateActive);
 	IsolateEntry.bEnabled = Subsystem && Subsystem->IsSessionActive() && bIsMeshPick;
@@ -105,17 +105,15 @@ void AppendCustomEntries(
 		return;
 	}
 
-	TArray<FDIVEContextMenuEntry> CustomEntries;
-	Inspectable->AppendConfiguredPickContextMenuEntries(PickTarget, CustomEntries);
-	Inspectable->AppendContextMenuEntries(PickTarget, CustomEntries);
+	const int32 EntryCountBefore = InOutEntries.Num();
+	Inspectable->AppendConfiguredPickContextMenuEntries(PickTarget, InOutEntries);
 
-	if (CustomEntries.IsEmpty())
+	if (InOutEntries.Num() > EntryCountBefore)
 	{
-		return;
+		FDIVEContextMenuEntry SeparatorEntry;
+		SeparatorEntry.bIsSeparator = true;
+		InOutEntries.Insert(SeparatorEntry, EntryCountBefore);
 	}
-
-	AppendSeparator(InOutEntries);
-	InOutEntries.Append(CustomEntries);
 }
 
 }

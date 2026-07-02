@@ -61,7 +61,7 @@ private:
 			Section.AddMenuEntry(
 				"DIVE_ScanDevice",
 				LOCTEXT("ScanDeviceLabel", "DIVE Scan Device"),
-				LOCTEXT("ScanDeviceTooltip", "Validate anchors, operations, and manipulators on the selected device actor."),
+				LOCTEXT("ScanDeviceTooltip", "Validate anchors and pick context menu catalog on the selected device actor."),
 				FSlateIcon(),
 				FUIAction(FExecuteAction::CreateStatic(&ExecuteScanSelectedActors)));
 		}

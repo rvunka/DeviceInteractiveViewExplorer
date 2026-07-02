@@ -9,6 +9,7 @@
 
 class UArrowComponent;
 class UStaticMeshComponent;
+class UDIVEInspectableComponent;
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Anchor"))
 class DIVERUNTIME_API UDIVEAnchorComponent : public USceneComponent
@@ -30,8 +31,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker", meta = (ClampMin = "0.01", EditCondition = "bShowSessionMarker"))
 	float MarkerScale = 0.12f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker", meta = (EditCondition = "bShowSessionMarker"))
-	FLinearColor MarkerColor = FLinearColor(1.f, 0.92f, 0.15f, 0.10f);
+	/** Overrides inspectable Default Anchor Marker Mesh when set. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker", meta = (
+		DisplayName = "Marker Mesh Override",
+		EditCondition = "bShowSessionMarker",
+		ToolTip = "Leave empty to use DIVE Inspectable → Default Anchor Marker Mesh."))
+	TSoftObjectPtr<UStaticMesh> MarkerMeshOverride;
+
+	/** Overrides inspectable Default Anchor Marker Material when set. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker", meta = (
+		DisplayName = "Marker Material Override",
+		EditCondition = "bShowSessionMarker",
+		ToolTip = "Leave empty to use DIVE Inspectable → Default Anchor Marker Material. Color and opacity come from the assigned material."))
+	TSoftObjectPtr<UMaterialInterface> MarkerMaterialOverride;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Marker")
 	bool bShowViewDirection = true;
@@ -53,8 +65,6 @@ public:
 
 	void SetSessionPresentation(bool bSessionActive, bool bHidePickMarker);
 
-	UStaticMeshComponent* GetSessionMarkerMesh() const { return SessionMarkerMesh; }
-
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
@@ -75,4 +85,5 @@ protected:
 	void DestroyTransientVisuals();
 	void RefreshViewDirectionArrow();
 	void ConfigureSessionMarker();
+	void ApplyMarkerCollision(UDIVEInspectableComponent* Inspectable);
 };

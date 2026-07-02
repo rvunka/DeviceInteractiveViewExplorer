@@ -84,13 +84,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
 	FOnDIVEInteractionModeChanged OnInteractionModeChanged;
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
-	bool BuildContextMenuEntries(
-		const FVector2D& ScreenPosition,
-		APlayerController* PlayerController,
-		TArray<FDIVEContextMenuEntry>& OutEntries,
-		FDIVEFocusTarget& OutPickTarget) const;
-
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ApplyOrbitInput(const FVector2D& Delta);
 
@@ -114,9 +107,6 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack = true);
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE")
-	bool FocusAnchor(FName PartId);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool NavigateBack();
@@ -192,7 +182,6 @@ private:
 	bool bIsolationActive = false;
 	FDIVEFocusTarget IsolationTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> IsolatedHiddenPrimitives;
-	TArray<TWeakObjectPtr<AActor>> WorldDimHiddenActors;
 
 	bool bProxyDriving = false;
 	EDIVEActivePhysicalDriveKind ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::None;
@@ -210,10 +199,13 @@ private:
 
 	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bUseDefaultOrbitDistance = false);
 	bool ApplyInitialSessionFocus(FName InitialFocusId);
+	bool BuildContextMenuEntries(
+		const FVector2D& ScreenPosition,
+		APlayerController* PlayerController,
+		TArray<FDIVEContextMenuEntry>& OutEntries,
+		FDIVEFocusTarget& OutPickTarget) const;
 	bool ApplyIsolationForTarget(const FDIVEFocusTarget& Target);
 	void CollectIsolationVisiblePrimitives(const FDIVEFocusTarget& Target, TArray<UPrimitiveComponent*>& OutVisible) const;
-	void ApplyWorldDim();
-	void ClearWorldDim();
 	void ClearProxyDrive();
 	void EndActivePhysicalDrive(bool bCommit);
 	void ResetPhysicalDriveState();

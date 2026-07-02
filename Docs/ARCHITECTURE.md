@@ -75,14 +75,14 @@ Legacy PIE: **RMB** = context menu, **G** = focus shortcut, **Left Alt** = cycle
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**, dev **Physics/Delete** on primitive pick; device rows via **`PickContextMenuActions`** on inspectable + optional **`AppendContextMenuEntries`**. Styling on `UDIVEContextMenuUIComponent::MenuStyle`. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — LMB focuses anchor in Default mode.
+In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**, dev **Physics/Delete** on primitive pick; custom rows from **`PickContextMenuByComponent`** → **`Handle_{Key}_{ActionId}`** on device actor. **`UDIVEContextMenuUIComponent`** on player character draws the widget. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — LMB focuses anchor in Default mode.
 
 ## Device interaction (direct manipulation)
 
 | Intent | Mechanism |
 |--------|-----------|
 | Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
-| Read label, use control | Context menu row on pick (`PickContextMenuActions` + `ExecuteContextMenuAction`) |
+| Read label, use control | Context menu row → **`Handle_{Key}_{ActionId}`** on device actor |
 | Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
 | Cable, grab | GRIP + MESS in host project |
 
@@ -94,11 +94,13 @@ Physical panel controls live on the **device**. DIVECore exposes **`IDIVEProxyDr
 
 `UDIVEAnchorComponent`: `PartId`, `DisplayName`, authored camera viewpoint (transform + optional marker). No checklist operations.
 
-## World dim
+**Session marker:** sphere in DIVE session (`bShowSessionMarker`). **DIVE Inspectable → DIVE | Anchor** (device mesh/material/scale) or **DIVE Anchor → DIVE | Marker** (per-anchor overrides). Color and opacity are authored in the material asset only.
 
-`EDIVEWorldDimPolicy` on `UDIVEInspectableComponent`: hide non-device actors during session (optional).
+## Device isolate
 
-Device mesh isolate: **`ToggleIsolateFocused()`** via context menu.
+Context menu **Isolate** / **`ToggleIsolateFocused()`** — hides other meshes on the device host, keeps the focused branch visible. Level actors are not modified.
+
+_Future:_ world-level focus dim via custom depth / post-process (not actor hiding).
 
 ## Session flow
 

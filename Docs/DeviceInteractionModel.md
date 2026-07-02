@@ -89,14 +89,14 @@ IDIVEProxyDrive (DIVECore) — backend for Physical mode only
 | Ray pick from DIVE camera | GRIP hand physics |
 | `IDIVEProxyDrive` hook (routing in session subsystem) | Implementations on devices (game module) |
 | `Handle*` input API for Enhanced Input | MESS / electrical solver |
-| Context menu + `AppendContextMenuEntries` hook | Defining every physical knob as a menu row |
+| Context menu + `PickContextMenuByComponent` | Defining per-mesh menu rows (not physical knobs) |
 
 ### Direct manipulation vs physical controls
 
 | Interaction | Mechanism |
 |-------------|-----------|
 | Door, slider, knob, switch | **Physical** mode → proxy drive or GRIP (same device state) |
-| Read label, use button, demount module | **Context menu** on pick → `AppendContextMenuEntries` / `ExecuteContextMenuAction` |
+| Read label, use button, demount module | **Context menu** on pick → **`Handle_{Key}_{ActionId}`** on device actor |
 | Cable, grab | GRIP + MESS in host project |
 
 ---
@@ -137,7 +137,7 @@ Mode is **not** tied to a single mouse button. It is **policy** for routing **mu
 | Policy area | Example behaviour per mode |
 |-------------|----------------------------|
 | `HandlePrimaryAction*` | Physical → grab/drive; Logical → click; Default → no-op or highlight only |
-| Context menu contents | Built-in Focus/Isolate + authored `PickContextMenuActions`; optional dynamic rows |
+| Context menu contents | Built-in Focus/Isolate + **`PickContextMenuByComponent`** catalog |
 | Hit highlight / filter | Physical may prefer grabbable primitives |
 | HUD / cursor | Show active mode label |
 
@@ -154,8 +154,9 @@ Flow:
 
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
 2. **Built-in entries** (plugin): **Focus**, **Isolate**; administrator section: **Enable/Disable Physics**, **Delete Mesh** (picked primitive only).
-3. **Device extensions** (host): authored **`PickContextMenuActions`** on inspectable (match by mesh component name) + optional **`AppendContextMenuEntries`** for dynamic rows.
-4. Player picks row → **`ExecuteContextMenuAction(ActionId, PickTarget)`** in device Blueprint; optional **`IsPickContextMenuActionActive`** for `*` suffix.
+3. **Device extensions** (host): **`PickContextMenuByComponent`** on inspectable (component name → short `ActionId` per row).
+4. Custom row click → **`Handle_{ComponentKey}_{ActionId}`** on device actor (e.g. `Handle_Screw1_Unscrew`). See **`QUICKSTART.md`** §1.
+5. Optional toggle label (`*` when active): `bToggleActiveSuffix` on catalog row + pure bool **`Is_{Key}_{ActionId}`** on device actor.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 
@@ -200,8 +201,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Default / Physical |
 | `HandlePrimaryAction*` | Default no-op; Physical → proxy drive |
 | Context menu + widget | Focus, Isolate on primitive pick; anchor → LMB focus only |
-| `PickContextMenuActions` + `ExecuteContextMenuAction` | Host catalog (component name) + BP logic |
-| `AppendContextMenuEntries` | Optional dynamic rows beyond catalog |
+| `PickContextMenuByComponent` + `Handle_{Key}_{ActionId}` | Catalog on inspectable; handler BP function on device |
 | `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices |
 | Anchor | Viewpoint + PartId only |
 
@@ -211,7 +211,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 |------|--------|
 | `IA_DIVE_*` Content + `IMC_DIVE` | Host Content |
 | Registry / proxy drive on prefabs | Host / devices |
-| Context menu rows per pick | `PickContextMenuActions` on inspectable; BP `ExecuteContextMenuAction` |
+| Context menu rows per pick | `PickContextMenuByComponent` + `Handle_{Key}_{ActionId}` on device |
 | GRIP / MESS for cables | Host project |
 
 ---

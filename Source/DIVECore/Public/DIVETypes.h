@@ -29,13 +29,6 @@ enum class EDIVEFocusKind : uint8
 	Anchor
 };
 
-UENUM(BlueprintType)
-enum class EDIVEWorldDimPolicy : uint8
-{
-	None UMETA(DisplayName = "None"),
-	HideNonDeviceActors UMETA(DisplayName = "Hide Non-Device Actors")
-};
-
 /** Session policy for routing semantic input (Default / Physical). */
 UENUM(BlueprintType)
 enum class EDIVESessionInteractionMode : uint8
@@ -137,18 +130,14 @@ struct DIVECORE_API FDIVEContextMenuEntry
 	bool bIsSeparator = false;
 };
 
-/** Authored per-mesh context menu row on the device inspectable (match by component name from the Components tab). */
+/** One custom context-menu row (dispatched via Handle_{ComponentKey}_{ActionId} on the device actor). */
 USTRUCT(BlueprintType)
-struct DIVECORE_API FDIVEPickContextMenuActionBinding
+struct DIVECORE_API FDIVEPickContextMenuAction
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		DisplayName = "Component Name",
-	ToolTip = "Anchor PartId or pickable mesh component name (Components tab), e.g. DoorMesh or Door."))
-	FName ComponentName = NAME_None;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+		ToolTip = "Short id within this component's action list (e.g. Unscrew). Invoked as Handle_{map key}_{ActionId} on the device actor."))
 	FName ActionId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
@@ -156,4 +145,18 @@ struct DIVECORE_API FDIVEPickContextMenuActionBinding
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bEnabled = true;
+
+	/** When true, appends "*" to DisplayName if device actor has bool function or variable Is_{Key}_{ActionId} that is true. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	bool bToggleActiveSuffix = false;
+};
+
+/** Action list value for PickContextMenuByComponent (TMap value; UHT does not allow TArray as map value). */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEPickContextMenuActionList
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	TArray<FDIVEPickContextMenuAction> Actions;
 };

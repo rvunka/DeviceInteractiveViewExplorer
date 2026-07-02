@@ -60,12 +60,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float FocusBlendDuration = 0.35f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Presentation")
-	EDIVEWorldDimPolicy WorldDimPolicy = EDIVEWorldDimPolicy::None;
+	/** Default session marker mesh for all anchors (engine sphere unless overridden per anchor). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Anchor", meta = (
+		DisplayName = "Default Anchor Marker Mesh",
+		ToolTip = "Device-wide marker mesh. Shown in DIVE session on each DIVE Anchor. Per-anchor: Marker Mesh Override."))
+	TSoftObjectPtr<UStaticMesh> DefaultAnchorMarkerMesh;
 
-	/** Per-mesh menu rows. Match `ComponentName` to the picked StaticMesh / primitive component name. Handle in BP via `ExecuteContextMenuAction`. */
+	/** Material for anchor session markers. Color and opacity are authored in this asset (or per-anchor override). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Anchor", meta = (
+		DisplayName = "Default Anchor Marker Material",
+		ToolTip = "Device-wide marker material. Per-anchor: Marker Material Override."))
+	TSoftObjectPtr<UMaterialInterface> DefaultAnchorMarkerMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Anchor", meta = (
+		DisplayName = "Default Anchor Marker Scale",
+		ClampMin = "0.01",
+		ToolTip = "Device-wide marker size. Per-anchor Marker Scale overrides when not left at plugin default."))
+	float DefaultAnchorMarkerScale = 0.12f;
+
+	/** Component name (Components tab) or anchor PartId → custom menu rows. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|ContextMenu")
-	TArray<FDIVEPickContextMenuActionBinding> PickContextMenuActions;
+	TMap<FName, FDIVEPickContextMenuActionList> PickContextMenuByComponent;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
 	FOnDIVESessionLifecycle OnSessionLifecycle;
@@ -102,32 +117,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|View")
 	float GetEffectiveDefaultOrbitDistance() const;
 
-	UFUNCTION(BlueprintPure, Category = "DIVE|Pick")
-	TEnumAsByte<ECollisionChannel> GetEffectivePickTraceChannel() const { return PickTraceChannel; }
-
-	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
-	float GetEffectiveFocusBlendDuration() const { return FocusBlendDuration; }
-
 	UFUNCTION(BlueprintPure, Category = "DIVE|View")
 	bool TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const;
 
-	UFUNCTION(BlueprintPure, Category = "DIVE|Presentation")
-	EDIVEWorldDimPolicy GetEffectiveWorldDimPolicy() const { return WorldDimPolicy; }
-
-	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
-	void AppendContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries);
-
-	UFUNCTION(BlueprintNativeEvent, Category = "DIVE|ContextMenu")
-	bool ExecuteContextMenuAction(FName ActionId, const FDIVEFocusTarget& PickTarget);
-
-	/** Override in BP to drive the `*` active suffix on authored pick actions (e.g. door open, lamp on). */
-	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "DIVE|ContextMenu")
-	bool IsPickContextMenuActionActive(FName ActionId, const FDIVEFocusTarget& PickTarget) const;
-
 	void AppendConfiguredPickContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries) const;
-
-	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
-	bool MatchesPickContextMenuBinding(const FDIVEPickContextMenuActionBinding& Binding, const FDIVEFocusTarget& PickTarget) const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;
@@ -137,13 +130,25 @@ public:
 #endif
 
 private:
-	UPROPERTY(VisibleAnywhere, Category = "DIVE")
+	UPROPERTY(Transient)
 	FDIVEPartTree SemanticRegistry;
 
-	UPROPERTY(VisibleAnywhere, Category = "DIVE")
+	UPROPERTY(Transient)
 	bool bSessionActive = false;
 
 	friend class UDIVESessionSubsystem;
 
 	void NotifySessionLifecycle(bool bActive);
+	bool NotifyPickContextMenuAction(FName QualifiedActionId, const FDIVEFocusTarget& PickTarget);
+
+	bool FindPickContextMenuCatalog(
+		const FDIVEFocusTarget& PickTarget,
+		FName& OutComponentName,
+		const TArray<FDIVEPickContextMenuAction>*& OutActions) const;
+
+	bool ResolvePickContextMenuAction(
+		FName QualifiedActionId,
+		const FDIVEFocusTarget& PickTarget,
+		FName& OutComponentName,
+		FName& OutLocalActionId) const;
 };

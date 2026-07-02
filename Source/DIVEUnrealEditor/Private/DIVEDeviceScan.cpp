@@ -3,6 +3,7 @@
 #include "DIVEDeviceScan.h"
 
 #include "DIVEAnchorComponent.h"
+#include "DIVEConvention.h"
 #include "DIVEInspectableComponent.h"
 
 namespace
@@ -112,6 +113,39 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 		}
 	}
 
-	AddInfo(Report, FString::Printf(TEXT("World dim policy: %d"), static_cast<int32>(Inspectable->GetEffectiveWorldDimPolicy())));
+	TSet<FName> QualifiedActionIds;
+	for (const TPair<FName, FDIVEPickContextMenuActionList>& ComponentEntry : Inspectable->PickContextMenuByComponent)
+	{
+		const FName ComponentName = ComponentEntry.Key;
+		if (ComponentName.IsNone())
+		{
+			AddWarning(Report, TEXT("PickContextMenuByComponent has an entry with an empty component name key."));
+			continue;
+		}
+
+		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
+		{
+			if (Action.ActionId.IsNone())
+			{
+				AddError(Report, FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' has an entry with an empty ActionId."),
+					*ComponentName.ToString()));
+				continue;
+			}
+
+			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
+			if (QualifiedActionIds.Contains(QualifiedActionId))
+			{
+				AddError(Report, FString::Printf(
+					TEXT("Duplicate qualified ActionId '%s' in PickContextMenuByComponent."),
+					*QualifiedActionId.ToString()));
+			}
+			else
+			{
+				QualifiedActionIds.Add(QualifiedActionId);
+			}
+		}
+	}
+
 	return Report;
 }

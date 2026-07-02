@@ -9,6 +9,8 @@ class UDIVESessionSubsystem;
 
 namespace DIVEContextMenu
 {
+DIVERUNTIME_API FText FormatActiveLabelSuffix(const FText& BaseLabel, bool bActive);
+
 DIVERUNTIME_API void BuildStandardEntries(
 	const UDIVESessionSubsystem* Subsystem,
 	const FDIVEFocusTarget& PickTarget,

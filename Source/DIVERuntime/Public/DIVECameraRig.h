@@ -39,16 +39,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DIVE")
 	TObjectPtr<UCameraComponent> CameraComponent;
 
-	UPROPERTY(EditAnywhere, Category = "DIVE")
-	float MinOrbitDistance = 50.f;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE")
-	float MaxOrbitDistance = 2000.f;
-
-	UPROPERTY(EditAnywhere, Category = "DIVE", meta = (ClampMin = "1.0", ClampMax = "89.0"))
-	float MaxPitchDegrees = 89.f;
-
 private:
+	static constexpr float MinOrbitDistance = 50.f;
+	static constexpr float MaxOrbitDistance = 2000.f;
+	static constexpr float MaxPitchDegrees = 89.f;
+
 	EDIVECameraRigMode Mode = EDIVECameraRigMode::Orbit;
 
 	float OrbitInputScale = 1.5f;

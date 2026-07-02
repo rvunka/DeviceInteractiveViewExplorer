@@ -55,7 +55,6 @@ void UDIVEInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	SetComponentTickEnabled(false);
 	bOrbitKeyHeld = false;
-	bPrimaryActionHeld = false;
 	bHasLastOrbitMousePosition = false;
 	Super::EndPlay(EndPlayReason);
 }
@@ -126,7 +125,6 @@ void UDIVEInputComponent::HandleSessionEnded(EDIVESessionEndReason /*Reason*/, A
 	}
 
 	bOrbitKeyHeld = false;
-	bPrimaryActionHeld = false;
 	bHasLastOrbitMousePosition = false;
 	SetComponentTickEnabled(false);
 }
@@ -290,7 +288,6 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 	}
 
 	PrimaryActionLastPosition = ScreenPosition;
-	bPrimaryActionHeld = true;
 
 	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Physical)
 	{
@@ -304,7 +301,6 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 			return;
 		}
 
-		bPrimaryActionHeld = false;
 		return;
 	}
 
@@ -316,7 +312,6 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 		Subsystem->FocusTarget(PickTarget, true);
 	}
 
-	bPrimaryActionHeld = false;
 }
 
 void UDIVEInputComponent::RoutePrimaryActionReleased()
@@ -339,7 +334,6 @@ void UDIVEInputComponent::RoutePrimaryActionReleased()
 		}
 	}
 
-	bPrimaryActionHeld = false;
 }
 
 void UDIVEInputComponent::CapturePreSessionInputState(APlayerController* PlayerController)
@@ -476,7 +470,6 @@ void UDIVEInputComponent::ClearSessionPresentation(APlayerController* PlayerCont
 	}
 
 	bOrbitKeyHeld = false;
-	bPrimaryActionHeld = false;
 	bHasLastOrbitMousePosition = false;
 	HideSessionChrome();
 	bSessionPresentationActive = false;
@@ -900,6 +893,11 @@ void UDIVEInputComponent::HandleContextMenuRequested()
 	}
 
 	ResolveComponentReferences();
+	if (!ContextMenuUIComponent)
+	{
+		WarnMissingContextMenuUIOnce();
+		return;
+	}
 
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	APlayerController* PlayerController = GetLocalPlayerController();
@@ -919,10 +917,7 @@ void UDIVEInputComponent::HandleContextMenuRequested()
 		return;
 	}
 
-	WarnMissingContextMenuUIOnce();
-
 	bOrbitKeyHeld = false;
-	bPrimaryActionHeld = false;
 	bHasLastOrbitMousePosition = false;
 
 	if (Subsystem->IsProxyDriving())

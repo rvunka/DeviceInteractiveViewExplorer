@@ -12,6 +12,8 @@
 
 namespace DIVEPick
 {
+namespace
+{
 bool IsComponentPartOfDeviceHost(const USceneComponent* Component, const AActor* DeviceHost)
 {
 	if (!Component || !DeviceHost)
@@ -37,6 +39,7 @@ bool IsComponentPartOfDeviceHost(const USceneComponent* Component, const AActor*
 
 	return false;
 }
+} // namespace
 
 bool PickAtScreenPosition(
 	const FSessionPickContext& Context,
@@ -102,15 +105,5 @@ bool PickAtScreenPosition(
 	const FName SemanticPartId = Context.Inspectable->ResolveSemanticPartId(HitPrimitive);
 	OutTarget = FDIVEFocusTarget::FromPrimitive(HitPrimitive, SemanticPartId);
 	return true;
-}
-
-bool ResolveFocusAtScreenPosition(
-	const FSessionPickContext& Context,
-	const FVector2D& ScreenPosition,
-	APlayerController* PlayerController,
-	FDIVEFocusTarget& OutTarget)
-{
-	FHitResult HitResult;
-	return PickAtScreenPosition(Context, ScreenPosition, PlayerController, HitResult, OutTarget);
 }
 }

@@ -140,7 +140,6 @@ protected:
 
 	bool bLoggedMissingContextMenuUI = false;
 	bool bOrbitKeyHeld = false;
-	bool bPrimaryActionHeld = false;
 	FVector2D PrimaryActionLastPosition = FVector2D::ZeroVector;
 	bool bSessionPresentationActive = false;
 	bool bHasLastOrbitMousePosition = false;
