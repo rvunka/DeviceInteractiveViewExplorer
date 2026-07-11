@@ -123,6 +123,13 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			continue;
 		}
 
+		if (Inspectable->PickInteractionExclusions.Contains(ComponentName))
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickContextMenuByComponent key '%s' is listed in PickInteractionExclusions and will never receive pick interaction."),
+				*ComponentName.ToString()));
+		}
+
 		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 		{
 			if (Action.ActionId.IsNone())
@@ -131,6 +138,16 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 					TEXT("PickContextMenuByComponent '%s' has an entry with an empty ActionId."),
 					*ComponentName.ToString()));
 				continue;
+			}
+
+			if (Action.ActionId == DIVE::kContextFocus
+				|| Action.ActionId == DIVE::kContextIsolate
+				|| Action.ActionId == DIVE::kContextToggleMeshPhysics
+				|| Action.ActionId == DIVE::kContextDeleteMesh)
+			{
+				AddError(Report, FString::Printf(
+					TEXT("PickContextMenuByComponent ActionId '%s' is reserved by DIVE built-in menu rows."),
+					*Action.ActionId.ToString()));
 			}
 
 			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
@@ -144,6 +161,98 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			{
 				QualifiedActionIds.Add(QualifiedActionId);
 			}
+		}
+
+		if (ComponentEntry.Value.Actions.IsEmpty())
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickContextMenuByComponent '%s' has no actions."),
+				*ComponentName.ToString()));
+		}
+
+		FDIVEFocusTarget ResolvedCatalogTarget;
+		if (!Inspectable->TryResolveStartFocusTarget(ComponentName, ResolvedCatalogTarget))
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickContextMenuByComponent key '%s' does not match any anchor PartId or pickable mesh component."),
+				*ComponentName.ToString()));
+		}
+
+		if (!ComponentEntry.Value.PrimaryActionId.IsNone())
+		{
+			bool bFoundPrimary = false;
+			for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
+			{
+				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
+				{
+					bFoundPrimary = true;
+					if (!Action.bEnabled)
+					{
+						AddWarning(Report, FString::Printf(
+							TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' points to a disabled action."),
+							*ComponentName.ToString(),
+							*ComponentEntry.Value.PrimaryActionId.ToString()));
+					}
+					break;
+				}
+			}
+
+			if (!bFoundPrimary)
+			{
+				AddError(Report, FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any ActionId."),
+					*ComponentName.ToString(),
+					*ComponentEntry.Value.PrimaryActionId.ToString()));
+			}
+		}
+	}
+
+	for (const FName& ExcludedKey : Inspectable->PickInteractionExclusions)
+	{
+		if (ExcludedKey.IsNone())
+		{
+			AddWarning(Report, TEXT("PickInteractionExclusions contains an empty key."));
+			continue;
+		}
+
+		FDIVEFocusTarget ResolvedTarget;
+		if (!Inspectable->TryResolveStartFocusTarget(ExcludedKey, ResolvedTarget))
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickInteractionExclusions key '%s' does not match any anchor PartId or pickable mesh component."),
+				*ExcludedKey.ToString()));
+		}
+
+		if (Inspectable->PickContextMenuByComponent.Contains(ExcludedKey))
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickInteractionExclusions key '%s' also has a PickContextMenuByComponent entry; pick interaction will never reach it."),
+				*ExcludedKey.ToString()));
+		}
+
+		if (Inspectable->PickHoverOverlayByComponent.Contains(ExcludedKey))
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickInteractionExclusions key '%s' also has a PickHoverOverlayByComponent entry; hover will never apply."),
+				*ExcludedKey.ToString()));
+		}
+	}
+
+	for (const TPair<FName, TSoftObjectPtr<UMaterialInterface>>& OverlayEntry : Inspectable->PickHoverOverlayByComponent)
+	{
+		const FName ComponentName = OverlayEntry.Key;
+		if (ComponentName.IsNone())
+		{
+			AddWarning(Report, TEXT("PickHoverOverlayByComponent has an entry with an empty key."));
+			continue;
+		}
+
+		FDIVEFocusTarget ResolvedTarget;
+		if (!Inspectable->TryResolveStartFocusTarget(ComponentName, ResolvedTarget))
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("PickHoverOverlayByComponent key '%s' does not match any anchor PartId or pickable mesh component."),
+				*ComponentName.ToString()));
 		}
 	}
 

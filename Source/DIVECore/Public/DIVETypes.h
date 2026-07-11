@@ -157,6 +157,11 @@ struct DIVECORE_API FDIVEPickContextMenuActionList
 {
 	GENERATED_BODY()
 
+	/** ActionId from Actions invoked by primary action in Default mode. Must match exactly one row when set. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "One ActionId from Actions below. Primary action (IA_DIVE_PrimaryAction → HandlePrimaryAction*) in Default mode invokes the same Handle_{key}_{ActionId} as the context menu row."))
+	FName PrimaryActionId = NAME_None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	TArray<FDIVEPickContextMenuAction> Actions;
 };

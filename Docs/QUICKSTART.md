@@ -15,18 +15,36 @@ On the **device actor** (the thing being inspected):
 **Only on the device actor.** No Events, no delegate, no Switch.
 
 1. **DIVEInspectable** → **Pick Context Menu By Component** → add key `Screw1`, row `ActionId` = `Unscrew`, `DisplayName` = menu label.
-2. **My Blueprint → Functions → +** → name **`Handle_Screw1_Unscrew`** (pattern: `Handle_{map key}_{ActionId}`).
-3. Optional input: **`TargetComponent`** (Primitive Component) = picked mesh.
-4. Function body: your logic (`UnscrewByRef`, etc.). Compile.
+2. Optional on the same catalog entry: **`Primary Action Id`** = `Unscrew` (primary action in Default mode invokes the same handler as the menu row).
+3. **My Blueprint → Functions → +** → name **`Handle_Screw1_Unscrew`** (pattern: `Handle_{map key}_{ActionId}`).
+4. Optional input: **`TargetComponent`** (Primitive Component) = picked mesh.
+5. Function body: your logic (`UnscrewByRef`, etc.). Compile.
 
 **Toggle row (`*` when active):** enable **`Toggle Active Suffix`** on the catalog row. On the device actor add either:
 
 - bool **variable** `Is_Screw1_Unscrew` (flip it in `Handle_Screw1_Unscrew`), or
 - pure bool **function** `Is_Screw1_Unscrew` that returns the state.
 
-`*` is evaluated when the menu **opens** — after click close the menu and open again (RMB) to refresh the label.
+`*` is evaluated when the menu **opens** — after click close the menu and open again (`IA_DIVE_ContextMenu`) to refresh the label.
 
-Done. Clicking **Unscrew** in session calls that function automatically.
+Done. **Unscrew** runs from the context menu, or from **primary action** when `Primary Action Id` is set.
+
+### Default mode: hover highlight
+
+**DIVE Inspectable → DIVE | Pick | Hover** (not in context menu catalog):
+
+| Property | Purpose |
+|----------|---------|
+| **Hover Overlay Material** | Device-wide default for all interactive meshes under the cursor |
+| **Pick Hover Overlay By Component** | Optional per-mesh override (component name or PartId → material) |
+
+Uses `UMeshComponent::SetOverlayMaterial` (Default mode only). Non-mesh primitives are skipped. Assign a material authored for mesh overlay (outline / tint).
+
+### Pick interaction exclusions
+
+**DIVE Inspectable → DIVE | Pick → Pick Interaction Exclusions** — component names or PartIds that DIVE ignores entirely: no context menu, no `Handle_*`, no primary action, no hover. Same key rules as the context menu catalog.
+
+Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to exclude them from pick at a lower level (visibility/bounds rules still apply).
 
 ### Who does what (two actors)
 
@@ -44,8 +62,7 @@ Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_M
 ### Menu open path (already in plugin — do not override for Unscrew)
 
 ```text
-RMB
- → IA_DIVE_ContextMenu (Enhanced Input on player character)
+IA_DIVE_ContextMenu (project IMC — e.g. RMB in Legacy PIE)
  → DIVE Input::HandleContextMenuRequested()     ← C++ entry, no BP wiring for device actions
  → Session subsystem builds rows, stores pick
  → DIVE Context Menu UI shows widget at cursor
@@ -62,6 +79,19 @@ Click "Unscrew"
  → UI → Session subsystem::ExecuteContextMenuAction
  → DIVEInspectable calls Handle_Screw1_Unscrew on the device actor
 ```
+
+Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`Primary Action Id`** is set on that catalog entry (no menu open).
+
+### Primary action path (production)
+
+```text
+IA_DIVE_PrimaryAction Started
+ → DIVE Input::HandlePrimaryActionPressed()
+ → Session::ExecutePrimaryActionAtScreenPosition (Default mode)
+ → DIVEInspectable → Handle_Screw1_Unscrew on the device actor
+```
+
+In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog `Primary Action Id`.
 
 Built-in rows (Focus, Isolate, Simulate Physics, Delete Mesh) are handled inside the plugin, not via `Handle_*`.
 
@@ -106,14 +136,14 @@ Marker collision: **query-only** на DIVE pick channel — не блокиру�
 
 **Device DOF** (sliders, doors, knobs) — constraints + game state on device prefabs:
 
-1. `SetInteractionMode(Physical)` (PIE: **Left Alt** cycles Default ↔ Physical).
+1. `SetInteractionMode(Physical)` (`IA_DIVE_SetMode_Physical`; Legacy PIE: **Tab** cycles Default ↔ Physical).
 2. Register via `IDIVEDeviceControlRegistry` or implement `IDIVEProxyDrive` on a **control component** (not raw mesh).
 
 **Generic simulating-mesh drag** — pawn bridge (no device component):
 
 1. Player character: `UGRIPHandComponent` (`GrabPolicy = AllowSimulatingPhysics`) + `UDIVEGRIPBridgeComponent`.
 2. Admin context menu → **Simulate Physics** on a mesh.
-3. Physical mode → LMB drag moves the body via GRIP PD. While dragging, **hold R** + mouse move rotates the grabbed body.
+3. Physical mode → primary-action hold drag moves the body via GRIP PD. Legacy PIE: **LMB** + drag; **hold R** + mouse move rotates the grabbed body.
 
 See `DeviceInteractionModel.md` §6–§7 and `Source/DIVEGRIPBridge/README.md`.
 
@@ -161,18 +191,17 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 | MMB + drag | Orbit |
 | Wheel | Zoom |
 | **RMB** | Context menu (`HandleContextMenuRequested` via Legacy → DIVE Input) |
-| **LMB** (menu open, outside panel) | Dismiss context menu |
+| **LMB** | `HandlePrimaryActionPressed` / `Released` (widget dismisses menu on pointer down outside panel) |
 | **G** | Focus under cursor |
-| **Left Alt** | Cycle Default ↔ Physical |
-| LMB | Primary action |
+| **Tab** | Cycle Default ↔ Physical |
 | Ctrl+Z | Focus stack back |
 | Backspace | Exit session |
 | I | Isolate |
 
 ## 5. Editor
 
-**DIVE device scan** (editor utility on selected actor with `UDIVEInspectableComponent`) — validates anchors, catalog, duplicate action ids.
+**DIVE device scan** (editor utility on selected actor with `UDIVEInspectableComponent`) — validates anchors, catalog keys, **`Primary Action Id`**, reserved `ActionId` values, **Pick Interaction Exclusions**, and **Pick Hover Overlay By Component** keys.
 
 ## 6. Compliance
 
-Runtime input: `UDIVEInputComponent` **Handle\*** only (no `BindKey` in `DIVERuntime`). Legacy KBM in `DIVERuntimeDev` for PIE.
+Runtime input: `UDIVEInputComponent` **Handle\*** only (no `BindKey` in `DIVERuntime`). Legacy KBM in `DIVERuntimeDev` for PIE. Physical keys and `IA_*` assets live in **host Content** — see `Project_docs/Plugin_Architecture_Principles.md`.

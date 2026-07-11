@@ -7,6 +7,7 @@
 #include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
 #include "DIVESessionSubsystem.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/GameInstance.h"
 #include "Utils/DIVEContextMenu.h"
@@ -256,6 +257,27 @@ bool UDIVEInspectableComponent::IsPrimitivePickable(const UPrimitiveComponent* P
 	return true;
 }
 
+bool UDIVEInspectableComponent::IsPrimitiveExcludedFromPickInteraction(const UPrimitiveComponent* Primitive) const
+{
+	if (!Primitive || PickInteractionExclusions.IsEmpty())
+	{
+		return false;
+	}
+
+	if (PickInteractionExclusions.Contains(Primitive->GetFName()))
+	{
+		return true;
+	}
+
+	const FName SemanticPartId = ResolveSemanticPartId(Primitive);
+	return !SemanticPartId.IsNone() && PickInteractionExclusions.Contains(SemanticPartId);
+}
+
+bool UDIVEInspectableComponent::IsPrimitiveInteractive(const UPrimitiveComponent* Primitive) const
+{
+	return IsPrimitivePickable(Primitive) && !IsPrimitiveExcludedFromPickInteraction(Primitive);
+}
+
 float UDIVEInspectableComponent::GetEffectiveOrbitSensitivity() const
 {
 	if (bUseDeviceDefinitionSettings && DeviceDefinition)
@@ -487,6 +509,13 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 			continue;
 		}
 
+		if (PickInteractionExclusions.Contains(ComponentName))
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickContextMenuByComponent key '%s' is listed in PickInteractionExclusions and will never receive pick interaction."),
+				*ComponentName.ToString())));
+		}
+
 		FDIVEFocusTarget ResolvedTarget;
 		if (!TryResolveStartFocusTarget(ComponentName, ResolvedTarget))
 		{
@@ -500,6 +529,35 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 			Context.AddWarning(FText::FromString(FString::Printf(
 				TEXT("PickContextMenuByComponent '%s' has no actions."),
 				*ComponentName.ToString())));
+		}
+
+		if (!ComponentEntry.Value.PrimaryActionId.IsNone())
+		{
+			bool bFoundPrimary = false;
+			for (const FDIVEPickContextMenuAction& Action : Actions)
+			{
+				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
+				{
+					bFoundPrimary = true;
+					if (!Action.bEnabled)
+					{
+						Context.AddWarning(FText::FromString(FString::Printf(
+							TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' points to a disabled action."),
+							*ComponentName.ToString(),
+							*ComponentEntry.Value.PrimaryActionId.ToString())));
+					}
+					break;
+				}
+			}
+
+			if (!bFoundPrimary)
+			{
+				Context.AddError(FText::FromString(FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any ActionId in Actions."),
+					*ComponentName.ToString(),
+					*ComponentEntry.Value.PrimaryActionId.ToString())));
+				Result = EDataValidationResult::Invalid;
+			}
 		}
 
 		for (const FDIVEPickContextMenuAction& Action : Actions)
@@ -530,6 +588,57 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 					TEXT("PickContextMenuByComponent '%s' has an entry with an empty DisplayName."),
 					*ComponentName.ToString())));
 			}
+		}
+	}
+
+	for (const FName& ExcludedKey : PickInteractionExclusions)
+	{
+		if (ExcludedKey.IsNone())
+		{
+			Context.AddWarning(FText::FromString(
+				TEXT("PickInteractionExclusions contains an empty key and will never match.")));
+			continue;
+		}
+
+		FDIVEFocusTarget ResolvedTarget;
+		if (!TryResolveStartFocusTarget(ExcludedKey, ResolvedTarget))
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickInteractionExclusions key '%s' does not match any anchor PartId or pickable mesh component on this actor."),
+				*ExcludedKey.ToString())));
+		}
+
+		if (PickContextMenuByComponent.Contains(ExcludedKey))
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickInteractionExclusions key '%s' also has a PickContextMenuByComponent entry; pick interaction will never reach it."),
+				*ExcludedKey.ToString())));
+		}
+
+		if (PickHoverOverlayByComponent.Contains(ExcludedKey))
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickInteractionExclusions key '%s' also has a PickHoverOverlayByComponent entry; hover will never apply."),
+				*ExcludedKey.ToString())));
+		}
+	}
+
+	for (const TPair<FName, TSoftObjectPtr<UMaterialInterface>>& OverlayEntry : PickHoverOverlayByComponent)
+	{
+		const FName ComponentName = OverlayEntry.Key;
+		if (ComponentName.IsNone())
+		{
+			Context.AddWarning(FText::FromString(
+				TEXT("PickHoverOverlayByComponent has an entry with an empty key and will never match a pick.")));
+			continue;
+		}
+
+		FDIVEFocusTarget ResolvedTarget;
+		if (!TryResolveStartFocusTarget(ComponentName, ResolvedTarget))
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("PickHoverOverlayByComponent key '%s' does not match any anchor PartId or pickable mesh component on this actor."),
+				*ComponentName.ToString())));
 		}
 	}
 
@@ -595,10 +704,10 @@ bool UDIVEInspectableComponent::NotifyPickContextMenuAction(
 bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 	const FDIVEFocusTarget& PickTarget,
 	FName& OutComponentName,
-	const TArray<FDIVEPickContextMenuAction>*& OutActions) const
+	const FDIVEPickContextMenuActionList*& OutCatalog) const
 {
 	OutComponentName = NAME_None;
-	OutActions = nullptr;
+	OutCatalog = nullptr;
 
 	if (PickTarget.Kind != EDIVEFocusKind::Primitive || PickContextMenuByComponent.IsEmpty())
 	{
@@ -610,7 +719,7 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 		if (const FDIVEPickContextMenuActionList* Found = PickContextMenuByComponent.Find(Primitive->GetFName()))
 		{
 			OutComponentName = Primitive->GetFName();
-			OutActions = &Found->Actions;
+			OutCatalog = Found;
 			return true;
 		}
 	}
@@ -620,7 +729,7 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 		if (const FDIVEPickContextMenuActionList* Found = PickContextMenuByComponent.Find(PickTarget.SemanticPartId))
 		{
 			OutComponentName = PickTarget.SemanticPartId;
-			OutActions = &Found->Actions;
+			OutCatalog = Found;
 			return true;
 		}
 	}
@@ -643,13 +752,13 @@ bool UDIVEInspectableComponent::ResolvePickContextMenuAction(
 	}
 
 	FName MatchedComponentName = NAME_None;
-	const TArray<FDIVEPickContextMenuAction>* Actions = nullptr;
-	if (!FindPickContextMenuCatalog(PickTarget, MatchedComponentName, Actions) || !Actions)
+	const FDIVEPickContextMenuActionList* Catalog = nullptr;
+	if (!FindPickContextMenuCatalog(PickTarget, MatchedComponentName, Catalog) || !Catalog)
 	{
 		return false;
 	}
 
-	for (const FDIVEPickContextMenuAction& Action : *Actions)
+	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 	{
 		if (Action.ActionId.IsNone())
 		{
@@ -672,16 +781,16 @@ void UDIVEInspectableComponent::AppendConfiguredPickContextMenuEntries(
 	TArray<FDIVEContextMenuEntry>& InOutEntries) const
 {
 	FName ComponentName = NAME_None;
-	const TArray<FDIVEPickContextMenuAction>* Actions = nullptr;
-	if (!FindPickContextMenuCatalog(PickTarget, ComponentName, Actions) || !Actions || Actions->IsEmpty())
+	const FDIVEPickContextMenuActionList* Catalog = nullptr;
+	if (!FindPickContextMenuCatalog(PickTarget, ComponentName, Catalog) || !Catalog || Catalog->Actions.IsEmpty())
 	{
 		return;
 	}
 
 	AActor* Owner = GetOwner();
-	InOutEntries.Reserve(InOutEntries.Num() + Actions->Num());
+	InOutEntries.Reserve(InOutEntries.Num() + Catalog->Actions.Num());
 
-	for (const FDIVEPickContextMenuAction& Action : *Actions)
+	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 	{
 		if (Action.ActionId.IsNone())
 		{
@@ -702,4 +811,106 @@ void UDIVEInspectableComponent::AppendConfiguredPickContextMenuEntries(
 		Entry.bEnabled = Action.bEnabled;
 		InOutEntries.Add(Entry);
 	}
+}
+
+bool UDIVEInspectableComponent::TryResolvePrimaryPickAction(
+	const FDIVEFocusTarget& PickTarget,
+	FName& OutQualifiedActionId) const
+{
+	OutQualifiedActionId = NAME_None;
+
+	FName ComponentName = NAME_None;
+	const FDIVEPickContextMenuActionList* Catalog = nullptr;
+	if (!FindPickContextMenuCatalog(PickTarget, ComponentName, Catalog) || !Catalog || Catalog->PrimaryActionId.IsNone())
+	{
+		return false;
+	}
+
+	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
+	{
+		if (Action.ActionId == Catalog->PrimaryActionId && Action.bEnabled)
+		{
+			OutQualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool UDIVEInspectableComponent::FindPickHoverOverlaySoftMaterial(
+	const FDIVEFocusTarget& PickTarget,
+	TSoftObjectPtr<UMaterialInterface>& OutSoftMaterial) const
+{
+	OutSoftMaterial.Reset();
+
+	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return false;
+	}
+
+	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
+	{
+		if (const TSoftObjectPtr<UMaterialInterface>* Found = PickHoverOverlayByComponent.Find(Primitive->GetFName()))
+		{
+			OutSoftMaterial = *Found;
+			return true;
+		}
+	}
+
+	if (!PickTarget.SemanticPartId.IsNone())
+	{
+		if (const TSoftObjectPtr<UMaterialInterface>* Found = PickHoverOverlayByComponent.Find(PickTarget.SemanticPartId))
+		{
+			OutSoftMaterial = *Found;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+namespace
+{
+UMaterialInterface* ResolveSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& SoftMaterial)
+{
+	if (!SoftMaterial.ToSoftObjectPath().IsValid())
+	{
+		return nullptr;
+	}
+
+	if (UMaterialInterface* Loaded = SoftMaterial.Get())
+	{
+		return Loaded;
+	}
+
+	return SoftMaterial.LoadSynchronous();
+}
+} // namespace
+
+UMaterialInterface* UDIVEInspectableComponent::ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const
+{
+	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return nullptr;
+	}
+
+	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
+	{
+		if (!IsPrimitiveInteractive(Primitive))
+		{
+			return nullptr;
+		}
+	}
+
+	TSoftObjectPtr<UMaterialInterface> SoftMaterial;
+	if (FindPickHoverOverlaySoftMaterial(PickTarget, SoftMaterial) && SoftMaterial.ToSoftObjectPath().IsValid())
+	{
+		if (UMaterialInterface* Material = ResolveSoftMaterial(SoftMaterial))
+		{
+			return Material;
+		}
+	}
+
+	return ResolveSoftMaterial(DefaultPickHoverOverlayMaterial);
 }

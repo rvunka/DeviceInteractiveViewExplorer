@@ -86,7 +86,7 @@ bool PickAtScreenPosition(
 	}
 
 	const bool bIsAnchorMarker = HitPrimitive->ComponentHasTag(DIVE::kAnchorMarkerTag);
-	if (!bIsAnchorMarker && !Context.Inspectable->IsPrimitivePickable(HitPrimitive))
+	if (!bIsAnchorMarker && !Context.Inspectable->IsPrimitiveInteractive(HitPrimitive))
 	{
 		return false;
 	}

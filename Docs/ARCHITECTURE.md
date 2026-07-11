@@ -57,7 +57,7 @@ Orbit, zoom, focus undo, exit, and context menu work in **every** interaction mo
 `EDIVESessionInteractionMode` in **DIVECore**: **Default** | **Physical**.
 
 - Resets to **Default** on session start/end
-- **Physical:** `TryBeginProxyDrive*` allowed; **Default:** primary action no-op
+- **Physical:** `TryBeginProxyDrive*` via `HandlePrimaryAction*`; **Default:** catalog `Primary Action Id` or anchor focus; hover overlay on pick
 
 ### Enhanced Input (host Content)
 
@@ -71,18 +71,20 @@ Orbit, zoom, focus undo, exit, and context menu work in **every** interaction mo
 | `IA_DIVE_SetMode_*` | Started | `SetInteractionMode` |
 | `IA_DIVE_ContextMenu` | Started | `HandleContextMenuRequested` |
 
-Legacy PIE: **RMB** = context menu, **G** = focus shortcut, **Left Alt** = cycle mode, **LMB** = primary action (Physical).
+Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = focus, **Tab** = cycle mode, **LMB** = `HandlePrimaryAction*` (see table in `QUICKSTART.md` §4).
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**, dev **Physics/Delete** on primitive pick; custom rows from **`PickContextMenuByComponent`** → **`Handle_{Key}_{ActionId}`** on device actor. **`UDIVEContextMenuUIComponent`** on player character draws the widget. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — LMB focuses anchor in Default mode.
+In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**, dev **Physics/Delete** on interactive primitive pick; custom rows from **`PickContextMenuByComponent`** → **`Handle_{Key}_{ActionId}`** on device actor. **`Primary Action Id`** = same handler via **`HandlePrimaryActionPressed`** (`IA_DIVE_PrimaryAction`). Hover: **DIVE | Pick | Hover** on inspectable. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character draws the widget. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — primary action focuses anchor in Default mode when no `Primary Action Id` is configured.
 
 ## Device interaction (direct manipulation)
 
 | Intent | Mechanism |
 |--------|-----------|
 | Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
-| Read label, use control | Context menu row → **`Handle_{Key}_{ActionId}`** on device actor |
+| Quick device action | **Primary action** (`Primary Action Id`) or context menu row → **`Handle_{Key}_{ActionId}`** |
+| Default-mode hover | **DIVE \| Pick \| Hover** — `Hover Overlay Material` + optional `Pick Hover Overlay By Component` |
+| Non-interactive meshes | `Pick Interaction Exclusions` or `Skip Component Tag` |
 | Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
 | Cable, grab | GRIP + MESS in host project |
 
@@ -105,9 +107,9 @@ _Future:_ world-level focus dim via custom depth / post-process (not actor hidin
 ## Session flow
 
 1. `RequestSession()` → mode **Default**; camera blends to start focus.
-2. Orbit (MMB), zoom, Ctrl+Z, Backspace exit — always.
-3. **RMB** / `HandleContextMenuRequested` → Focus, Isolate at cursor pick.
-4. **Left Alt** / `SetInteractionMode(Physical)` → LMB drives device controls.
+2. Orbit (`IA_DIVE_Orbit`), zoom, back, exit — always.
+3. **`IA_DIVE_ContextMenu`** / `HandleContextMenuRequested` → Focus, Isolate at cursor pick.
+4. **`IA_DIVE_SetMode_Physical`** / `SetInteractionMode(Physical)` → **`IA_DIVE_PrimaryAction`** drives proxy / GRIP.
 
 ## Editor
 

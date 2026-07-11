@@ -19,7 +19,7 @@ Add to the **player pawn** (not device actors):
 ## Flow
 
 ```text
-Physical mode LMB
+Physical mode — IA_DIVE_PrimaryAction (HandlePrimaryAction*)
   → DIVESessionSubsystem pick
   → device IDIVEProxyDrive (if registered) — priority 1
   → pawn IDIVEPawnPhysicalDrive (this bridge) — priority 2
@@ -44,7 +44,7 @@ Hanging bare `IDIVEProxyDrive` on an actor without implementing its methods does
 ## Manual smoke test
 
 1. Start DIVE session on a device with simulating meshes (context menu → Simulate Physics).
-2. **Left Alt** → Physical mode.
-3. LMB drag on a simulating cube — it should move via GRIP.
-4. While holding LMB, **hold R** and move the mouse to rotate. Mouse switches to relative capture (no screen-edge limit). On R release the cursor returns to its pre-rotate position for drag.
-5. **Left Alt** → Default — drag ends.
+2. `IA_DIVE_SetMode_Physical` (Legacy PIE: **Tab**).
+3. Hold **primary action** on a simulating cube — it should move via GRIP (Legacy PIE: **LMB** drag).
+4. While holding primary action, **hold R** (Legacy manual-rotate key) and move the mouse to rotate. Mouse switches to relative capture (no screen-edge limit). On R release the cursor returns to its pre-rotate position for drag.
+5. `IA_DIVE_SetMode_Default` (Legacy PIE: **Tab**) — drag ends.

@@ -79,6 +79,23 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		ApplyPrimaryActionDragFromMouse();
 	}
+
+	if (Subsystem
+		&& Subsystem->IsSessionActive()
+		&& Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Default
+		&& !ShouldSuppressSessionInput()
+		&& !Subsystem->IsProxyDriving())
+	{
+		FVector2D ScreenPosition;
+		if (TryGetCursorScreenPosition(ScreenPosition))
+		{
+			Subsystem->UpdatePickHover(ScreenPosition, GetLocalPlayerController());
+		}
+	}
+	else if (Subsystem)
+	{
+		Subsystem->ClearPickHover();
+	}
 }
 
 void UDIVEInputComponent::BindSessionDelegates()
@@ -304,14 +321,23 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 		return;
 	}
 
-	FDIVEFocusTarget PickTarget;
-	if (Subsystem->ResolvePickAtScreenPosition(ScreenPosition, PlayerController, PickTarget)
-		&& PickTarget.Kind == EDIVEFocusKind::Anchor
-		&& PickTarget.IsValidFocus())
+	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Default)
 	{
-		Subsystem->FocusTarget(PickTarget, true);
-	}
+		if (Subsystem->ExecutePrimaryActionAtScreenPosition(ScreenPosition, PlayerController))
+		{
+			return;
+		}
 
+		FDIVEFocusTarget PickTarget;
+		if (Subsystem->ResolvePickAtScreenPosition(ScreenPosition, PlayerController, PickTarget)
+			&& PickTarget.Kind == EDIVEFocusKind::Anchor
+			&& PickTarget.IsValidFocus())
+		{
+			Subsystem->FocusTarget(PickTarget, true);
+		}
+
+		return;
+	}
 }
 
 void UDIVEInputComponent::RoutePrimaryActionReleased()

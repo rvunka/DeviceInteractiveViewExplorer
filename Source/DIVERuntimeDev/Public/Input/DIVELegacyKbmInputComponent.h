@@ -107,7 +107,9 @@ public:
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindInteractionModeCycleInput = true;
 
-	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (EditCondition = "bBindInteractionModeCycleInput"))
+	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (
+		EditCondition = "bBindInteractionModeCycleInput",
+		ToolTip = "Legacy BindKey → HandleCycleInteractionMode. Default Tab (GRIP rotation-lock toggle uses Left Alt)."))
 	FKey InteractionModeCycleKey;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")

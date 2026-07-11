@@ -40,6 +40,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick")
 	TEnumAsByte<ECollisionChannel> PickTraceChannel = ECC_Visibility;
 
+	/** Component names (Components tab) or anchor PartIds with no pick interaction: no menu, handlers, primary action, or hover. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (
+		DisplayName = "Pick Interaction Exclusions",
+		ToolTip = "Meshes matching these keys are ignored by DIVE pick (same key rules as context menu catalog: component name, then semantic PartId)."))
+	TArray<FName> PickInteractionExclusions;
+
+	/** Device-wide hover overlay in Default mode. Per-component overrides: Pick Hover Overlay By Component. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick|Hover", meta = (
+		DisplayName = "Hover Overlay Material",
+		ToolTip = "Default overlay material for interactive pickable meshes under the cursor. Overridden per mesh in Pick Hover Overlay By Component."))
+	TSoftObjectPtr<UMaterialInterface> DefaultPickHoverOverlayMaterial;
+
+	/** Component name or PartId → hover overlay material override. Empty map value uses Hover Overlay Material above. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick|Hover", meta = (
+		DisplayName = "Pick Hover Overlay By Component"))
+	TMap<FName, TSoftObjectPtr<UMaterialInterface>> PickHoverOverlayByComponent;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|View", meta = (
 		DisplayName = "Default Start Focus Id",
 		ToolTip = "Anchor PartId or pickable mesh component name to focus when the session starts."))
@@ -108,6 +125,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsPrimitivePickable(const UPrimitiveComponent* Primitive) const;
 
+	/** Pickable and not listed in Pick Interaction Exclusions. */
+	UFUNCTION(BlueprintPure, Category = "DIVE|Pick")
+	bool IsPrimitiveInteractive(const UPrimitiveComponent* Primitive) const;
+
 	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
 	float GetEffectiveOrbitSensitivity() const;
 
@@ -121,6 +142,9 @@ public:
 	bool TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const;
 
 	void AppendConfiguredPickContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries) const;
+
+	bool TryResolvePrimaryPickAction(const FDIVEFocusTarget& PickTarget, FName& OutQualifiedActionId) const;
+	UMaterialInterface* ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;
@@ -144,11 +168,14 @@ private:
 	bool FindPickContextMenuCatalog(
 		const FDIVEFocusTarget& PickTarget,
 		FName& OutComponentName,
-		const TArray<FDIVEPickContextMenuAction>*& OutActions) const;
+		const FDIVEPickContextMenuActionList*& OutCatalog) const;
 
 	bool ResolvePickContextMenuAction(
 		FName QualifiedActionId,
 		const FDIVEFocusTarget& PickTarget,
 		FName& OutComponentName,
 		FName& OutLocalActionId) const;
+
+	bool IsPrimitiveExcludedFromPickInteraction(const UPrimitiveComponent* Primitive) const;
+	bool FindPickHoverOverlaySoftMaterial(const FDIVEFocusTarget& PickTarget, TSoftObjectPtr<UMaterialInterface>& OutSoftMaterial) const;
 };

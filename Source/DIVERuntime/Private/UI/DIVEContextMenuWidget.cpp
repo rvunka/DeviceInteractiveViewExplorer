@@ -170,7 +170,7 @@ FReply UDIVEContextMenuWidget::NativeOnPreviewMouseButtonDown(
 	const FGeometry& InGeometry,
 	const FPointerEvent& InMouseEvent)
 {
-	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && OuterFrame)
+	if (InMouseEvent.GetEffectingButton().IsValid() && OuterFrame)
 	{
 		const FVector2D ScreenPosition = InMouseEvent.GetScreenSpacePosition();
 		const FGeometry PanelGeometry = OuterFrame->GetCachedGeometry();

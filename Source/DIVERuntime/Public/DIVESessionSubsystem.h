@@ -105,6 +105,15 @@ public:
 		APlayerController* PlayerController,
 		FDIVEFocusTarget& OutPickTarget) const;
 
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Pick")
+	bool ExecutePrimaryActionAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Pick")
+	void UpdatePickHover(const FVector2D& ScreenPosition, APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Pick")
+	void ClearPickHover();
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	bool FocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack = true);
 
@@ -196,6 +205,8 @@ private:
 	FDIVEFocusTarget ContextMenuPickTarget;
 	TArray<FDIVEContextMenuEntry> ContextMenuEntries;
 	FVector2D ContextMenuScreenPosition = FVector2D::ZeroVector;
+
+	TWeakObjectPtr<UPrimitiveComponent> PickHoverPrimitive;
 
 	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bUseDefaultOrbitDistance = false);
 	bool ApplyInitialSessionFocus(FName InitialFocusId);

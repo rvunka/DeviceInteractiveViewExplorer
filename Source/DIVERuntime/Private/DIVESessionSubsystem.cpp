@@ -11,6 +11,7 @@
 #include "DIVEPawnPhysicalDrive.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
 #include "DIVEProxyDriveTypes.h"
+#include "Components/MeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -18,6 +19,17 @@
 #include "Utils/DIVEPlayerQuery.h"
 #include "Utils/DIVEContextMenu.h"
 #include "Containers/Set.h"
+
+namespace
+{
+void SetMeshOverlayMaterial(UPrimitiveComponent* Primitive, UMaterialInterface* OverlayMaterial)
+{
+	if (UMeshComponent* Mesh = Cast<UMeshComponent>(Primitive))
+	{
+		Mesh->SetOverlayMaterial(OverlayMaterial);
+	}
+}
+}
 
 void UDIVESessionSubsystem::Deinitialize()
 {
@@ -116,6 +128,7 @@ void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 	AActor* EndedDeviceHost = ActiveDeviceHost.Get();
 
 	CloseContextMenu();
+	ClearPickHover();
 	ClearProxyDrive();
 	ClearIsolation();
 	FocusStack.Reset();
@@ -221,6 +234,7 @@ void UDIVESessionSubsystem::SetInteractionMode(EDIVESessionInteractionMode NewMo
 	}
 
 	CloseContextMenu();
+	ClearPickHover();
 
 	if (NewMode != EDIVESessionInteractionMode::Physical)
 	{
@@ -307,6 +321,7 @@ bool UDIVESessionSubsystem::OpenContextMenuAtScreenPosition(
 	ContextMenuPickTarget = PickTarget;
 	ContextMenuScreenPosition = ScreenPosition;
 	bContextMenuOpen = true;
+	ClearPickHover();
 	OnContextMenuVisibilityChanged.Broadcast(true);
 	return true;
 }
@@ -450,6 +465,8 @@ void UDIVESessionSubsystem::ClearIsolation()
 	{
 		return;
 	}
+
+	ClearPickHover();
 
 	for (const TWeakObjectPtr<UPrimitiveComponent>& WeakPrimitive : IsolatedHiddenPrimitives)
 	{
@@ -700,6 +717,91 @@ bool UDIVESessionSubsystem::ResolvePickAtScreenPosition(
 	return DIVEPick::PickAtScreenPosition(Context, ScreenPosition, PlayerController, HitResult, OutTarget);
 }
 
+bool UDIVESessionSubsystem::ExecutePrimaryActionAtScreenPosition(
+	const FVector2D& ScreenPosition,
+	APlayerController* PlayerController)
+{
+	if (!IsSessionActive() || InteractionMode != EDIVESessionInteractionMode::Default || !PlayerController)
+	{
+		return false;
+	}
+
+	FDIVEFocusTarget PickTarget;
+	if (!ResolvePickAtScreenPosition(ScreenPosition, PlayerController, PickTarget)
+		|| PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	if (!Inspectable)
+	{
+		return false;
+	}
+
+	FName QualifiedActionId = NAME_None;
+	if (!Inspectable->TryResolvePrimaryPickAction(PickTarget, QualifiedActionId))
+	{
+		return false;
+	}
+
+	return Inspectable->NotifyPickContextMenuAction(QualifiedActionId, PickTarget);
+}
+
+void UDIVESessionSubsystem::UpdatePickHover(const FVector2D& ScreenPosition, APlayerController* PlayerController)
+{
+	if (!IsSessionActive()
+		|| InteractionMode != EDIVESessionInteractionMode::Default
+		|| bContextMenuOpen
+		|| !PlayerController)
+	{
+		ClearPickHover();
+		return;
+	}
+
+	FDIVEFocusTarget PickTarget;
+	if (!ResolvePickAtScreenPosition(ScreenPosition, PlayerController, PickTarget)
+		|| PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		ClearPickHover();
+		return;
+	}
+
+	UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	if (!Primitive || !Inspectable || Primitive->bHiddenInGame || !Inspectable->IsPrimitiveInteractive(Primitive))
+	{
+		ClearPickHover();
+		return;
+	}
+
+	UMaterialInterface* OverlayMaterial = Inspectable->ResolvePickHoverOverlayMaterial(PickTarget);
+	if (!OverlayMaterial)
+	{
+		ClearPickHover();
+		return;
+	}
+
+	if (PickHoverPrimitive.Get() == Primitive)
+	{
+		return;
+	}
+
+	ClearPickHover();
+	SetMeshOverlayMaterial(Primitive, OverlayMaterial);
+	PickHoverPrimitive = Primitive;
+}
+
+void UDIVESessionSubsystem::ClearPickHover()
+{
+	if (UPrimitiveComponent* Primitive = PickHoverPrimitive.Get())
+	{
+		SetMeshOverlayMaterial(Primitive, nullptr);
+	}
+
+	PickHoverPrimitive.Reset();
+}
+
 bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera, bool bUseDefaultOrbitDistance)
 {
 	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
@@ -810,6 +912,8 @@ bool UDIVESessionSubsystem::ApplyIsolationForTarget(const FDIVEFocusTarget& Targ
 	{
 		return false;
 	}
+
+	ClearPickHover();
 
 	TArray<UPrimitiveComponent*> VisiblePrimitives;
 	CollectIsolationVisiblePrimitives(Target, VisiblePrimitives);

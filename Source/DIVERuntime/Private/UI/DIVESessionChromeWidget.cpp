@@ -113,7 +113,7 @@ void UDIVESessionChromeWidget::RebuildChrome()
 
 	ModeHint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ModeHint"));
 	ModeHint->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), CachedStyle.HintFontSize));
-	ModeHint->SetText(NSLOCTEXT("DIVE", "SessionModeHint", "Alt — switch mode"));
+	ModeHint->SetText(NSLOCTEXT("DIVE", "SessionModeHint", "Tab — switch mode"));
 	ModeHint->SetColorAndOpacity(CachedStyle.HintText);
 	ModeHint->SetVisibility(bShowModeHint ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 

@@ -127,7 +127,7 @@ Available regardless of `EDIVESessionInteractionMode`:
 
 ```text
 EDIVESessionInteractionMode  (DIVECore)
-  Default   — inspect: primary action no-op; focus via HandleFocusUnderCursor / context menu
+  Default   — inspect: primary action → catalog Primary Action Id or anchor focus; hover overlay; explicit focus via HandleFocusUnderCursor / context menu
   Physical  — primary action → continuous DOF (door, slider, knob)
   Logical   — deferred (v1: use registry hit-type or context menu)
 ```
@@ -136,7 +136,7 @@ Mode is **not** tied to a single mouse button. It is **policy** for routing **mu
 
 | Policy area | Example behaviour per mode |
 |-------------|----------------------------|
-| `HandlePrimaryAction*` | Physical → grab/drive; Logical → click; Default → no-op or highlight only |
+| `HandlePrimaryAction*` | Physical → grab/drive; Logical → click; Default → catalog action / anchor focus / hover |
 | Context menu contents | Built-in Focus/Isolate + **`PickContextMenuByComponent`** catalog |
 | Hit highlight / filter | Physical may prefer grabbable primitives |
 | HUD / cursor | Show active mode label |
@@ -160,13 +160,13 @@ Flow:
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 
-### 4.4. Primary action (semantic, not Select/LMB)
+### 4.4. Primary action (semantic)
 
-Target API: **`HandlePrimaryActionPressed/Released`**.
+Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_PrimaryAction`**).
 
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
-| **Default** | No grab; optional hover highlight |
+| **Default** | `Primary Action Id` handler when configured, else anchor focus; hover overlay on pickable mesh |
 | **Physical** | Begin/update/end drive on hit control (registry, `IDIVEProxyDrive`, or virtual GRIP via ATSEP) |
 | **Logical** | Single fire on press (button mesh) |
 
@@ -199,9 +199,10 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | Current behaviour | Notes |
 |-------------------|-------|
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Default / Physical |
-| `HandlePrimaryAction*` | Default no-op; Physical → proxy drive |
-| Context menu + widget | Focus, Isolate on primitive pick; anchor → LMB focus only |
-| `PickContextMenuByComponent` + `Handle_{Key}_{ActionId}` | Catalog on inspectable; handler BP function on device |
+| `HandlePrimaryAction*` | Default → catalog `Primary Action Id` or anchor focus; hover overlay; Physical → proxy drive |
+| Context menu + widget | Focus, Isolate on primitive pick; anchor → primary action focus in Default when no `Primary Action Id` |
+| `PickContextMenuByComponent` + `Handle_{Key}_{ActionId}` | Catalog on inspectable; `Primary Action Id`; handler on device |
+| Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
 | `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices |
 | Anchor | Viewpoint + PartId only |
 

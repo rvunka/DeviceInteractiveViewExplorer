@@ -25,7 +25,7 @@ UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
 	SelectKey = EKeys::LeftMouseButton;
 	ManualRotateKey = EKeys::R;
 	FocusUnderCursorKey = EKeys::G;
-	InteractionModeCycleKey = EKeys::LeftAlt;
+	InteractionModeCycleKey = EKeys::Tab;
 	CameraUndoKey = EKeys::Z;
 	ExitKey = EKeys::BackSpace;
 	IsolateKey = EKeys::I;
