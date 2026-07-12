@@ -79,8 +79,8 @@ void UDIVELegacyKbmInputComponent::BindSessionDelegates()
 		{
 			if (UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
 			{
-				DiveSubsystem->OnSessionStarted.AddDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
-				DiveSubsystem->OnSessionEnded.AddDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
+				DiveSubsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
+				DiveSubsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
 			}
 		}
 	}
@@ -108,8 +108,11 @@ void UDIVELegacyKbmInputComponent::RefreshSessionInputBindings()
 		BindInput();
 		if (!bInputBound && GetWorld())
 		{
-			GetWorld()->GetTimerManager().SetTimerForNextTick(
-				FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput));
+			GetWorld()->GetTimerManager().SetTimer(
+				PendingBindInputTimerHandle,
+				FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput),
+				0.f,
+				false);
 		}
 	}
 	else
@@ -347,24 +350,37 @@ void UDIVELegacyKbmInputComponent::ContextMenuPressed()
 	}
 }
 
+void UDIVELegacyKbmInputComponent::ClearLegacyKeyBindings()
+{
+	if (!LegacyInputComponent)
+	{
+		return;
+	}
+
+	// BindKey writes KeyBindings. ClearActionBindings() does not touch that array.
+	LegacyInputComponent->KeyBindings.Reset();
+}
+
 void UDIVELegacyKbmInputComponent::UnbindInput()
 {
-	if (APawn* Pawn = Cast<APawn>(GetOwner()))
+	if (UWorld* World = GetWorld())
 	{
-		if (LegacyInputComponent && bInputBound)
+		World->GetTimerManager().ClearTimer(PendingBindInputTimerHandle);
+	}
+
+	if (LegacyInputComponent)
+	{
+		if (APawn* Pawn = Cast<APawn>(GetOwner()))
 		{
 			if (APlayerController* PlayerController = Pawn->GetController<APlayerController>())
 			{
+				// Safe if not on the stack (returns false). Prefer Pop whenever we own a component.
 				PlayerController->PopInputComponent(LegacyInputComponent);
 			}
 		}
 	}
 
-	if (LegacyInputComponent)
-	{
-		LegacyInputComponent->ClearActionBindings();
-	}
-
+	ClearLegacyKeyBindings();
 	bInputBound = false;
 }
 
@@ -381,11 +397,19 @@ void UDIVELegacyKbmInputComponent::BindInput()
 		return;
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(PendingBindInputTimerHandle);
+	}
+
 	if (!LegacyInputComponent)
 	{
 		LegacyInputComponent = NewObject<UInputComponent>(this, TEXT("DIVE_LegacyInput"));
 		LegacyInputComponent->RegisterComponent();
 	}
+
+	// Always start from a clean KeyBindings list before re-binding.
+	ClearLegacyKeyBindings();
 
 	UInputComponent* PawnInputComponent = LegacyInputComponent;
 	bool bBoundAny = false;
@@ -472,6 +496,7 @@ void UDIVELegacyKbmInputComponent::BindInput()
 		}
 		else
 		{
+			ClearLegacyKeyBindings();
 			bInputBound = false;
 		}
 	}

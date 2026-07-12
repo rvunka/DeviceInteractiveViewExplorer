@@ -10,7 +10,6 @@
 
 class UDIVEInputComponent;
 class UInputComponent;
-class UDIVESessionSubsystem;
 class UDIVEInspectableComponent;
 
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Legacy KBM Input"))
@@ -145,11 +144,13 @@ protected:
 
 	bool bInputBound = false;
 	bool bLoggedMissingInput = false;
+	FTimerHandle PendingBindInputTimerHandle;
 
 	void ResolveComponentReferences();
 	void EnsureInputReady();
 	void BindInput();
 	void UnbindInput();
+	void ClearLegacyKeyBindings();
 	bool TryRouteZoomWheel(float WheelDelta);
 	void WarnMissingInputOnce();
 	void BindSessionDelegates();

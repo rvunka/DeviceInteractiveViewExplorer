@@ -52,6 +52,12 @@ Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEContextMenuUICompone
 
 Orbit, zoom, focus undo, exit, and context menu work in **every** interaction mode.
 
+Zoom steps scale with orbit distance by default; focusing a primitive fits distance to its
+bounds and raises a soft near floor from the part radius (`DIVE | Camera` on Inspectable).
+
+Pick accepts visible meshes and **shape collision** volumes (including Hidden-in-Game shapes);
+hidden meshes need tag `DIVE.PickProxy`.
+
 ### Interaction mode
 
 `EDIVESessionInteractionMode` in **DIVECore**: **Default** | **Physical**.

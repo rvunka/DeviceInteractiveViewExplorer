@@ -41,9 +41,13 @@ inline void ForEachDeviceActor(AActor* DeviceHost, TFunctionRef<void(AActor*)> V
 
 inline void CollectDevicePrimitives(AActor* DeviceHost, TArray<UPrimitiveComponent*>& OutPrimitives)
 {
+	OutPrimitives.Reset();
 	ForEachDeviceActor(DeviceHost, [&OutPrimitives](AActor* Actor)
 	{
-		Actor->GetComponents<UPrimitiveComponent>(OutPrimitives);
+		// GetComponents resets its output array — collect per-actor then append.
+		TArray<UPrimitiveComponent*> ActorPrimitives;
+		Actor->GetComponents<UPrimitiveComponent>(ActorPrimitives);
+		OutPrimitives.Append(ActorPrimitives);
 	});
 }
 

@@ -8,7 +8,39 @@ On the **device actor** (the thing being inspected):
 |-----------|---------|
 | `UDIVEInspectableComponent` | Session entry, camera, **context menu catalog** |
 | `UDIVEAnchorComponent` | Optional semantic parts / focus points |
-| Pickable meshes | Static/skeletal meshes on the actor |
+| Pickable primitives | Static/skeletal meshes, or Box/Sphere/Capsule collision volumes |
+
+### Camera zoom (small parts)
+
+**DIVE Inspectable → DIVE | Camera** (or Device Definition when `bUseDeviceDefinitionSettings`):
+
+| Property | Default | Purpose |
+|----------|---------|---------|
+| **Zoom Sensitivity** | 40 | Base step (cm) at the reference distance |
+| **Scale Zoom With Orbit Distance** | on | Near = finer steps, far = larger |
+| **Zoom Distance Reference Cm** | 200 | Distance where sensitivity maps 1:1 |
+| **Min / Max Orbit Distance Cm** | 20 / 2000 | Hard zoom limits |
+| **Focus Orbit Fit Multiplier** | 2.75 | Focus on a mesh → distance ≈ radius × this |
+| **Focus Near Padding Factor** | 1.2 | Soft near floor ≈ radius × this (avoids diving into the part) |
+
+Focus on a primitive fits orbit distance to its bounds; wheel zoom scales with current distance.
+
+### Collision volumes as pick targets
+
+When the device is one solid mesh, add **Box / Sphere / Capsule Collision** on the same actor:
+
+1. **Collision Enabled** = `Query Only` (or Query and Physics).
+2. In **Collision Responses**, set **Visibility** = **Block**  
+   (DIVE’s `Pick Trace Channel` defaults to Visibility — there is no separate “Pick” channel).  
+   Avoid the **Trigger** profile: it sets Visibility to Ignore.
+3. Shape can stay **Hidden in Game**.
+4. Wire context menu / handlers by the **collision component name**.
+
+Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over the shell mesh in front of them. If the box still never wins, check Visibility is Block and the component is on the device actor.
+
+**Isolate** on a pick volume keeps device **meshes** visible (the shell) and hides other volumes / unrelated primitives. Clearing Isolate restores each component’s original Hidden-in-Game state (so authored-hidden boxes stay hidden).
+
+Hover overlay still applies only to `UMeshComponent`.
 
 ### Custom context menu row (example: Unscrew on screw)
 
@@ -20,12 +52,13 @@ On the **device actor** (the thing being inspected):
 4. Optional input: **`TargetComponent`** (Primitive Component) = picked mesh.
 5. Function body: your logic (`UnscrewByRef`, etc.). Compile.
 
-**Toggle row (`*` when active):** enable **`Toggle Active Suffix`** on the catalog row. On the device actor add either:
+**Toggle row (`*` when active):** enable **`Toggle Active Suffix`**.
 
-- bool **variable** `Is_Screw1_Unscrew` (flip it in `Handle_Screw1_Unscrew`), or
-- pure bool **function** `Is_Screw1_Unscrew` that returns the state.
+1. Bool `Is_{Key}_{ActionId}` (default matches initial light state).
+2. `Handle_{Key}_{ActionId}` reads **current** `Is_*` and applies the toggle action (e.g. true→turn off, false→turn on).
+3. DIVE then flips `Is_*` **after** Handle.
 
-`*` is evaluated when the menu **opens** — after click close the menu and open again (`IA_DIVE_ContextMenu`) to refresh the label.
+Do not also flip `Is_*` inside Handle.
 
 Done. **Unscrew** runs from the context menu, or from **primary action** when `Primary Action Id` is set.
 
@@ -175,9 +208,20 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 | Backspace | Exit session |
 | I | Isolate |
 
-## 5. Editor
+## 5. Editor / diagnostics
 
-**DIVE device scan** (editor utility on selected actor with `UDIVEInspectableComponent`) — validates anchors, catalog keys, **`Primary Action Id`**, reserved `ActionId` values, **Pick Interaction Exclusions**, and **Pick Hover Overlay By Component** keys.
+**DIVE Scan Device** (RMB on actor in level → DIVE) — validates anchors, catalog keys, **`Primary Action Id`**, reserved `ActionId` values, exclusions, hover keys.
+
+**DIVE Dump Device** (same menu) or console in PIE:
+
+| Command | What |
+|---------|------|
+| `DIVE.DumpDevice` | Active session device (or first inspectable). Optional arg: name substring, e.g. `DIVE.DumpDevice ElectricalPanel` |
+| `DIVE.DumpAll` | Every actor with `UDIVEInspectableComponent` |
+
+On success: cyan on-screen toast `DIVE dump saved: Saved/DIVE/Dumps/...` (same idea as MESS). Also **Output Log** filter `LogDIVE`, file under `Saved/DIVE/Dumps/`.
+
+Use the dump when custom menu rows are missing: compare **CatalogKey** to each prim **FName** / **Normalized**. Section **Cross-check** prints `OK` / `FAIL` per key. `CatalogMatch custom rows: (none)` on a Switch means the key did not match that component.
 
 ## 6. Compliance
 

@@ -156,7 +156,7 @@ Flow:
 2. **Built-in entries** (plugin): **Focus**, **Isolate**; administrator section: **Enable/Disable Physics**, **Delete Mesh** (picked primitive only).
 3. **Device extensions** (host): **`PickContextMenuByComponent`** on inspectable (component name → short `ActionId` per row).
 4. Custom row click → **`Handle_{ComponentKey}_{ActionId}`** on device actor (e.g. `Handle_Screw1_Unscrew`). See **`QUICKSTART.md`** §1.
-5. Optional toggle label (`*` when active): `bToggleActiveSuffix` on catalog row + pure bool **`Is_{Key}_{ActionId}`** on device actor.
+5. Optional toggle: `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — `Handle_*` runs on current value, then DIVE flips `Is_*`.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 

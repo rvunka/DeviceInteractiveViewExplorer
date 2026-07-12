@@ -58,6 +58,42 @@ void ADIVECameraRig::SetInputSensitivity(float InOrbitSensitivity, float InZoomS
 	ZoomInputScale = FMath::Max(InZoomSensitivity, 0.01f);
 }
 
+void ADIVECameraRig::SetOrbitDistanceLimits(const float InMinOrbitDistanceCm, const float InMaxOrbitDistanceCm)
+{
+	MinOrbitDistance = FMath::Max(InMinOrbitDistanceCm, 1.f);
+	MaxOrbitDistance = FMath::Max(InMaxOrbitDistanceCm, MinOrbitDistance);
+	OrbitDistance = FMath::Clamp(OrbitDistance, GetEffectiveMinOrbitDistance(), MaxOrbitDistance);
+}
+
+void ADIVECameraRig::SetZoomDistanceScaling(const bool bInScaleWithOrbitDistance, const float InReferenceDistanceCm)
+{
+	bScaleZoomWithOrbitDistance = bInScaleWithOrbitDistance;
+	ZoomDistanceReferenceCm = FMath::Max(InReferenceDistanceCm, 1.f);
+}
+
+void ADIVECameraRig::SetFocusClearanceRadius(const float ClearanceRadiusCm)
+{
+	FocusClearanceRadius = FMath::Max(ClearanceRadiusCm, 0.f);
+	OrbitDistance = FMath::Clamp(OrbitDistance, GetEffectiveMinOrbitDistance(), MaxOrbitDistance);
+}
+
+float ADIVECameraRig::GetEffectiveMinOrbitDistance() const
+{
+	return FMath::Max(MinOrbitDistance, FocusClearanceRadius);
+}
+
+float ADIVECameraRig::ComputeZoomStepCm() const
+{
+	if (!bScaleZoomWithOrbitDistance)
+	{
+		return ZoomInputScale;
+	}
+
+	const float Reference = FMath::Max(ZoomDistanceReferenceCm, 1.f);
+	const float Scale = FMath::Clamp(OrbitDistance / Reference, MinZoomScaleFactor, MaxZoomScaleFactor);
+	return ZoomInputScale * Scale;
+}
+
 void ADIVECameraRig::SetOrbitTarget(const FVector& WorldLocation, bool bRefreshTransform)
 {
 	const bool bLeaveAnchorViewpoint = Mode == EDIVECameraRigMode::AnchorViewpoint;
@@ -77,7 +113,7 @@ void ADIVECameraRig::SetOrbitTarget(const FVector& WorldLocation, bool bRefreshT
 
 void ADIVECameraRig::SetOrbitDistance(float Distance, bool bRefreshTransform)
 {
-	OrbitDistance = FMath::Clamp(Distance, MinOrbitDistance, MaxOrbitDistance);
+	OrbitDistance = FMath::Clamp(Distance, GetEffectiveMinOrbitDistance(), MaxOrbitDistance);
 
 	if (bRefreshTransform && Mode == EDIVECameraRigMode::Orbit)
 	{
@@ -124,7 +160,7 @@ void ADIVECameraRig::ApplyFocusPresentation(float BlendDuration)
 void ADIVECameraRig::SyncOrbitFromCurrentView()
 {
 	const FVector CameraLocation = GetActorLocation();
-	OrbitDistance = FMath::Clamp(FVector::Dist(CameraLocation, OrbitTarget), MinOrbitDistance, MaxOrbitDistance);
+	OrbitDistance = FMath::Clamp(FVector::Dist(CameraLocation, OrbitTarget), GetEffectiveMinOrbitDistance(), MaxOrbitDistance);
 
 	const FVector LookDirection = (OrbitTarget - CameraLocation).GetSafeNormal();
 	if (!LookDirection.IsNearlyZero())
@@ -194,12 +230,14 @@ void ADIVECameraRig::ApplyZoomDelta(float Delta)
 
 	if (Mode == EDIVECameraRigMode::AnchorViewpoint)
 	{
+		// Authored viewpoints use the base sensitivity; distance scaling is for orbit mode.
 		AnchorViewLocation += AnchorViewOrientation.RotateVector(FVector::ForwardVector) * (Delta * ZoomInputScale);
 		RefreshCameraTransform();
 		return;
 	}
 
-	OrbitDistance = FMath::Clamp(OrbitDistance - Delta * ZoomInputScale, MinOrbitDistance, MaxOrbitDistance);
+	const float StepCm = ComputeZoomStepCm();
+	OrbitDistance = FMath::Clamp(OrbitDistance - Delta * StepCm, GetEffectiveMinOrbitDistance(), MaxOrbitDistance);
 	RefreshCameraTransform();
 }
 

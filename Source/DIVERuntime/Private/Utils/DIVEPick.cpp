@@ -67,29 +67,68 @@ bool PickAtScreenPosition(
 		QueryParams.AddIgnoredActor(Context.IgnoredActor);
 	}
 
-	if (!Context.World->LineTraceSingleByChannel(
-		OutHit,
+	const FVector TraceEnd = WorldOrigin + WorldDirection * 100000.f;
+	TArray<FHitResult> Hits;
+	if (!Context.World->LineTraceMultiByChannel(
+		Hits,
 		WorldOrigin,
-		WorldOrigin + WorldDirection * 100000.f,
+		TraceEnd,
 		Context.TraceChannel,
-		QueryParams))
+		QueryParams)
+		|| Hits.IsEmpty())
 	{
 		return false;
 	}
 
-	UPrimitiveComponent* HitPrimitive = OutHit.GetComponent();
-	if (!HitPrimitive || !IsComponentPartOfDeviceHost(HitPrimitive, Context.DeviceHost))
+	// Prefer collision pick-proxies (Box/Sphere/Capsule or DIVE.PickProxy) over the shell mesh
+	// that usually sits in front of them on Visibility traces.
+	const FHitResult* ChosenHit = nullptr;
+	const FHitResult* FirstInteractiveHit = nullptr;
+
+	for (const FHitResult& Hit : Hits)
+	{
+		UPrimitiveComponent* HitPrimitive = Hit.GetComponent();
+		if (!HitPrimitive || !IsComponentPartOfDeviceHost(HitPrimitive, Context.DeviceHost))
+		{
+			continue;
+		}
+
+		if (!Context.Inspectable->IsPrimitiveInteractive(HitPrimitive))
+		{
+			continue;
+		}
+
+		if (!FirstInteractiveHit)
+		{
+			FirstInteractiveHit = &Hit;
+		}
+
+		if (Context.Inspectable->IsPickProxyPrimitive(HitPrimitive))
+		{
+			ChosenHit = &Hit;
+			break;
+		}
+	}
+
+	if (!ChosenHit)
+	{
+		ChosenHit = FirstInteractiveHit;
+	}
+
+	if (!ChosenHit)
 	{
 		return false;
 	}
 
-	if (!Context.Inspectable->IsPrimitiveInteractive(HitPrimitive))
+	UPrimitiveComponent* ChosenPrimitive = ChosenHit->GetComponent();
+	if (!ChosenPrimitive)
 	{
 		return false;
 	}
 
-	const FName SemanticPartId = Context.Inspectable->ResolveSemanticPartId(HitPrimitive);
-	OutTarget = FDIVEFocusTarget::FromPrimitive(HitPrimitive, SemanticPartId);
+	OutHit = *ChosenHit;
+	const FName SemanticPartId = Context.Inspectable->ResolveSemanticPartId(ChosenPrimitive);
+	OutTarget = FDIVEFocusTarget::FromPrimitive(ChosenPrimitive, SemanticPartId);
 	return true;
 }
 }

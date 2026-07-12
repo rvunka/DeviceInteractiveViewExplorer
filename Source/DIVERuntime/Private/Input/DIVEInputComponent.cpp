@@ -102,9 +102,9 @@ void UDIVEInputComponent::BindSessionDelegates()
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		Subsystem->OnSessionStarted.AddDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
-		Subsystem->OnSessionEnded.AddDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
-		Subsystem->OnInteractionModeChanged.AddDynamic(this, &UDIVEInputComponent::HandleInteractionModeChanged);
+		Subsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
+		Subsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
+		Subsystem->OnInteractionModeChanged.AddUniqueDynamic(this, &UDIVEInputComponent::HandleInteractionModeChanged);
 	}
 }
 
@@ -163,13 +163,10 @@ void UDIVEInputComponent::BeginSessionPresentation()
 	CapturePreSessionInputState(PlayerController);
 	ApplySessionInputMode(PlayerController);
 
+	Subsystem->ApplyCameraInputFromInspectable();
 	if (bOverrideCameraSensitivity)
 	{
 		Subsystem->ConfigureActiveCameraInput(OrbitSensitivity, ZoomSensitivity);
-	}
-	else
-	{
-		Subsystem->ApplyCameraInputFromInspectable();
 	}
 
 	bSessionPresentationActive = true;

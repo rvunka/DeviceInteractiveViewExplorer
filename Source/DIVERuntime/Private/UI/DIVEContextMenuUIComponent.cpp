@@ -32,8 +32,8 @@ void UDIVEContextMenuUIComponent::BindSessionDelegates()
 	{
 		if (UDIVESessionSubsystem* Subsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
 		{
-			Subsystem->OnContextMenuVisibilityChanged.AddDynamic(this, &UDIVEContextMenuUIComponent::HandleContextMenuVisibilityChanged);
-			Subsystem->OnSessionEnded.AddDynamic(this, &UDIVEContextMenuUIComponent::HandleSessionEnded);
+			Subsystem->OnContextMenuVisibilityChanged.AddUniqueDynamic(this, &UDIVEContextMenuUIComponent::HandleContextMenuVisibilityChanged);
+			Subsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVEContextMenuUIComponent::HandleSessionEnded);
 
 			if (Subsystem->IsContextMenuOpen())
 			{

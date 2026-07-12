@@ -96,13 +96,14 @@ bool UDIVESessionSubsystem::TryBeginSession(
 	const float DefaultDistance = Inspectable->GetEffectiveDefaultOrbitDistance();
 	SessionDefaultOrbitDistance = DefaultDistance;
 
+	ActiveCameraRig = CameraRig;
+	ApplyCameraInputFromInspectable();
+
 	constexpr bool bRefreshTransform = false;
 	CameraRig->SetOrbitDistance(DefaultDistance, bRefreshTransform);
 	CameraRig->SetOrbitTarget(FocusStack.Last().GetPivotLocation(DeviceHost), bRefreshTransform);
 	CameraRig->SyncOrbitFromCurrentView();
 
-	ApplyCameraInputFromInspectable();
-	ActiveCameraRig = CameraRig;
 	SessionState = EDIVESessionState::Active;
 
 	PlayerController->SetViewTargetWithBlend(CameraRig, 0.f);
@@ -212,6 +213,17 @@ void UDIVESessionSubsystem::ApplyCameraInputFromInspectable()
 		ConfigureActiveCameraInput(
 			Inspectable->GetEffectiveOrbitSensitivity(),
 			Inspectable->GetEffectiveZoomSensitivity());
+
+		if (ADIVECameraRig* CameraRig = ActiveCameraRig.Get())
+		{
+			CameraRig->SetOrbitDistanceLimits(
+				Inspectable->GetEffectiveMinOrbitDistanceCm(),
+				Inspectable->GetEffectiveMaxOrbitDistanceCm());
+			CameraRig->SetZoomDistanceScaling(
+				Inspectable->GetEffectiveScaleZoomWithOrbitDistance(),
+				Inspectable->GetEffectiveZoomDistanceReferenceCm());
+			CameraRig->SetFocusClearanceRadius(Inspectable->ComputeFocusClearanceRadius(FocusedTarget));
+		}
 	}
 }
 
@@ -252,7 +264,10 @@ bool UDIVESessionSubsystem::FocusTarget(const FDIVEFocusTarget& Target, bool bPu
 		return false;
 	}
 
-	return ApplyFocusTarget(Target, bPushToStack);
+	// Fit orbit distance to the part bounds on explicit Focus (context menu / G / primary).
+	// NavigateBack keeps the current distance (ApplyFocusTarget with bResetOrbitDistance=false).
+	const bool bFitOrbitDistance = Target.Kind == EDIVEFocusKind::Primitive;
+	return ApplyFocusTarget(Target, bPushToStack, true, bFitOrbitDistance);
 }
 
 bool UDIVESessionSubsystem::NavigateBack()
@@ -468,11 +483,11 @@ void UDIVESessionSubsystem::ClearIsolation()
 
 	ClearPickHover();
 
-	for (const TWeakObjectPtr<UPrimitiveComponent>& WeakPrimitive : IsolatedHiddenPrimitives)
+	for (const FIsolatedPrimitiveRecord& Record : IsolatedHiddenPrimitives)
 	{
-		if (UPrimitiveComponent* Primitive = WeakPrimitive.Get())
+		if (UPrimitiveComponent* Primitive = Record.Primitive.Get())
 		{
-			Primitive->SetHiddenInGame(false);
+			Primitive->SetHiddenInGame(Record.bWasHiddenInGame);
 		}
 	}
 
@@ -802,7 +817,7 @@ void UDIVESessionSubsystem::ClearPickHover()
 	PickHoverPrimitive.Reset();
 }
 
-bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera, bool bUseDefaultOrbitDistance)
+bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera, bool bResetOrbitDistance)
 {
 	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
 	ADIVECameraRig* CameraRig = ActiveCameraRig.Get();
@@ -849,15 +864,24 @@ bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, boo
 
 	if (FocusedTarget.Kind != EDIVEFocusKind::Anchor)
 	{
-		if (bUseDefaultOrbitDistance)
+		CameraRig->SetFocusClearanceRadius(Inspectable->ComputeFocusClearanceRadius(FocusedTarget));
+
+		if (bResetOrbitDistance)
 		{
-			CameraRig->SetOrbitDistance(SessionDefaultOrbitDistance, bRefreshTransform);
+			const float OrbitDistance = FocusedTarget.Kind == EDIVEFocusKind::Primitive
+				? Inspectable->ComputeOrbitDistanceForFocus(FocusedTarget)
+				: SessionDefaultOrbitDistance;
+			CameraRig->SetOrbitDistance(OrbitDistance, bRefreshTransform);
 			CameraRig->SyncOrbitOrientationFromCurrentView();
 		}
 		else
 		{
 			CameraRig->SyncOrbitFromCurrentView();
 		}
+	}
+	else
+	{
+		CameraRig->SetFocusClearanceRadius(0.f);
 	}
 
 	const float BlendDuration = bBlendCamera ? Inspectable->FocusBlendDuration : 0.f;
@@ -900,8 +924,8 @@ bool UDIVESessionSubsystem::ApplyInitialSessionFocus(FName InitialFocusId)
 
 	FocusStack.Reset();
 	FocusStack.Add(FDIVEFocusTarget::MakeDeviceRoot());
-	const bool bUseDefaultOrbitDistance = Target.Kind == EDIVEFocusKind::Primitive;
-	return ApplyFocusTarget(Target, true, true, bUseDefaultOrbitDistance);
+	const bool bResetOrbitDistance = Target.Kind == EDIVEFocusKind::Primitive;
+	return ApplyFocusTarget(Target, true, true, bResetOrbitDistance);
 }
 
 bool UDIVESessionSubsystem::ApplyIsolationForTarget(const FDIVEFocusTarget& Target)
@@ -933,15 +957,15 @@ bool UDIVESessionSubsystem::ApplyIsolationForTarget(const FDIVEFocusTarget& Targ
 		}
 	}
 
-	TSet<UPrimitiveComponent*> PreviouslyHidden;
-	for (const TWeakObjectPtr<UPrimitiveComponent>& WeakPrimitive : IsolatedHiddenPrimitives)
+	TMap<UPrimitiveComponent*, bool> PreviouslyHiddenWasState;
+	for (const FIsolatedPrimitiveRecord& Record : IsolatedHiddenPrimitives)
 	{
-		if (UPrimitiveComponent* Primitive = WeakPrimitive.Get())
+		if (UPrimitiveComponent* Primitive = Record.Primitive.Get())
 		{
-			PreviouslyHidden.Add(Primitive);
+			PreviouslyHiddenWasState.Add(Primitive, Record.bWasHiddenInGame);
 			if (!ShouldHide.Contains(Primitive))
 			{
-				Primitive->SetHiddenInGame(false);
+				Primitive->SetHiddenInGame(Record.bWasHiddenInGame);
 			}
 		}
 	}
@@ -949,12 +973,20 @@ bool UDIVESessionSubsystem::ApplyIsolationForTarget(const FDIVEFocusTarget& Targ
 	IsolatedHiddenPrimitives.Reset();
 	for (UPrimitiveComponent* Primitive : ShouldHide)
 	{
-		if (!PreviouslyHidden.Contains(Primitive))
+		bool bWasHiddenInGame = Primitive->bHiddenInGame;
+		if (const bool* Previous = PreviouslyHiddenWasState.Find(Primitive))
+		{
+			bWasHiddenInGame = *Previous;
+		}
+		else
 		{
 			Primitive->SetHiddenInGame(true);
 		}
 
-		IsolatedHiddenPrimitives.Add(Primitive);
+		FIsolatedPrimitiveRecord Record;
+		Record.Primitive = Primitive;
+		Record.bWasHiddenInGame = bWasHiddenInGame;
+		IsolatedHiddenPrimitives.Add(Record);
 	}
 
 	bIsolationActive = !IsolatedHiddenPrimitives.IsEmpty();
@@ -998,7 +1030,25 @@ void UDIVESessionSubsystem::CollectIsolationVisiblePrimitives(
 
 	if (Target.Kind == EDIVEFocusKind::Primitive && Target.Primitive)
 	{
-		AddAncestorPrimitives(Target.Primitive);
+		UPrimitiveComponent* Primitive = Target.Primitive.Get();
+		AddAncestorPrimitives(Primitive);
+		DIVE::CollectAttachedPrimitives(Primitive, OutVisible);
+
+		const UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+		if (Inspectable && Inspectable->IsPickProxyPrimitive(Primitive))
+		{
+			// Pick volumes are usually siblings of the shell mesh, not ancestors.
+			// Keep device meshes visible so Isolate does not leave an empty Hidden box.
+			TArray<UPrimitiveComponent*> DevicePrimitives;
+			DIVE::CollectDevicePrimitives(DeviceHost, DevicePrimitives);
+			for (UPrimitiveComponent* DevicePrimitive : DevicePrimitives)
+			{
+				if (Cast<UMeshComponent>(DevicePrimitive))
+				{
+					OutVisible.AddUnique(DevicePrimitive);
+				}
+			}
+		}
 	}
 	else if (Target.Kind == EDIVEFocusKind::Anchor && Target.Anchor)
 	{

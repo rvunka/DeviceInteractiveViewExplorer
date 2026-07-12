@@ -34,10 +34,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick")
 	FName SkipComponentTag = TEXT("DIVE.Skip");
 
+	/**
+	 * Hidden mesh / custom primitives with this tag remain pickable (Box/Sphere/Capsule
+	 * shapes are pickable without the tag when they have query collision).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (
+		DisplayName = "Pick Proxy Component Tag",
+		ToolTip = "Tag for Hidden-in-Game meshes used as DIVE hit volumes. Shape components need no tag."))
+	FName PickProxyComponentTag = DIVE::kPickProxyTag;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (ClampMin = "0.0"))
 	float MinPickBoundsRadius = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (
+		DisplayName = "Pick Trace Channel",
+		ToolTip = "Channel used by DIVE screen picks. Default Visibility — set that response to Block on Box/Sphere volumes. Not a separate project channel named Pick."))
 	TEnumAsByte<ECollisionChannel> PickTraceChannel = ECC_Visibility;
 
 	/** Component names (Components tab) or anchor PartIds with no pick interaction: no menu, handlers, primary action, or hover. */
@@ -71,14 +82,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.01", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float ZoomSensitivity = 40.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|View", meta = (ClampMin = "50.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	/** When true, zoom step scales with current orbit distance (finer near, coarser far). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (EditCondition = "!bUseDeviceDefinitionSettings"))
+	bool bScaleZoomWithOrbitDistance = true;
+
+	/** Orbit distance (cm) at which ZoomSensitivity maps 1:1 to one zoom step. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ClampMin = "1.0",
+		EditCondition = "!bUseDeviceDefinitionSettings && bScaleZoomWithOrbitDistance"))
+	float ZoomDistanceReferenceCm = DIVE::kDefaultZoomDistanceReference;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	float MinOrbitDistanceCm = DIVE::kDefaultMinOrbitDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	float MaxOrbitDistanceCm = DIVE::kDefaultMaxOrbitDistance;
+
+	/** Focused primitive: OrbitDistance ≈ SphereRadius × this (clamped to min/max). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	float FocusOrbitFitMultiplier = DIVE::kDefaultFocusOrbitFitMultiplier;
+
+	/** Focused primitive: near zoom floor ≈ SphereRadius × this. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	float FocusNearPaddingFactor = DIVE::kDefaultFocusNearPaddingFactor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|View", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float DefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float FocusBlendDuration = 0.35f;
 
-	/** Component name (Components tab) or anchor PartId → custom menu rows. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|ContextMenu")
+	/** Map key must equal the component object name from the Components panel (or anchor PartId). Built-in Focus/Isolate ignore this map. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "Key = exact component name (not a label). Duplicate often yields Switch1_1 — rename before adding a catalog key. Matching also strips _GEN_VARIABLE and trailing _N. Runtime: DIVE.DumpDevice."))
 	TMap<FName, FDIVEPickContextMenuActionList> PickContextMenuByComponent;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
@@ -105,6 +141,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsPrimitivePickable(const UPrimitiveComponent* Primitive) const;
 
+	/** True for Box/Sphere/Capsule or components tagged Pick Proxy Component Tag. */
+	UFUNCTION(BlueprintPure, Category = "DIVE|Pick")
+	bool IsPickProxyPrimitive(const UPrimitiveComponent* Primitive) const;
+
 	/** Pickable and not listed in Pick Interaction Exclusions. */
 	UFUNCTION(BlueprintPure, Category = "DIVE|Pick")
 	bool IsPrimitiveInteractive(const UPrimitiveComponent* Primitive) const;
@@ -115,8 +155,34 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
 	float GetEffectiveZoomSensitivity() const;
 
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	bool GetEffectiveScaleZoomWithOrbitDistance() const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float GetEffectiveZoomDistanceReferenceCm() const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float GetEffectiveMinOrbitDistanceCm() const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float GetEffectiveMaxOrbitDistanceCm() const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float GetEffectiveFocusOrbitFitMultiplier() const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float GetEffectiveFocusNearPaddingFactor() const;
+
 	UFUNCTION(BlueprintPure, Category = "DIVE|View")
 	float GetEffectiveDefaultOrbitDistance() const;
+
+	/** Orbit distance used when focusing a target (primitive fit or device default). */
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float ComputeOrbitDistanceForFocus(const FDIVEFocusTarget& Target) const;
+
+	/** Near-zoom clearance radius while this target is focused (0 when not a primitive). */
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	float ComputeFocusClearanceRadius(const FDIVEFocusTarget& Target) const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|View")
 	bool TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const;

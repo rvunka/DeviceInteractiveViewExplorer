@@ -8,6 +8,16 @@ namespace DIVE
 {
 inline const FName kActionOpenDIVE = TEXT("OpenDIVE");
 inline constexpr float kDefaultOrbitDistance = 200.f;
+inline constexpr float kDefaultMinOrbitDistance = 20.f;
+inline constexpr float kDefaultMaxOrbitDistance = 2000.f;
+/** At this orbit distance (cm), ZoomSensitivity maps 1:1 to a zoom step. */
+inline constexpr float kDefaultZoomDistanceReference = 200.f;
+/** Orbit distance ≈ SphereRadius × this when focusing a primitive. */
+inline constexpr float kDefaultFocusOrbitFitMultiplier = 2.75f;
+/** Min orbit distance floor ≈ SphereRadius × this while a primitive is focused. */
+inline constexpr float kDefaultFocusNearPaddingFactor = 1.2f;
+/** Tag for hidden mesh proxies that should still receive DIVE pick (shapes need no tag). */
+inline const FName kPickProxyTag = TEXT("DIVE.PickProxy");
 
 inline const FName kContextFocus = TEXT("DIVE.Context.Focus");
 inline const FName kContextIsolate = TEXT("DIVE.Context.Isolate");

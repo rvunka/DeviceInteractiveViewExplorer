@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DIVEConvention.h"
 #include "GameFramework/Actor.h"
 #include "DIVECameraRig.generated.h"
 
@@ -26,6 +27,10 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	void SetInputSensitivity(float InOrbitSensitivity, float InZoomSensitivity);
+	void SetOrbitDistanceLimits(float InMinOrbitDistanceCm, float InMaxOrbitDistanceCm);
+	void SetZoomDistanceScaling(bool bInScaleWithOrbitDistance, float InReferenceDistanceCm);
+	/** Soft near-plane while focusing a part: effective min = max(MinOrbitDistance, ClearanceRadiusCm). */
+	void SetFocusClearanceRadius(float ClearanceRadiusCm);
 	void SetOrbitTarget(const FVector& WorldLocation, bool bRefreshTransform = false);
 	void SetOrbitDistance(float Distance, bool bRefreshTransform = false);
 	void SetAnchorViewpoint(const FVector& WorldLocation, const FRotator& WorldRotation, bool bRefreshTransform = false);
@@ -35,19 +40,28 @@ public:
 	void SyncOrbitFromCurrentView();
 	void SyncOrbitOrientationFromCurrentView();
 
+	float GetOrbitDistance() const { return OrbitDistance; }
+	float GetMinOrbitDistance() const { return MinOrbitDistance; }
+	float GetMaxOrbitDistance() const { return MaxOrbitDistance; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DIVE")
 	TObjectPtr<UCameraComponent> CameraComponent;
 
 private:
-	static constexpr float MinOrbitDistance = 50.f;
-	static constexpr float MaxOrbitDistance = 2000.f;
 	static constexpr float MaxPitchDegrees = 89.f;
+	static constexpr float MinZoomScaleFactor = 0.08f;
+	static constexpr float MaxZoomScaleFactor = 4.f;
 
 	EDIVECameraRigMode Mode = EDIVECameraRigMode::Orbit;
 
 	float OrbitInputScale = 1.5f;
 	float ZoomInputScale = 25.f;
+	float MinOrbitDistance = DIVE::kDefaultMinOrbitDistance;
+	float MaxOrbitDistance = DIVE::kDefaultMaxOrbitDistance;
+	float FocusClearanceRadius = 0.f;
+	bool bScaleZoomWithOrbitDistance = true;
+	float ZoomDistanceReferenceCm = DIVE::kDefaultZoomDistanceReference;
 
 	FVector OrbitTarget = FVector::ZeroVector;
 	FQuat OrbitOrientation = FQuat::Identity;
@@ -64,6 +78,8 @@ private:
 	FVector BlendTargetLocation = FVector::ZeroVector;
 	FQuat BlendTargetRotation = FQuat::Identity;
 
+	float GetEffectiveMinOrbitDistance() const;
+	float ComputeZoomStepCm() const;
 	static void ApplyFreeLookDelta(FQuat& Orientation, float YawRadians, float PitchRadians);
 	void ClampOrientationPitch(FQuat& Orientation) const;
 	void ComputeDesiredTransform(FVector& OutLocation, FQuat& OutRotation) const;

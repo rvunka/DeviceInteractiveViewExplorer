@@ -9,6 +9,7 @@
 #include "DIVESessionSubsystem.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/ShapeComponent.h"
 #include "Engine/GameInstance.h"
 #include "Utils/DIVEContextMenu.h"
 #include "UObject/UnrealType.h"
@@ -19,62 +20,37 @@
 
 namespace
 {
-bool InvokeActorFunctionWithOptionalTarget(
-	AActor* Owner,
-	const FName FunctionName,
-	UPrimitiveComponent* TargetComponent)
+const FBoolProperty* FindActorBoolProperty(const AActor* Owner, const FName PropertyName)
 {
-	if (!Owner || FunctionName.IsNone())
+	if (!Owner || PropertyName.IsNone())
 	{
-		return false;
+		return nullptr;
 	}
 
-	UFunction* Function = Owner->FindFunction(FunctionName);
-	if (!Function)
+	if (const FBoolProperty* Direct = FindFProperty<FBoolProperty>(Owner->GetClass(), PropertyName))
 	{
-		return false;
+		return Direct;
 	}
 
-	if (Function->NumParms == 0)
+	// Blueprint variables sometimes only match via authored/display name walk.
+	const FString Wanted = PropertyName.ToString();
+	for (TFieldIterator<FBoolProperty> It(Owner->GetClass()); It; ++It)
 	{
-		Owner->ProcessEvent(Function, nullptr);
-		return true;
-	}
-
-	TArray<uint8> Params;
-	Params.SetNumZeroed(FMath::Max(static_cast<int32>(Function->ParmsSize), 1));
-
-	bool bInvoked = false;
-	for (TFieldIterator<FProperty> ParamIt(Function); ParamIt; ++ParamIt)
-	{
-		FProperty* Param = *ParamIt;
-		if (!Param || (Param->PropertyFlags & CPF_Parm) == 0 || (Param->PropertyFlags & CPF_ReturnParm) != 0)
+		const FBoolProperty* BoolProperty = *It;
+		if (!BoolProperty)
 		{
 			continue;
 		}
 
-		if (FObjectProperty* ObjectParam = CastField<FObjectProperty>(Param))
+		if (BoolProperty->GetFName() == PropertyName
+			|| BoolProperty->GetName() == Wanted
+			|| BoolProperty->GetAuthoredName() == Wanted)
 		{
-			if (!ObjectParam->PropertyClass->IsChildOf(UPrimitiveComponent::StaticClass()))
-			{
-				return false;
-			}
-
-			ObjectParam->SetObjectPropertyValue(Params.GetData() + ObjectParam->GetOffset_ForUFunction(), TargetComponent);
-			bInvoked = true;
-			break;
+			return BoolProperty;
 		}
-
-		return false;
 	}
 
-	if (!bInvoked)
-	{
-		return false;
-	}
-
-	Owner->ProcessEvent(Function, Params.GetData());
-	return true;
+	return nullptr;
 }
 
 bool QueryActorBoolFunction(const AActor* Owner, const FName FunctionName, bool& OutValue)
@@ -105,35 +81,129 @@ bool QueryActorBoolFunction(const AActor* Owner, const FName FunctionName, bool&
 
 bool QueryActorBoolState(const AActor* Owner, const FName StateName, bool& OutValue)
 {
-	if (QueryActorBoolFunction(Owner, StateName, OutValue))
-	{
-		return true;
-	}
-
-	if (!Owner || StateName.IsNone())
-	{
-		return false;
-	}
-
-	if (const FBoolProperty* BoolProperty = FindFProperty<FBoolProperty>(Owner->GetClass(), StateName))
+	// Prefer bool property over a same-named pure function (menu "*" must match the variable).
+	if (const FBoolProperty* BoolProperty = FindActorBoolProperty(Owner, StateName))
 	{
 		OutValue = BoolProperty->GetPropertyValue_InContainer(Owner);
 		return true;
 	}
 
-	return false;
+	return QueryActorBoolFunction(Owner, StateName, OutValue);
+}
+
+bool TryToggleActorBoolProperty(AActor* Owner, const FName PropertyName, bool& OutNewValue)
+{
+	OutNewValue = false;
+	const FBoolProperty* BoolProperty = FindActorBoolProperty(Owner, PropertyName);
+	if (!BoolProperty || !Owner)
+	{
+		return false;
+	}
+
+	const bool bCurrent = BoolProperty->GetPropertyValue_InContainer(Owner);
+	const bool bNew = !bCurrent;
+	BoolProperty->SetPropertyValue_InContainer(Owner, bNew);
+
+	// Prefer Blueprint setter if present (keeps BP graphs / accessors in sync).
+	const FName SetterName(*FString::Printf(TEXT("set_%s"), *PropertyName.ToString()));
+	if (UFunction* Setter = Owner->FindFunction(SetterName))
+	{
+		TArray<uint8> Params;
+		Params.SetNumZeroed(FMath::Max(static_cast<int32>(Setter->ParmsSize), 1));
+		for (TFieldIterator<FProperty> ParamIt(Setter); ParamIt; ++ParamIt)
+		{
+			FProperty* Param = *ParamIt;
+			if (!Param || (Param->PropertyFlags & CPF_Parm) == 0 || (Param->PropertyFlags & CPF_ReturnParm) != 0)
+			{
+				continue;
+			}
+
+			if (FBoolProperty* BoolParam = CastField<FBoolProperty>(Param))
+			{
+				BoolParam->SetPropertyValue(Params.GetData() + BoolParam->GetOffset_ForUFunction(), bNew);
+				break;
+			}
+		}
+		Owner->ProcessEvent(Setter, Params.GetData());
+	}
+
+	OutNewValue = BoolProperty->GetPropertyValue_InContainer(Owner);
+	return true;
+}
+
+bool InvokeActorFunctionWithOptionalTarget(
+	AActor* Owner,
+	const FName FunctionName,
+	UPrimitiveComponent* TargetComponent,
+	const bool* OptionalActiveState)
+{
+	if (!Owner || FunctionName.IsNone())
+	{
+		return false;
+	}
+
+	UFunction* Function = Owner->FindFunction(FunctionName);
+	if (!Function)
+	{
+		return false;
+	}
+
+	TArray<uint8> Params;
+	const bool bHasParams = Function->ParmsSize > 0;
+	if (bHasParams)
+	{
+		Params.SetNumZeroed(Function->ParmsSize);
+	}
+
+	for (TFieldIterator<FProperty> ParamIt(Function); ParamIt; ++ParamIt)
+	{
+		FProperty* Param = *ParamIt;
+		if (!Param || (Param->PropertyFlags & CPF_Parm) == 0 || (Param->PropertyFlags & CPF_ReturnParm) != 0)
+		{
+			continue;
+		}
+
+		if (FObjectProperty* ObjectParam = CastField<FObjectProperty>(Param))
+		{
+			if (!ObjectParam->PropertyClass->IsChildOf(UPrimitiveComponent::StaticClass()))
+			{
+				return false;
+			}
+
+			ObjectParam->SetObjectPropertyValue(Params.GetData() + ObjectParam->GetOffset_ForUFunction(), TargetComponent);
+			continue;
+		}
+
+		if (FBoolProperty* BoolParam = CastField<FBoolProperty>(Param))
+		{
+			if (OptionalActiveState)
+			{
+				BoolParam->SetPropertyValue(
+					Params.GetData() + BoolParam->GetOffset_ForUFunction(),
+					*OptionalActiveState);
+			}
+			continue;
+		}
+
+		return false;
+	}
+
+	Owner->ProcessEvent(Function, bHasParams ? Params.GetData() : nullptr);
+	return true;
 }
 
 bool TryInvokePickContextMenuHandler(
 	AActor* Owner,
 	const FName ComponentName,
 	const FName LocalActionId,
-	UPrimitiveComponent* TargetComponent)
+	UPrimitiveComponent* TargetComponent,
+	const bool* OptionalActiveState)
 {
 	return InvokeActorFunctionWithOptionalTarget(
 		Owner,
 		DIVE::MakePickContextMenuHandlerName(ComponentName, LocalActionId),
-		TargetComponent);
+		TargetComponent,
+		OptionalActiveState);
 }
 
 bool TryQueryPickContextMenuActiveState(
@@ -146,6 +216,18 @@ bool TryQueryPickContextMenuActiveState(
 		Owner,
 		DIVE::MakePickContextMenuActiveStateName(ComponentName, LocalActionId),
 		OutActive);
+}
+
+bool TryTogglePickContextMenuActiveState(
+	AActor* Owner,
+	const FName ComponentName,
+	const FName LocalActionId,
+	bool& OutNewValue)
+{
+	return TryToggleActorBoolProperty(
+		Owner,
+		DIVE::MakePickContextMenuActiveStateName(ComponentName, LocalActionId),
+		OutNewValue);
 }
 } // namespace
 
@@ -233,12 +315,25 @@ FName UDIVEInspectableComponent::ResolveSemanticPartId(const UPrimitiveComponent
 
 bool UDIVEInspectableComponent::IsPrimitivePickable(const UPrimitiveComponent* Primitive) const
 {
-	if (!Primitive || !Primitive->IsVisible())
+	if (!Primitive)
 	{
 		return false;
 	}
 
 	if (!SkipComponentTag.IsNone() && Primitive->ComponentHasTag(SkipComponentTag))
+	{
+		return false;
+	}
+
+	const bool bVisible = Primitive->IsVisible();
+	const bool bPickProxy = IsPickProxyPrimitive(Primitive);
+
+	if (!bVisible && !bPickProxy)
+	{
+		return false;
+	}
+
+	if (!bVisible && bPickProxy && Primitive->GetCollisionEnabled() == ECollisionEnabled::NoCollision)
 	{
 		return false;
 	}
@@ -253,6 +348,21 @@ bool UDIVEInspectableComponent::IsPrimitivePickable(const UPrimitiveComponent* P
 	}
 
 	return true;
+}
+
+bool UDIVEInspectableComponent::IsPickProxyPrimitive(const UPrimitiveComponent* Primitive) const
+{
+	if (!Primitive)
+	{
+		return false;
+	}
+
+	if (Primitive->IsA(UShapeComponent::StaticClass()))
+	{
+		return true;
+	}
+
+	return !PickProxyComponentTag.IsNone() && Primitive->ComponentHasTag(PickProxyComponentTag);
 }
 
 bool UDIVEInspectableComponent::IsPrimitiveExcludedFromPickInteraction(const UPrimitiveComponent* Primitive) const
@@ -296,6 +406,66 @@ float UDIVEInspectableComponent::GetEffectiveZoomSensitivity() const
 	return ZoomSensitivity;
 }
 
+bool UDIVEInspectableComponent::GetEffectiveScaleZoomWithOrbitDistance() const
+{
+	if (bUseDeviceDefinitionSettings && DeviceDefinition)
+	{
+		return DeviceDefinition->bScaleZoomWithOrbitDistance;
+	}
+
+	return bScaleZoomWithOrbitDistance;
+}
+
+float UDIVEInspectableComponent::GetEffectiveZoomDistanceReferenceCm() const
+{
+	if (bUseDeviceDefinitionSettings && DeviceDefinition)
+	{
+		return DeviceDefinition->ZoomDistanceReferenceCm;
+	}
+
+	return ZoomDistanceReferenceCm;
+}
+
+float UDIVEInspectableComponent::GetEffectiveMinOrbitDistanceCm() const
+{
+	if (bUseDeviceDefinitionSettings && DeviceDefinition)
+	{
+		return DeviceDefinition->MinOrbitDistanceCm;
+	}
+
+	return MinOrbitDistanceCm;
+}
+
+float UDIVEInspectableComponent::GetEffectiveMaxOrbitDistanceCm() const
+{
+	if (bUseDeviceDefinitionSettings && DeviceDefinition)
+	{
+		return DeviceDefinition->MaxOrbitDistanceCm;
+	}
+
+	return MaxOrbitDistanceCm;
+}
+
+float UDIVEInspectableComponent::GetEffectiveFocusOrbitFitMultiplier() const
+{
+	if (bUseDeviceDefinitionSettings && DeviceDefinition)
+	{
+		return DeviceDefinition->FocusOrbitFitMultiplier;
+	}
+
+	return FocusOrbitFitMultiplier;
+}
+
+float UDIVEInspectableComponent::GetEffectiveFocusNearPaddingFactor() const
+{
+	if (bUseDeviceDefinitionSettings && DeviceDefinition)
+	{
+		return DeviceDefinition->FocusNearPaddingFactor;
+	}
+
+	return FocusNearPaddingFactor;
+}
+
 float UDIVEInspectableComponent::GetEffectiveDefaultOrbitDistance() const
 {
 	if (bUseDeviceDefinitionSettings && DeviceDefinition)
@@ -304,6 +474,40 @@ float UDIVEInspectableComponent::GetEffectiveDefaultOrbitDistance() const
 	}
 
 	return DefaultOrbitDistance;
+}
+
+float UDIVEInspectableComponent::ComputeOrbitDistanceForFocus(const FDIVEFocusTarget& Target) const
+{
+	const float MinDistance = GetEffectiveMinOrbitDistanceCm();
+	const float MaxDistance = FMath::Max(GetEffectiveMaxOrbitDistanceCm(), MinDistance);
+
+	if (Target.Kind == EDIVEFocusKind::Primitive)
+	{
+		if (const UPrimitiveComponent* Primitive = Target.Primitive.Get())
+		{
+			const float Radius = FMath::Max(Primitive->Bounds.SphereRadius, 1.f);
+			return FMath::Clamp(Radius * GetEffectiveFocusOrbitFitMultiplier(), MinDistance, MaxDistance);
+		}
+	}
+
+	return FMath::Clamp(GetEffectiveDefaultOrbitDistance(), MinDistance, MaxDistance);
+}
+
+float UDIVEInspectableComponent::ComputeFocusClearanceRadius(const FDIVEFocusTarget& Target) const
+{
+	if (Target.Kind != EDIVEFocusKind::Primitive)
+	{
+		return 0.f;
+	}
+
+	const UPrimitiveComponent* Primitive = Target.Primitive.Get();
+	if (!Primitive)
+	{
+		return 0.f;
+	}
+
+	const float Radius = FMath::Max(Primitive->Bounds.SphereRadius, 0.f);
+	return Radius * GetEffectiveFocusNearPaddingFactor();
 }
 
 bool UDIVEInspectableComponent::TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const
@@ -346,7 +550,7 @@ bool UDIVEInspectableComponent::TryResolveStartFocusTarget(FName FocusObjectId, 
 
 			if (!IsPrimitivePickable(Primitive))
 			{
-				return;
+				continue;
 			}
 
 			OutTarget = FDIVEFocusTarget::FromPrimitive(Primitive, ResolveSemanticPartId(Primitive));
@@ -437,6 +641,18 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		if (DefaultOrbitDistance <= 0.f)
 		{
 			Context.AddError(FText::FromString(TEXT("DefaultOrbitDistance must be greater than zero.")));
+			Result = EDataValidationResult::Invalid;
+		}
+
+		if (MinOrbitDistanceCm <= 0.f || MaxOrbitDistanceCm < MinOrbitDistanceCm)
+		{
+			Context.AddError(FText::FromString(TEXT("Orbit distance limits must satisfy 0 < Min <= Max.")));
+			Result = EDataValidationResult::Invalid;
+		}
+
+		if (bScaleZoomWithOrbitDistance && ZoomDistanceReferenceCm <= 0.f)
+		{
+			Context.AddError(FText::FromString(TEXT("ZoomDistanceReferenceCm must be greater than zero.")));
 			Result = EDataValidationResult::Invalid;
 		}
 	}
@@ -684,16 +900,50 @@ bool UDIVEInspectableComponent::NotifyPickContextMenuAction(
 		return false;
 	}
 
-	UPrimitiveComponent* TargetComponent = PickTarget.Primitive.Get();
-	if (AActor* Owner = GetOwner())
+	AActor* Owner = GetOwner();
+	if (!Owner)
 	{
-		if (TryInvokePickContextMenuHandler(Owner, ComponentName, LocalActionId, TargetComponent))
+		return false;
+	}
+
+	bool bActiveBefore = false;
+	const bool bHadActiveBefore = TryQueryPickContextMenuActiveState(
+		Owner,
+		ComponentName,
+		LocalActionId,
+		bActiveBefore);
+
+	const bool bHandlerInvoked = TryInvokePickContextMenuHandler(
+		Owner,
+		ComponentName,
+		LocalActionId,
+		PickTarget.Primitive.Get(),
+		bHadActiveBefore ? &bActiveBefore : nullptr);
+
+	bool bStateToggled = false;
+	FName CatalogComponentName = NAME_None;
+	const FDIVEPickContextMenuActionList* Catalog = nullptr;
+	if (FindPickContextMenuCatalog(PickTarget, CatalogComponentName, Catalog) && Catalog)
+	{
+		for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 		{
-			return true;
+			if (Action.ActionId != LocalActionId || !Action.bToggleActiveSuffix)
+			{
+				continue;
+			}
+
+			bool bActiveAfter = false;
+			bStateToggled = TryTogglePickContextMenuActiveState(
+				Owner,
+				ComponentName,
+				LocalActionId,
+				bActiveAfter);
+			(void)bActiveAfter;
+			break;
 		}
 	}
 
-	return false;
+	return bHandlerInvoked || bStateToggled;
 }
 
 bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
@@ -709,23 +959,141 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 		return false;
 	}
 
-	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
+	auto TryKey = [this, &OutComponentName, &OutCatalog](const FName Key) -> bool
 	{
-		if (const FDIVEPickContextMenuActionList* Found = PickContextMenuByComponent.Find(Primitive->GetFName()))
+		if (Key.IsNone())
 		{
-			OutComponentName = Primitive->GetFName();
+			return false;
+		}
+
+		if (const FDIVEPickContextMenuActionList* Found = PickContextMenuByComponent.Find(Key))
+		{
+			OutComponentName = Key;
 			OutCatalog = Found;
 			return true;
 		}
+
+		return false;
+	};
+
+	/** Strip SCS "_GEN_VARIABLE" and Duplicate suffixes like "_1", "_12". */
+	auto NormalizeComponentToken = [](FString Token) -> FString
+	{
+		Token.RemoveFromEnd(TEXT("_GEN_VARIABLE"), ESearchCase::CaseSensitive);
+
+		while (Token.Len() > 0)
+		{
+			int32 UnderscoreIndex = INDEX_NONE;
+			if (!Token.FindLastChar(TEXT('_'), UnderscoreIndex) || UnderscoreIndex <= 0 || UnderscoreIndex >= Token.Len() - 1)
+			{
+				break;
+			}
+
+			bool bAllDigits = true;
+			for (int32 Index = UnderscoreIndex + 1; Index < Token.Len(); ++Index)
+			{
+				if (!FChar::IsDigit(Token[Index]))
+				{
+					bAllDigits = false;
+					break;
+				}
+			}
+
+			if (!bAllDigits)
+			{
+				break;
+			}
+
+			Token.LeftInline(UnderscoreIndex, EAllowShrinking::No);
+		}
+
+		return Token;
+	};
+
+	const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
+	if (Primitive)
+	{
+		// 1) Exact Components-panel / instance FName.
+		if (TryKey(Primitive->GetFName()))
+		{
+			return true;
+		}
+
+		// 2) Normalized name (Switch2_1 / Switch2_GEN_VARIABLE → Switch2).
+		{
+			const FString Normalized = NormalizeComponentToken(Primitive->GetName());
+			if (!Normalized.IsEmpty() && TryKey(FName(*Normalized)))
+			{
+				return true;
+			}
+		}
+
+		// 3) Compare normalized tokens both ways (authored key may also carry a suffix).
+		{
+			const FString PrimitiveToken = NormalizeComponentToken(Primitive->GetName());
+			for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : PickContextMenuByComponent)
+			{
+				if (Entry.Key.IsNone())
+				{
+					continue;
+				}
+
+				if (NormalizeComponentToken(Entry.Key.ToString()).Equals(PrimitiveToken, ESearchCase::IgnoreCase))
+				{
+					return TryKey(Entry.Key);
+				}
+			}
+		}
+
+		// 4) Key resolves to this same pick primitive.
+		for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : PickContextMenuByComponent)
+		{
+			if (Entry.Key.IsNone())
+			{
+				continue;
+			}
+
+			FDIVEFocusTarget Resolved;
+			if (!TryResolveStartFocusTarget(Entry.Key, Resolved)
+				|| Resolved.Kind != EDIVEFocusKind::Primitive
+				|| Resolved.Primitive.Get() != Primitive)
+			{
+				continue;
+			}
+
+			return TryKey(Entry.Key);
+		}
 	}
 
+	// 5) Catalog key authored as anchor PartId — only when it does not resolve to a *different* mesh.
 	if (!PickTarget.SemanticPartId.IsNone())
 	{
-		if (const FDIVEPickContextMenuActionList* Found = PickContextMenuByComponent.Find(PickTarget.SemanticPartId))
+		FDIVEFocusTarget ResolvedPart;
+		const bool bResolved = TryResolveStartFocusTarget(PickTarget.SemanticPartId, ResolvedPart);
+		if (bResolved && ResolvedPart.Kind == EDIVEFocusKind::Anchor)
 		{
-			OutComponentName = PickTarget.SemanticPartId;
-			OutCatalog = Found;
-			return true;
+			if (TryKey(PickTarget.SemanticPartId))
+			{
+				return true;
+			}
+		}
+		else if (bResolved
+			&& ResolvedPart.Kind == EDIVEFocusKind::Primitive
+			&& Primitive
+			&& ResolvedPart.Primitive.Get() == Primitive)
+		{
+			if (TryKey(PickTarget.SemanticPartId))
+			{
+				return true;
+			}
+		}
+		else if (!bResolved)
+		{
+			// PartId-only key with no live resolve still allowed (same as before for empty registry timing).
+			if (TryKey(PickTarget.SemanticPartId))
+			{
+				return true;
+			}
 		}
 	}
 
@@ -794,13 +1162,15 @@ void UDIVEInspectableComponent::AppendConfiguredPickContextMenuEntries(
 
 		FDIVEContextMenuEntry Entry;
 		Entry.ActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
-		Entry.DisplayName = Action.DisplayName;
+		Entry.DisplayName = Action.DisplayName.IsEmpty()
+			? FText::FromName(Action.ActionId)
+			: Action.DisplayName;
 		if (Action.bToggleActiveSuffix && Owner)
 		{
 			bool bActive = false;
 			if (TryQueryPickContextMenuActiveState(Owner, ComponentName, Action.ActionId, bActive))
 			{
-				Entry.DisplayName = DIVEContextMenu::FormatActiveLabelSuffix(Action.DisplayName, bActive);
+				Entry.DisplayName = DIVEContextMenu::FormatActiveLabelSuffix(Entry.DisplayName, bActive);
 			}
 		}
 		Entry.bEnabled = Action.bEnabled;

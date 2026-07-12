@@ -23,7 +23,7 @@ DIVE provides:
 | Module | Role |
 |--------|------|
 | **DIVECore** | Shared types, `FDIVEFocusTarget`, `IDIVEProxyDrive`, `IDIVEDeviceControlRegistry`, conventions |
-| **DIVERuntime** | Subsystem, components, camera rig, context menu UI, **`UDIVEInputComponent`** |
+| **DIVERuntime** | Subsystem, components, camera rig, context menu UI, **`UDIVEInputComponent`**, **`DIVE.DumpDevice`** diagnostics |
 | **DIVERuntimeDev** | `UDIVELegacyKbmInputComponent` — BindKey → **DIVE Input** |
 | **DIVEGRIPBridge** | `UDIVEGRIPBridgeComponent` — pawn physical drive via GRIP (optional) |
 

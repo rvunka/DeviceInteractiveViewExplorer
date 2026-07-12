@@ -190,7 +190,13 @@ private:
 
 	bool bIsolationActive = false;
 	FDIVEFocusTarget IsolationTarget = FDIVEFocusTarget::MakeDeviceRoot();
-	TArray<TWeakObjectPtr<UPrimitiveComponent>> IsolatedHiddenPrimitives;
+
+	struct FIsolatedPrimitiveRecord
+	{
+		TWeakObjectPtr<UPrimitiveComponent> Primitive;
+		bool bWasHiddenInGame = false;
+	};
+	TArray<FIsolatedPrimitiveRecord> IsolatedHiddenPrimitives;
 
 	bool bProxyDriving = false;
 	EDIVEActivePhysicalDriveKind ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::None;
@@ -208,7 +214,7 @@ private:
 
 	TWeakObjectPtr<UPrimitiveComponent> PickHoverPrimitive;
 
-	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bUseDefaultOrbitDistance = false);
+	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bResetOrbitDistance = false);
 	bool ApplyInitialSessionFocus(FName InitialFocusId);
 	bool BuildContextMenuEntries(
 		const FVector2D& ScreenPosition,

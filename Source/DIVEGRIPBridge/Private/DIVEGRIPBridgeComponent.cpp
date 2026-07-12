@@ -123,8 +123,8 @@ void UDIVEGRIPBridgeComponent::BindDiveSessionDelegates()
 {
 	if (UDIVESessionSubsystem* Subsystem = ResolveDiveSessionSubsystem())
 	{
-		Subsystem->OnSessionStarted.AddDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionStarted);
-		Subsystem->OnSessionEnded.AddDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionEnded);
+		Subsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionStarted);
+		Subsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionEnded);
 	}
 }
 

@@ -28,6 +28,18 @@ EDataValidationResult UDIVEDeviceDefinitionAsset::IsDataValid(FDataValidationCon
 		Result = EDataValidationResult::Invalid;
 	}
 
+	if (MinOrbitDistanceCm <= 0.f || MaxOrbitDistanceCm < MinOrbitDistanceCm)
+	{
+		Context.AddError(FText::FromString(TEXT("Orbit distance limits must satisfy 0 < Min <= Max.")));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	if (bScaleZoomWithOrbitDistance && ZoomDistanceReferenceCm <= 0.f)
+	{
+		Context.AddError(FText::FromString(TEXT("ZoomDistanceReferenceCm must be greater than zero.")));
+		Result = EDataValidationResult::Invalid;
+	}
+
 	return Result;
 }
 

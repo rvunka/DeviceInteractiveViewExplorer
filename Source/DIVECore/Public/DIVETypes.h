@@ -146,7 +146,7 @@ struct DIVECORE_API FDIVEPickContextMenuAction
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bEnabled = true;
 
-	/** When true, appends "*" to DisplayName if device actor has bool function or variable Is_{Key}_{ActionId} that is true. */
+	/** When true: calls Handle_* first (reads current Is_*), then flips Is_{Key}_{ActionId}. Handle should apply toggle from current state — do not also flip Is_* in Handle. "*" shows when Is_* is true. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bToggleActiveSuffix = false;
 };
