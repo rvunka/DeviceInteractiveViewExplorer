@@ -77,24 +77,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float FocusBlendDuration = 0.35f;
 
-	/** Default session marker mesh for all anchors (engine sphere unless overridden per anchor). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Anchor", meta = (
-		DisplayName = "Default Anchor Marker Mesh",
-		ToolTip = "Device-wide marker mesh. Shown in DIVE session on each DIVE Anchor. Per-anchor: Marker Mesh Override."))
-	TSoftObjectPtr<UStaticMesh> DefaultAnchorMarkerMesh;
-
-	/** Material for anchor session markers. Color and opacity are authored in this asset (or per-anchor override). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Anchor", meta = (
-		DisplayName = "Default Anchor Marker Material",
-		ToolTip = "Device-wide marker material. Per-anchor: Marker Material Override."))
-	TSoftObjectPtr<UMaterialInterface> DefaultAnchorMarkerMaterial;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Anchor", meta = (
-		DisplayName = "Default Anchor Marker Scale",
-		ClampMin = "0.01",
-		ToolTip = "Device-wide marker size. Per-anchor Marker Scale overrides when not left at plugin default."))
-	float DefaultAnchorMarkerScale = 0.12f;
-
 	/** Component name (Components tab) or anchor PartId → custom menu rows. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|ContextMenu")
 	TMap<FName, FDIVEPickContextMenuActionList> PickContextMenuByComponent;
@@ -116,8 +98,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsSessionActive() const { return bSessionActive; }
-
-	void UpdateAnchorSessionPresentation(const FDIVEFocusTarget& FocusedTarget);
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	FName ResolveSemanticPartId(const UPrimitiveComponent* Primitive) const;

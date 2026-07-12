@@ -863,8 +863,6 @@ bool UDIVESessionSubsystem::ApplyFocusTarget(const FDIVEFocusTarget& Target, boo
 	const float BlendDuration = bBlendCamera ? Inspectable->FocusBlendDuration : 0.f;
 	CameraRig->ApplyFocusPresentation(BlendDuration);
 
-	Inspectable->UpdateAnchorSessionPresentation(FocusedTarget);
-
 	if (bIsolationActive)
 	{
 		ApplyIsolationForTarget(FocusedTarget);

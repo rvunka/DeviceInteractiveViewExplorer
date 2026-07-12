@@ -16,6 +16,19 @@ Add to the **player pawn** (not device actors):
 | `UDIVEGRIPBridgeComponent` | Implements `IDIVEPawnPhysicalDrive` |
 | `UDIVEInputComponent` | Session input (already required for DIVE) |
 
+## Session visuals
+
+While a DIVE session is active, the bridge toggles existing GRIP visuals
+(`UGRIPHandComponent::bShowHandProxyVisuals` + `RefreshHandProxyVisuals`) — no GRIP
+API changes. Toggle: `bHideGripHandProxiesDuringDiveSession` on the bridge.
+
+## Grab start (no nudge)
+
+`TryGrab` internally runs `InitGrabHoldDistanceFromView`, which snaps the PD target onto the
+pawn view ray (lateral error vs mesh impact → a small push). After a successful grab the bridge
+re-pins `HandWorldTransform` to the grab point and seeds hold distance from the same cursor
+deproject used while dragging.
+
 ## Flow
 
 ```text

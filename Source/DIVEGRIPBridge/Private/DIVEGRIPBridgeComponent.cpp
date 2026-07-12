@@ -3,6 +3,8 @@
 #include "DIVEGRIPBridgeComponent.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "DIVEInspectableComponent.h"
+#include "DIVESessionSubsystem.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -26,6 +28,16 @@ void UDIVEGRIPBridgeComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	ConfigureHandDriveTickOrder();
+	BindDiveSessionDelegates();
+
+	if (const UDIVESessionSubsystem* Subsystem = ResolveDiveSessionSubsystem())
+	{
+		bDiveSessionActive = Subsystem->IsSessionActive();
+		if (bDiveSessionActive)
+		{
+			SyncGripHandProxyVisibilityToDiveSession();
+		}
+	}
 }
 
 void UDIVEGRIPBridgeComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -78,7 +90,106 @@ void UDIVEGRIPBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		IDIVEPawnPhysicalDrive::Execute_EndPawnPhysicalDrive(this, false);
 	}
 
+	UnbindDiveSessionDelegates();
+
+	// Restore the authored flag only — do not Refresh (would recreate proxies during teardown).
+	if (bGripHandProxyVisibilitySuppressed)
+	{
+		if (UGRIPHandComponent* Hand = ResolveGripHand())
+		{
+			Hand->bShowHandProxyVisuals = bPreservedShowHandProxyVisuals;
+		}
+		bGripHandProxyVisibilitySuppressed = false;
+	}
+	bDiveSessionActive = false;
+
 	Super::EndPlay(EndPlayReason);
+}
+
+UDIVESessionSubsystem* UDIVEGRIPBridgeComponent::ResolveDiveSessionSubsystem() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			return GameInstance->GetSubsystem<UDIVESessionSubsystem>();
+		}
+	}
+
+	return nullptr;
+}
+
+void UDIVEGRIPBridgeComponent::BindDiveSessionDelegates()
+{
+	if (UDIVESessionSubsystem* Subsystem = ResolveDiveSessionSubsystem())
+	{
+		Subsystem->OnSessionStarted.AddDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionStarted);
+		Subsystem->OnSessionEnded.AddDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionEnded);
+	}
+}
+
+void UDIVEGRIPBridgeComponent::UnbindDiveSessionDelegates()
+{
+	if (UDIVESessionSubsystem* Subsystem = ResolveDiveSessionSubsystem())
+	{
+		Subsystem->OnSessionStarted.RemoveDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionStarted);
+		Subsystem->OnSessionEnded.RemoveDynamic(this, &UDIVEGRIPBridgeComponent::HandleDiveSessionEnded);
+	}
+}
+
+void UDIVEGRIPBridgeComponent::HandleDiveSessionStarted(AActor* /*DeviceHost*/, UDIVEInspectableComponent* /*Inspectable*/)
+{
+	bDiveSessionActive = true;
+	SyncGripHandProxyVisibilityToDiveSession();
+}
+
+void UDIVEGRIPBridgeComponent::HandleDiveSessionEnded(EDIVESessionEndReason /*Reason*/, AActor* /*DeviceHost*/)
+{
+	bDiveSessionActive = false;
+	SyncGripHandProxyVisibilityToDiveSession();
+}
+
+void UDIVEGRIPBridgeComponent::SyncGripHandProxyVisibilityToDiveSession()
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	UGRIPHandComponent* Hand = ResolveGripHand();
+	if (!Hand)
+	{
+		return;
+	}
+
+	const bool bWantHidden = bDiveSessionActive && bHideGripHandProxiesDuringDiveSession;
+	if (bWantHidden)
+	{
+		if (!bGripHandProxyVisibilitySuppressed)
+		{
+			bPreservedShowHandProxyVisuals = Hand->bShowHandProxyVisuals;
+			bGripHandProxyVisibilitySuppressed = true;
+		}
+		if (Hand->bShowHandProxyVisuals)
+		{
+			Hand->bShowHandProxyVisuals = false;
+			Hand->RefreshHandProxyVisuals();
+		}
+		return;
+	}
+
+	if (bGripHandProxyVisibilitySuppressed)
+	{
+		Hand->bShowHandProxyVisuals = bPreservedShowHandProxyVisuals;
+		Hand->RefreshHandProxyVisuals();
+		bGripHandProxyVisibilitySuppressed = false;
+	}
+}
+
+bool UDIVEGRIPBridgeComponent::IsLocallyControlledOwner() const
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	return OwnerPawn && OwnerPawn->IsLocallyControlled();
 }
 
 void UDIVEGRIPBridgeComponent::SetDriveTickEnabled(const bool bEnabled)
@@ -323,6 +434,9 @@ void UDIVEGRIPBridgeComponent::RestoreGripAimUpdates()
 
 bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context)
 {
+	// Retry hide if session started before Hand was resolvable.
+	SyncGripHandProxyVisibilityToDiveSession();
+
 	UGRIPHandComponent* Hand = ResolveGripHand();
 	if (!Hand || !Context.HitComponent || Context.PickHit.GetComponent() != Context.HitComponent)
 	{
@@ -338,20 +452,40 @@ bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVE
 	FRotator ViewRotation = FRotator::ZeroRotator;
 	FVector ViewLocation = FVector::ZeroVector;
 	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-	const FVector ViewDirection = ViewRotation.Vector().GetSafeNormal();
 
 	const FHitResult& Hit = Context.PickHit;
 	const FVector GrabPoint = Hit.bBlockingHit ? Hit.ImpactPoint : Hit.Location;
 
-	GrabHoldDistance = FVector::DotProduct(GrabPoint - ViewLocation, ViewDirection);
-	if (GrabHoldDistance <= KINDA_SMALL_NUMBER)
+	auto SeedHoldDistanceAlongRay = [Hand, &GrabPoint](const FVector& RayOrigin, const FVector& RayDirection, FVector& OutHandLocation)
 	{
-		GrabHoldDistance = FVector::Distance(ViewLocation, GrabPoint);
+		float Distance = FVector::DotProduct(GrabPoint - RayOrigin, RayDirection);
+		if (Distance <= KINDA_SMALL_NUMBER)
+		{
+			Distance = FVector::Distance(RayOrigin, GrabPoint);
+		}
+		Distance = FMath::Clamp(Distance, Hand->MinGrabHoldDistance, Hand->MaxGrabHoldDistance);
+		OutHandLocation = RayOrigin + RayDirection * Distance;
+		return Distance;
+	};
+
+	// Same cursor deproject as UpdateHandTargetFromCursor — not the pawn view-forward ray.
+	FVector HandLocation = GrabPoint;
+	FVector2D ScreenPosition = FVector2D::ZeroVector;
+	FVector WorldOrigin = FVector::ZeroVector;
+	FVector WorldDirection = FVector::ZeroVector;
+	if (TryGetCursorScreenPosition(ScreenPosition)
+		&& UGameplayStatics::DeprojectScreenToWorld(PlayerController, ScreenPosition, WorldOrigin, WorldDirection)
+		&& !WorldDirection.IsNearlyZero())
+	{
+		WorldDirection.Normalize();
+		GrabHoldDistance = SeedHoldDistanceAlongRay(WorldOrigin, WorldDirection, HandLocation);
 	}
-	GrabHoldDistance = FMath::Clamp(GrabHoldDistance, Hand->MinGrabHoldDistance, Hand->MaxGrabHoldDistance);
+	else
+	{
+		GrabHoldDistance = SeedHoldDistanceAlongRay(ViewLocation, ViewRotation.Vector().GetSafeNormal(), HandLocation);
+	}
 
 	SuspendGripAimUpdates();
-	const FVector HandLocation = ViewLocation + ViewDirection * GrabHoldDistance;
 	Hand->SetHandWorldTransform(FTransform(ViewRotation, HandLocation));
 
 	const EGRIPGrabResult Result = Hand->TryGrabFromHit(Hit);
@@ -364,7 +498,9 @@ bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVE
 		return false;
 	}
 
-	UpdateHandTargetFromCursor();
+	// TryGrab → InitGrabHoldDistanceFromView rewrites Hand onto the pawn view ray.
+	// Pin PD target to the grab point so the first drive frame has ~zero linear error.
+	Hand->SetHandWorldTransform(FTransform(ViewRotation, GrabPoint));
 
 	bDriving = true;
 	SetDriveTickEnabled(true);

@@ -2,8 +2,6 @@
 
 #include "Utils/DIVEPick.h"
 
-#include "DIVEAnchorComponent.h"
-#include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "Components/PrimitiveComponent.h"
@@ -85,20 +83,8 @@ bool PickAtScreenPosition(
 		return false;
 	}
 
-	const bool bIsAnchorMarker = HitPrimitive->ComponentHasTag(DIVE::kAnchorMarkerTag);
-	if (!bIsAnchorMarker && !Context.Inspectable->IsPrimitiveInteractive(HitPrimitive))
+	if (!Context.Inspectable->IsPrimitiveInteractive(HitPrimitive))
 	{
-		return false;
-	}
-
-	if (bIsAnchorMarker)
-	{
-		if (UDIVEAnchorComponent* Anchor = DIVE::FindAncestorComponent<UDIVEAnchorComponent>(HitPrimitive))
-		{
-			OutTarget = FDIVEFocusTarget::FromAnchor(Anchor, Anchor->GetResolvedPartId());
-			return true;
-		}
-
 		return false;
 	}
 

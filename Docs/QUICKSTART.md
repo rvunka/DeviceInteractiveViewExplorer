@@ -105,30 +105,7 @@ Built-in rows (Focus, Isolate, Simulate Physics, Delete Mesh) are handled inside
 | `DisplayName` | UI label |
 | Transform / view rotation | Authored camera point |
 
-**Session marker** — сфера в DIVE-сессии (видна только в PIE/игре, не в редакторе). Цвет и прозрачность задаются **материалом**, не свойствами компонента.
-
-### Где менять mesh и material
-
-**На всё устройство (defaults):**
-
-1. World Outliner → выбери **device actor** (не player character).
-2. Details → компонент **`DIVE Inspectable`**.
-3. Секция **`DIVE | Anchor`**:
-   - **Default Anchor Marker Mesh** — меш (по умолчанию engine `Sphere`).
-   - **Default Anchor Marker Material** — материал или material instance (цвет и alpha в ассете).
-   - **Default Anchor Marker Scale** — размер.
-
-**На один anchor:**
-
-1. На том же device actor раскрой дочерний компонент **`DIVE Anchor`**.
-2. Секция **`DIVE | Marker`**:
-   - **Marker Mesh Override** / **Marker Material Override** — только для этого anchor (пусто = defaults с Inspectable).
-   - **Marker Scale** — локально (если оставить значение по умолчанию плагина, берётся с Inspectable).
-   - **Show Session Marker** — вкл/выкл сферу.
-
-Пример: Material Instance с **Blend Mode = Translucent**, нужный цвет и opacity в самом MI.
-
-Marker collision: **query-only** на DIVE pick channel — не блокирует physics/GRIP. GRIP aim trace пропускает тег `DIVE.AnchorMarker`.
+Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional **Show View Direction** arrow is editor-only (hidden in PIE/game).
 
 ---
 

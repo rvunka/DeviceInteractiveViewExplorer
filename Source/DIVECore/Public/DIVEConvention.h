@@ -7,9 +7,7 @@
 namespace DIVE
 {
 inline const FName kActionOpenDIVE = TEXT("OpenDIVE");
-inline const FName kAnchorMarkerTag = TEXT("DIVE.AnchorMarker");
 inline constexpr float kDefaultOrbitDistance = 200.f;
-inline constexpr float kDefaultAnchorMarkerScale = 0.12f;
 
 inline const FName kContextFocus = TEXT("DIVE.Context.Focus");
 inline const FName kContextIsolate = TEXT("DIVE.Context.Isolate");
@@ -46,15 +44,5 @@ inline FName MakePickContextMenuActiveStateName(const FName ComponentName, const
 	}
 
 	return FName(*FString::Printf(TEXT("Is_%s_%s"), *ComponentName.ToString(), *LocalActionId.ToString()));
-}
-
-inline const TCHAR* DefaultAnchorMarkerMeshPath()
-{
-	return TEXT("/Engine/BasicShapes/Sphere.Sphere");
-}
-
-inline const TCHAR* DefaultAnchorMarkerMaterialPath()
-{
-	return TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
 }
 }

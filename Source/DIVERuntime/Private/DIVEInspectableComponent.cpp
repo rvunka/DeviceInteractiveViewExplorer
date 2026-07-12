@@ -152,8 +152,6 @@ bool TryQueryPickContextMenuActiveState(
 UDIVEInspectableComponent::UDIVEInspectableComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-	DefaultAnchorMarkerMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(DIVE::DefaultAnchorMarkerMeshPath()));
-	DefaultAnchorMarkerMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(DIVE::DefaultAnchorMarkerMaterialPath()));
 }
 
 bool UDIVEInspectableComponent::RequestSession()
@@ -373,31 +371,15 @@ bool UDIVEInspectableComponent::FindAnchorNode(FName PartId, FDIVEPartNode& OutN
 		return true;
 	}
 
-	return false;
-}
-
-void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
-{
-	bSessionActive = bActive;
-
-	if (!bActive)
+	// Validation / early resolve can run before BuildSemanticRegistry — scan live anchors.
+	AActor* Owner = GetOwner();
+	if (!Owner)
 	{
-		UpdateAnchorSessionPresentation(FDIVEFocusTarget::MakeDeviceRoot());
-	}
-
-	OnSessionLifecycle.Broadcast(bActive);
-}
-
-void UDIVEInspectableComponent::UpdateAnchorSessionPresentation(const FDIVEFocusTarget& FocusedTarget)
-{
-	if (!GetOwner())
-	{
-		return;
+		return false;
 	}
 
 	TArray<UDIVEAnchorComponent*> Anchors;
-	GetOwner()->GetComponents<UDIVEAnchorComponent>(Anchors);
-
+	Owner->GetComponents<UDIVEAnchorComponent>(Anchors);
 	for (UDIVEAnchorComponent* Anchor : Anchors)
 	{
 		if (!Anchor)
@@ -405,12 +387,25 @@ void UDIVEInspectableComponent::UpdateAnchorSessionPresentation(const FDIVEFocus
 			continue;
 		}
 
-		const bool bHidePickMarker = bSessionActive
-			&& FocusedTarget.Kind == EDIVEFocusKind::Anchor
-			&& FocusedTarget.Anchor.Get() == Anchor;
-
-		Anchor->SetSessionPresentation(bSessionActive, bHidePickMarker);
+		const FName ResolvedPartId = Anchor->GetResolvedPartId();
+		if (ResolvedPartId == PartId || Anchor->GetFName() == PartId)
+		{
+			OutNode.PartId = ResolvedPartId;
+			OutNode.DisplayName = Anchor->DisplayName.IsEmpty()
+				? FText::FromName(ResolvedPartId)
+				: Anchor->DisplayName;
+			OutNode.SceneComponent = Anchor;
+			return true;
+		}
 	}
+
+	return false;
+}
+
+void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
+{
+	bSessionActive = bActive;
+	OnSessionLifecycle.Broadcast(bActive);
 }
 
 #if WITH_EDITOR

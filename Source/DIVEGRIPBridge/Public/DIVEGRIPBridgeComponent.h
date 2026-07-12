@@ -4,10 +4,13 @@
 
 #include "Components/ActorComponent.h"
 #include "DIVEPawnPhysicalDrive.h"
+#include "DIVETypes.h"
 
 #include "DIVEGRIPBridgeComponent.generated.h"
 
 class APlayerController;
+class UDIVEInspectableComponent;
+class UDIVESessionSubsystem;
 class UGRIPHandAimComponent;
 class UGRIPHandComponent;
 
@@ -27,6 +30,11 @@ public:
 		ToolTip = "On this pawn. Leave empty to auto-find UGRIPHandComponent."))
 	FName GripHandComponentName;
 
+	/** Hide GRIP hand target/physics proxy spheres for the duration of a DIVE session. */
+	UPROPERTY(EditAnywhere, Category = "DIVE|GRIP", meta = (
+		ToolTip = "Toggles UGRIPHandComponent::bShowHandProxyVisuals while a DIVE session is active. GRIP API unchanged."))
+	bool bHideGripHandProxiesDuringDiveSession = true;
+
 	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) const override;
 	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) override;
 	virtual void ApplyPawnPhysicalDriveDelta_Implementation(FVector2D ScreenDelta) override;
@@ -40,8 +48,15 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	UFUNCTION()
+	void HandleDiveSessionStarted(AActor* DeviceHost, UDIVEInspectableComponent* Inspectable);
+
+	UFUNCTION()
+	void HandleDiveSessionEnded(EDIVESessionEndReason Reason, AActor* DeviceHost);
+
 	UGRIPHandComponent* ResolveGripHand() const;
 	APlayerController* ResolvePlayerController() const;
+	bool IsLocallyControlledOwner() const;
 	bool TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const;
 	bool ResolveHandTargetFromScreen(const FVector2D& ScreenPosition, FVector& OutWorldLocation) const;
 	void UpdateHandTargetFromCursor();
@@ -52,6 +67,10 @@ protected:
 	void SuspendGripAimUpdates();
 	void RestoreGripAimUpdates();
 	void SetDriveTickEnabled(bool bEnabled);
+	void BindDiveSessionDelegates();
+	void UnbindDiveSessionDelegates();
+	void SyncGripHandProxyVisibilityToDiveSession();
+	UDIVESessionSubsystem* ResolveDiveSessionSubsystem() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UGRIPHandAimComponent> CachedAimComponent;
@@ -61,6 +80,9 @@ protected:
 	bool bManualRotateMouseCaptureActive = false;
 	bool bHasPreservedCursorScreenPositionDuringRotate = false;
 	bool bPreservedShowMouseCursorDuringRotate = false;
+	bool bDiveSessionActive = false;
+	bool bGripHandProxyVisibilitySuppressed = false;
+	bool bPreservedShowHandProxyVisuals = true;
 	FVector2D PreservedCursorScreenPositionDuringRotate = FVector2D::ZeroVector;
 	EMouseCaptureMode PreservedMouseCaptureModeDuringRotate = EMouseCaptureMode::CapturePermanently;
 	float GrabHoldDistance = 0.f;

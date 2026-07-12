@@ -94,9 +94,9 @@ Physical panel controls live on the **device**. DIVECore exposes **`IDIVEProxyDr
 
 ## Anchor (viewpoint only)
 
-`UDIVEAnchorComponent`: `PartId`, `DisplayName`, authored camera viewpoint (transform + optional marker). No checklist operations.
-
-**Session marker:** sphere in DIVE session (`bShowSessionMarker`). **DIVE Inspectable → DIVE | Anchor** (device mesh/material/scale) or **DIVE Anchor → DIVE | Marker** (per-anchor overrides). Color and opacity are authored in the material asset only.
+`UDIVEAnchorComponent`: `PartId`, `DisplayName`, authored camera viewpoint.
+Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional editor-only
+view-direction arrow (`DIVE|Editor`).
 
 ## Device isolate
 
