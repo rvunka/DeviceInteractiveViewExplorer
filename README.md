@@ -9,7 +9,7 @@ DIVE provides:
 - Orbit camera rig for device-focused sessions
 - **Explicit focus** — context menu or `HandleFocusUnderCursor` (not the default meaning of primary action in Default mode)
 - **Interaction modes** — Default (inspect) / Physical (proxy drive on device controls)
-- **In-session context menu** — Focus, Isolate on pick; custom rows: **`PickContextMenuByComponent`** + **`Handle_{Key}_{ActionId}`** on device actor
+- **In-session context menu** — Focus, Isolate on pick; custom rows: **`PickContextMenuByComponent`** + preferred **`IDIVEDeviceActionHandler`** (legacy **`Handle_{Key}_{ActionId}`** fallback)
 - **Primary action** — `Primary Action Id` in catalog (`IA_DIVE_PrimaryAction` → `HandlePrimaryAction*`); hover overlay under **DIVE | Pick | Hover**
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
 - **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (host implements)
@@ -22,7 +22,7 @@ DIVE provides:
 
 | Module | Role |
 |--------|------|
-| **DIVECore** | Shared types, `FDIVEFocusTarget`, `IDIVEProxyDrive`, `IDIVEDeviceControlRegistry`, conventions |
+| **DIVECore** | Shared types, `FDIVEFocusTarget`, `IDIVEDeviceActionHandler`, `IDIVEProxyDrive`, `IDIVEDeviceControlRegistry`, conventions |
 | **DIVERuntime** | Subsystem, components, camera rig, context menu UI, **`UDIVEInputComponent`**, **`DIVE.DumpDevice`** diagnostics |
 | **DIVERuntimeDev** | `UDIVELegacyKbmInputComponent` — BindKey → **DIVE Input** |
 | **DIVEGRIPBridge** | `UDIVEGRIPBridgeComponent` — pawn physical drive via GRIP (optional) |
@@ -35,7 +35,7 @@ DIVE provides:
 4. On pawn: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (Input auto-finds UI by class).
 5. Optional PIE: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — RMB context menu, MMB orbit, etc.
 6. Open session via ACTS `DIVE::kActionOpenDIVE` (`OpenDIVE`) or `RequestSession()` in game code.
-7. Custom menu: catalog on inspectable + **`Handle_{Key}_{ActionId}`** on device BP — **`Docs/QUICKSTART.md`** §1.
+7. Custom menu: catalog on inspectable + **`IDIVEDeviceActionHandler`** (or legacy **`Handle_*`**) — **`Docs/QUICKSTART.md`** §1.
 8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `DeviceInteractionModel.md` §6).
 
 See `Docs/QUICKSTART.md`, `Docs/ARCHITECTURE.md`, and `Docs/DeviceInteractionModel.md`.
