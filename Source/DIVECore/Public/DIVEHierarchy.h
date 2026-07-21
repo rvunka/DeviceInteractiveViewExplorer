@@ -67,20 +67,6 @@ inline int32 GetAttachDepthToAncestor(const USceneComponent* Component, const US
 	return INDEX_NONE;
 }
 
-template<typename TComponent>
-inline TComponent* FindAncestorComponent(USceneComponent* Component)
-{
-	for (USceneComponent* Current = Component; Current; Current = Current->GetAttachParent())
-	{
-		if (TComponent* Match = Cast<TComponent>(Current))
-		{
-			return Match;
-		}
-	}
-
-	return nullptr;
-}
-
 inline void CollectAttachedPrimitives(USceneComponent* Root, TArray<UPrimitiveComponent*>& OutPrimitives)
 {
 	if (!Root)

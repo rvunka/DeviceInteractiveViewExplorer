@@ -23,12 +23,7 @@ public class DIVERuntimeDev : ModuleRules
 			"SharedPluginUtils"
 		});
 
-		if (Target.Configuration != UnrealTargetConfiguration.Shipping)
-		{
-			PrivateDependencyModuleNames.Add("AutomationController");
-		}
-
-		// MUST NOT use Directory.Exists alone as "plugin enabled" (§6.2.9).
+		// Co-location only (§6.2.9): enable check, not Directory.Exists alone.
 		if (IsSiblingPluginEnabled(Target, ModuleDirectory, "GraspRigidbodyInertialPhysics", "GRIPRuntime"))
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=1");
@@ -39,7 +34,6 @@ public class DIVERuntimeDev : ModuleRules
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=0");
 		}
 
-		// Sibling plugin Plugins/DIVEGRIPBridge (not a module inside DIVE).
 		if (IsSiblingPluginEnabled(Target, ModuleDirectory, "DIVEGRIPBridge", "DIVEGRIPBridge"))
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP_BRIDGE=1");

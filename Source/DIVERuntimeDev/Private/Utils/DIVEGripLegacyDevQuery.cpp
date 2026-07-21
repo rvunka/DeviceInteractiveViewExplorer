@@ -5,7 +5,6 @@
 #include "DIVESessionSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/Pawn.h"
 
 #if DIVE_WITH_GRIP
 #include "Hand/GRIPHandComponent.h"

@@ -236,16 +236,9 @@ private:
 		FDIVEFocusTarget& OutPickTarget,
 		FHitResult& OutHit) const;
 
-	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bResetOrbitDistance = false);
-	bool ApplyInitialSessionFocus(FName InitialFocusId);
 	bool BuildContextMenuEntries(
 		const FVector2D& ScreenPosition,
 		APlayerController* PlayerController,
 		TArray<FDIVEContextMenuEntry>& OutEntries,
 		FDIVEFocusTarget& OutPickTarget) const;
-	bool ApplyIsolationForTarget(const FDIVEFocusTarget& Target);
-	void CollectIsolationVisiblePrimitives(const FDIVEFocusTarget& Target, TArray<UPrimitiveComponent*>& OutVisible) const;
-	void ClearProxyDrive();
-	void EndActivePhysicalDrive(bool bCommit);
-	void ResetPhysicalDriveState();
 };

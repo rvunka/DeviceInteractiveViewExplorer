@@ -212,7 +212,7 @@ bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
 	}
 
 	const UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>();
-	// Suppress orbit zoom while physical drive is active (GRIP hold-distance via ACTS or forward above).
+	// Suppress orbit zoom while physical drive is active (wheel routes to grab depth instead).
 	return DiveSubsystem && DiveSubsystem->IsProxyDriving();
 }
 

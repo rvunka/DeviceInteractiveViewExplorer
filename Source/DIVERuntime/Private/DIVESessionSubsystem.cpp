@@ -472,11 +472,6 @@ bool UDIVESessionSubsystem::IsPawnPhysicalDriveActive() const
 	return bProxyDriving && ActivePhysicalDriveKind == EDIVEActivePhysicalDriveKind::PawnBridge;
 }
 
-void UDIVESessionSubsystem::ClearProxyDrive()
-{
-	FDIVESessionPhysicalDriveOps::ClearProxyDrive(*this);
-}
-
 bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController)
@@ -537,40 +532,4 @@ void UDIVESessionSubsystem::UpdatePickHover(const FVector2D& ScreenPosition, APl
 void UDIVESessionSubsystem::ClearPickHover()
 {
 	FDIVESessionPickOps::ClearPickHover(*this);
-}
-
-bool UDIVESessionSubsystem::ApplyFocusTarget(
-	const FDIVEFocusTarget& Target,
-	const bool bPushToStack,
-	const bool bBlendCamera,
-	const bool bResetOrbitDistance)
-{
-	return FDIVESessionFocusOps::ApplyFocusTarget(*this, Target, bPushToStack, bBlendCamera, bResetOrbitDistance);
-}
-
-bool UDIVESessionSubsystem::ApplyInitialSessionFocus(FName InitialFocusId)
-{
-	return FDIVESessionFocusOps::ApplyInitialSessionFocus(*this, InitialFocusId);
-}
-
-bool UDIVESessionSubsystem::ApplyIsolationForTarget(const FDIVEFocusTarget& Target)
-{
-	return FDIVESessionIsolationOps::ApplyIsolationForTarget(*this, Target);
-}
-
-void UDIVESessionSubsystem::CollectIsolationVisiblePrimitives(
-	const FDIVEFocusTarget& Target,
-	TArray<UPrimitiveComponent*>& OutVisible) const
-{
-	FDIVESessionIsolationOps::CollectIsolationVisiblePrimitives(*this, Target, OutVisible);
-}
-
-void UDIVESessionSubsystem::EndActivePhysicalDrive(bool bCommit)
-{
-	FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(*this, bCommit);
-}
-
-void UDIVESessionSubsystem::ResetPhysicalDriveState()
-{
-	FDIVESessionPhysicalDriveOps::ResetPhysicalDriveState(*this);
 }

@@ -168,14 +168,14 @@ struct DIVECORE_API FDIVEContextMenuEntry
 	bool bIsSeparator = false;
 };
 
-/** One custom context-menu row (dispatched via Handle_{ComponentKey}_{ActionId} on the device actor). */
+/** One custom context-menu row (IDIVEDeviceActionHandler preferred; legacy Handle_{Key}_{ActionId} fallback). */
 USTRUCT(BlueprintType)
 struct DIVECORE_API FDIVEPickContextMenuAction
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Short id within this component's action list (e.g. Unscrew). Invoked as Handle_{map key}_{ActionId} on the device actor."))
+		ToolTip = "Short id within this component's action list (e.g. Unscrew). Dispatched via IDIVEDeviceActionHandler or legacy Handle_{map key}_{ActionId}."))
 	FName ActionId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
@@ -184,7 +184,7 @@ struct DIVECORE_API FDIVEPickContextMenuAction
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bEnabled = true;
 
-	/** When true: calls Handle_* first (reads current Is_*), then flips Is_{Key}_{ActionId}. Handle should apply toggle from current state — do not also flip Is_* in Handle. "*" shows when Is_* is true. */
+	/** When true: handler runs on current Is_*, then DIVE flips Is_{Key}_{ActionId}. Do not also flip Is_* in the handler. "*" shows when Is_* is true. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bToggleActiveSuffix = false;
 };

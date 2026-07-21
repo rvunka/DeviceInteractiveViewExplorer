@@ -147,7 +147,6 @@ void FDIVESessionPhysicalDriveOps::UpdateProxyDrive(UDIVESessionSubsystem& Sessi
 		}
 		break;
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge:
-		// Cursor-pull: backend ticks itself; session only validates the drive object is alive.
 		if (!Session.ActivePawnPhysicalDrive.GetObject())
 		{
 			ClearProxyDrive(Session);

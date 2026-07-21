@@ -2,8 +2,4 @@
 
 #include "Modules/ModuleManager.h"
 
-class FDIVERuntimeModule : public IModuleInterface
-{
-};
-
-IMPLEMENT_MODULE(FDIVERuntimeModule, DIVERuntime);
+IMPLEMENT_MODULE(FDefaultModuleImpl, DIVERuntime);
