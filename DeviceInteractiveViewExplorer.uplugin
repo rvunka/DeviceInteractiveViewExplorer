@@ -23,11 +23,6 @@
 			"Enabled": true
 		},
 		{
-			"Name": "DIVEGRIPBridge",
-			"Enabled": true,
-			"Optional": true
-		},
-		{
 			"Name": "GraspRigidbodyInertialPhysics",
 			"Enabled": true,
 			"Optional": true
