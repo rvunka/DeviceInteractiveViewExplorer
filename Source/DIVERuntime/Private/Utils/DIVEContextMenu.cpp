@@ -35,6 +35,10 @@ void AppendSeparator(TArray<FDIVEContextMenuEntry>& InOutEntries)
 
 void AppendStandardMeshEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries)
 {
+#if UE_BUILD_SHIPPING
+	(void)PickTarget;
+	(void)InOutEntries;
+#else
 	UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
 	if (PickTarget.Kind != EDIVEFocusKind::Primitive || !Primitive)
 	{
@@ -56,6 +60,7 @@ void AppendStandardMeshEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEC
 	DeleteEntry.DisplayName = NSLOCTEXT("DIVE", "ContextMenuDeleteMesh", "Delete Mesh");
 	DeleteEntry.bEnabled = true;
 	InOutEntries.Add(DeleteEntry);
+#endif
 }
 } // namespace
 
@@ -63,6 +68,7 @@ void BuildStandardEntries(
 	const UDIVESessionSubsystem* Subsystem,
 	const FDIVEFocusTarget& PickTarget,
 	bool bHasValidPick,
+	bool bIncludeAdminMeshEntries,
 	TArray<FDIVEContextMenuEntry>& InOutEntries)
 {
 	const bool bIsMeshPick = bHasValidPick
@@ -85,7 +91,10 @@ void BuildStandardEntries(
 	IsolateEntry.bEnabled = Subsystem && Subsystem->IsSessionActive() && bIsMeshPick;
 	InOutEntries.Add(IsolateEntry);
 
-	AppendStandardMeshEntries(PickTarget, InOutEntries);
+	if (bIncludeAdminMeshEntries)
+	{
+		AppendStandardMeshEntries(PickTarget, InOutEntries);
+	}
 }
 
 void AppendCustomEntries(

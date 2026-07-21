@@ -55,4 +55,7 @@ inline FName MakePickContextMenuActiveStateName(const FName ComponentName, const
 
 	return FName(*FString::Printf(TEXT("Is_%s_%s"), *ComponentName.ToString(), *LocalActionId.ToString()));
 }
+
+/** Strip SCS "_GEN_VARIABLE" and Duplicate suffixes like "_1", "_12" for catalog keys. */
+DIVECORE_API FString NormalizeComponentToken(FString Token);
 }

@@ -3,6 +3,7 @@
 #include "DIVEInspectableComponent.h"
 
 #include "DIVEAnchorComponent.h"
+#include "DIVEDeviceActionHandler.h"
 #include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
@@ -199,6 +200,20 @@ bool TryInvokePickContextMenuHandler(
 	UPrimitiveComponent* TargetComponent,
 	const bool* OptionalActiveState)
 {
+	if (Owner && Owner->Implements<UDIVEDeviceActionHandler>())
+	{
+		const bool bActiveBefore = OptionalActiveState ? *OptionalActiveState : false;
+		if (IDIVEDeviceActionHandler::Execute_HandleDeviceAction(
+				Owner,
+				ComponentName,
+				LocalActionId,
+				TargetComponent,
+				bActiveBefore))
+		{
+			return true;
+		}
+	}
+
 	return InvokeActorFunctionWithOptionalTarget(
 		Owner,
 		DIVE::MakePickContextMenuHandlerName(ComponentName, LocalActionId),
@@ -388,92 +403,77 @@ bool UDIVEInspectableComponent::IsPrimitiveInteractive(const UPrimitiveComponent
 
 float UDIVEInspectableComponent::GetEffectiveOrbitSensitivity() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->OrbitSensitivity;
-	}
-
-	return OrbitSensitivity;
+	return GetEffectiveCameraSettings().OrbitSensitivity;
 }
 
 float UDIVEInspectableComponent::GetEffectiveZoomSensitivity() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->ZoomSensitivity;
-	}
-
-	return ZoomSensitivity;
+	return GetEffectiveCameraSettings().ZoomSensitivity;
 }
 
 bool UDIVEInspectableComponent::GetEffectiveScaleZoomWithOrbitDistance() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->bScaleZoomWithOrbitDistance;
-	}
-
-	return bScaleZoomWithOrbitDistance;
+	return GetEffectiveCameraSettings().bScaleZoomWithOrbitDistance;
 }
 
 float UDIVEInspectableComponent::GetEffectiveZoomDistanceReferenceCm() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->ZoomDistanceReferenceCm;
-	}
-
-	return ZoomDistanceReferenceCm;
+	return GetEffectiveCameraSettings().ZoomDistanceReferenceCm;
 }
 
 float UDIVEInspectableComponent::GetEffectiveMinOrbitDistanceCm() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->MinOrbitDistanceCm;
-	}
-
-	return MinOrbitDistanceCm;
+	return GetEffectiveCameraSettings().MinOrbitDistanceCm;
 }
 
 float UDIVEInspectableComponent::GetEffectiveMaxOrbitDistanceCm() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->MaxOrbitDistanceCm;
-	}
-
-	return MaxOrbitDistanceCm;
+	return GetEffectiveCameraSettings().MaxOrbitDistanceCm;
 }
 
 float UDIVEInspectableComponent::GetEffectiveFocusOrbitFitMultiplier() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->FocusOrbitFitMultiplier;
-	}
-
-	return FocusOrbitFitMultiplier;
+	return GetEffectiveCameraSettings().FocusOrbitFitMultiplier;
 }
 
 float UDIVEInspectableComponent::GetEffectiveFocusNearPaddingFactor() const
 {
-	if (bUseDeviceDefinitionSettings && DeviceDefinition)
-	{
-		return DeviceDefinition->FocusNearPaddingFactor;
-	}
-
-	return FocusNearPaddingFactor;
+	return GetEffectiveCameraSettings().FocusNearPaddingFactor;
 }
 
 float UDIVEInspectableComponent::GetEffectiveDefaultOrbitDistance() const
 {
+	return GetEffectiveCameraSettings().DefaultOrbitDistance;
+}
+
+FDIVECameraEffectiveSettings UDIVEInspectableComponent::GetEffectiveCameraSettings() const
+{
+	FDIVECameraEffectiveSettings Settings;
+	Settings.OrbitSensitivity = OrbitSensitivity;
+	Settings.ZoomSensitivity = ZoomSensitivity;
+	Settings.bScaleZoomWithOrbitDistance = bScaleZoomWithOrbitDistance;
+	Settings.ZoomDistanceReferenceCm = ZoomDistanceReferenceCm;
+	Settings.MinOrbitDistanceCm = MinOrbitDistanceCm;
+	Settings.MaxOrbitDistanceCm = MaxOrbitDistanceCm;
+	Settings.FocusOrbitFitMultiplier = FocusOrbitFitMultiplier;
+	Settings.FocusNearPaddingFactor = FocusNearPaddingFactor;
+	Settings.DefaultOrbitDistance = DefaultOrbitDistance;
+	Settings.FocusBlendDuration = FocusBlendDuration;
+
 	if (bUseDeviceDefinitionSettings && DeviceDefinition)
 	{
-		return DeviceDefinition->DefaultOrbitDistance;
+		Settings.OrbitSensitivity = DeviceDefinition->OrbitSensitivity;
+		Settings.ZoomSensitivity = DeviceDefinition->ZoomSensitivity;
+		Settings.bScaleZoomWithOrbitDistance = DeviceDefinition->bScaleZoomWithOrbitDistance;
+		Settings.ZoomDistanceReferenceCm = DeviceDefinition->ZoomDistanceReferenceCm;
+		Settings.MinOrbitDistanceCm = DeviceDefinition->MinOrbitDistanceCm;
+		Settings.MaxOrbitDistanceCm = DeviceDefinition->MaxOrbitDistanceCm;
+		Settings.FocusOrbitFitMultiplier = DeviceDefinition->FocusOrbitFitMultiplier;
+		Settings.FocusNearPaddingFactor = DeviceDefinition->FocusNearPaddingFactor;
+		Settings.DefaultOrbitDistance = DeviceDefinition->DefaultOrbitDistance;
 	}
 
-	return DefaultOrbitDistance;
+	return Settings;
 }
 
 float UDIVEInspectableComponent::ComputeOrbitDistanceForFocus(const FDIVEFocusTarget& Target) const
@@ -976,40 +976,6 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 		return false;
 	};
 
-	/** Strip SCS "_GEN_VARIABLE" and Duplicate suffixes like "_1", "_12". */
-	auto NormalizeComponentToken = [](FString Token) -> FString
-	{
-		Token.RemoveFromEnd(TEXT("_GEN_VARIABLE"), ESearchCase::CaseSensitive);
-
-		while (Token.Len() > 0)
-		{
-			int32 UnderscoreIndex = INDEX_NONE;
-			if (!Token.FindLastChar(TEXT('_'), UnderscoreIndex) || UnderscoreIndex <= 0 || UnderscoreIndex >= Token.Len() - 1)
-			{
-				break;
-			}
-
-			bool bAllDigits = true;
-			for (int32 Index = UnderscoreIndex + 1; Index < Token.Len(); ++Index)
-			{
-				if (!FChar::IsDigit(Token[Index]))
-				{
-					bAllDigits = false;
-					break;
-				}
-			}
-
-			if (!bAllDigits)
-			{
-				break;
-			}
-
-			Token.LeftInline(UnderscoreIndex, EAllowShrinking::No);
-		}
-
-		return Token;
-	};
-
 	const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
 	if (Primitive)
 	{
@@ -1021,7 +987,7 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 
 		// 2) Normalized name (Switch2_1 / Switch2_GEN_VARIABLE → Switch2).
 		{
-			const FString Normalized = NormalizeComponentToken(Primitive->GetName());
+			const FString Normalized = DIVE::NormalizeComponentToken(Primitive->GetName());
 			if (!Normalized.IsEmpty() && TryKey(FName(*Normalized)))
 			{
 				return true;
@@ -1030,7 +996,7 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 
 		// 3) Compare normalized tokens both ways (authored key may also carry a suffix).
 		{
-			const FString PrimitiveToken = NormalizeComponentToken(Primitive->GetName());
+			const FString PrimitiveToken = DIVE::NormalizeComponentToken(Primitive->GetName());
 			for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : PickContextMenuByComponent)
 			{
 				if (Entry.Key.IsNone())
@@ -1038,7 +1004,7 @@ bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
 					continue;
 				}
 
-				if (NormalizeComponentToken(Entry.Key.ToString()).Equals(PrimitiveToken, ESearchCase::IgnoreCase))
+				if (DIVE::NormalizeComponentToken(Entry.Key.ToString()).Equals(PrimitiveToken, ESearchCase::IgnoreCase))
 				{
 					return TryKey(Entry.Key);
 				}

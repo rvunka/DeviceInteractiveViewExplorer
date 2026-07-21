@@ -1,4 +1,4 @@
-# DIVE Architecture (v0.7-dev)
+﻿# DIVE Architecture (v0.7-dev)
 
 ## Layers
 
@@ -36,6 +36,10 @@
 
 One active DIVE session per game instance. Input components guard with `IsLocallyControlled()`.
 
+**Lifecycle note:** `UDIVEInputComponent::EndPlay` ends an active session (`EndSession(Forced)`) for the locally controlled pawn. This is intentional for single-player / one local pawn; multi-pawn or listen-server setups may need a different session owner policy.
+
+**Input restore note:** session end approximates prior mode via `EDIVEPreservedInputMode` (GameAndUI only if both cursor and click events were on). PlayerController does not expose the previous `FInputMode` directly.
+
 ## Input
 
 | Component | Module | Role |
@@ -46,7 +50,7 @@ One active DIVE session per game instance. Input components guard with `IsLocall
 
 Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (+ optional **Legacy KBM** for PIE).
 
-**Contract:** physical keys → `UInputAction` in host Content → Enhanced Input on **Pawn / PlayerController** → plugin `Handle*`. See `Project_docs/Plugin_Architecture_Principles.md` §4 and **`Docs/DeviceInteractionModel.md` §4**.
+**Contract:** physical keys → `UInputAction` in host Content → Enhanced Input on **Pawn / PlayerController** → plugin `Handle*`. See `../../../Docs/Plugin_Architecture_Principles.md` §4 and **`Docs/DeviceInteractionModel.md` §4**.
 
 ### Session chrome (always available)
 
@@ -81,14 +85,14 @@ Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = foc
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**, dev **Physics/Delete** on interactive primitive pick; custom rows from **`PickContextMenuByComponent`** → **`Handle_{Key}_{ActionId}`** on device actor. **`Primary Action Id`** = same handler via **`HandlePrimaryActionPressed`** (`IA_DIVE_PrimaryAction`). Hover: **DIVE | Pick | Hover** on inspectable. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character draws the widget. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — primary action focuses anchor in Default mode when no `Primary Action Id` is configured.
+In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**; administrator **Simulate Physics / Delete Mesh** only when `UDIVEInspectableComponent::bEnableAdminContextMenuEntries` is true (default **false**) and **not** in Shipping builds. Custom rows from **`PickContextMenuByComponent`** → prefer **`IDIVEDeviceActionHandler`** on the device actor; legacy fallback **`Handle_{Key}_{ActionId}`**. **`Primary Action Id`** = same handler via **`HandlePrimaryActionPressed`** (`IA_DIVE_PrimaryAction`). Hover: **DIVE | Pick | Hover** on inspectable. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character draws the widget. Focus stack undo: `IA_DIVE_Back` (not in menu). **No menu on anchor pick** — primary action focuses anchor in Default mode when no `Primary Action Id` is configured.
 
 ## Device interaction (direct manipulation)
 
 | Intent | Mechanism |
 |--------|-----------|
 | Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
-| Quick device action | **Primary action** (`Primary Action Id`) or context menu row → **`Handle_{Key}_{ActionId}`** |
+| Quick device action | **Primary action** (`Primary Action Id`) or context menu row → **`IDIVEDeviceActionHandler`** (preferred) or **`Handle_{Key}_{ActionId}`** |
 | Default-mode hover | **DIVE \| Pick \| Hover** — `Hover Overlay Material` + optional `Pick Hover Overlay By Component` |
 | Non-interactive meshes | `Pick Interaction Exclusions` or `Skip Component Tag` |
 | Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
@@ -131,6 +135,8 @@ Automation smoke tests: `DIVE.ContextMenu.BuiltInEntries`, `DIVE.PawnPhysicalDri
 | **DIVEGRIPBridge** | no | yes (§7 bridge) | no |
 | **DIVERuntimeDev** | no | co-location only (§3.3 PIE) | no |
 
-**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is the documented exception for Physical-mode pawn grab; disable the module in `.uplugin` if GRIP is not used. No Enhanced Input assets or `BindKey` in production Runtime modules.
+**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is the documented §7 bridge for Physical-mode pawn grab: it always ships as a module, but **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (see `DIVEGRIPBridge.Build.cs`). Without GRIP the bridge compiles as a no-op stub — do **not** manually remove the module from `.uplugin`. No Enhanced Input assets or `BindKey` in production Runtime modules.
 
-Normative principles: [`Project_docs/Plugin_Architecture_Principles.md`](../../../Project_docs/Plugin_Architecture_Principles.md).
+**Diagnostics:** `DIVE.DumpDevice` / `DIVE.DumpAll` live in `DIVERuntime` under `#if !UE_BUILD_SHIPPING` (accepted trainer trade-off with `CanContainContent=false`).
+
+Normative principles: [`Docs/Plugin_Architecture_Principles.md`](../../../Docs/Plugin_Architecture_Principles.md).

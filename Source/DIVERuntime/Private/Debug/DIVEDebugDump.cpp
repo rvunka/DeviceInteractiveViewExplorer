@@ -22,8 +22,6 @@
 #include "Misc/Paths.h"
 #include "UObject/UnrealType.h"
 
-DEFINE_LOG_CATEGORY(LogDIVE);
-
 namespace
 {
 FString GLastDumpFilePath;
@@ -38,39 +36,6 @@ void AppendLine(FString& Out, const FString& Line)
 FString YesNo(const bool bValue)
 {
 	return bValue ? TEXT("yes") : TEXT("no");
-}
-
-FString NormalizeComponentToken(FString Token)
-{
-	Token.RemoveFromEnd(TEXT("_GEN_VARIABLE"), ESearchCase::CaseSensitive);
-
-	while (Token.Len() > 0)
-	{
-		int32 UnderscoreIndex = INDEX_NONE;
-		if (!Token.FindLastChar(TEXT('_'), UnderscoreIndex) || UnderscoreIndex <= 0 || UnderscoreIndex >= Token.Len() - 1)
-		{
-			break;
-		}
-
-		bool bAllDigits = true;
-		for (int32 Index = UnderscoreIndex + 1; Index < Token.Len(); ++Index)
-		{
-			if (!FChar::IsDigit(Token[Index]))
-			{
-				bAllDigits = false;
-				break;
-			}
-		}
-
-		if (!bAllDigits)
-		{
-			break;
-		}
-
-		Token.LeftInline(UnderscoreIndex, EAllowShrinking::No);
-	}
-
-	return Token;
 }
 
 bool HasBoolProperty(const AActor* Owner, const FName PropertyName)
@@ -187,7 +152,7 @@ void DumpCatalogEntry(
 			TEXT("    Resolve: Primitive FName='%s' GetName='%s' Normalized='%s' Class=%s PartId='%s'"),
 			Primitive ? *Primitive->GetFName().ToString() : TEXT("<null>"),
 			Primitive ? *Primitive->GetName() : TEXT("<null>"),
-			Primitive ? *NormalizeComponentToken(Primitive->GetName()) : TEXT("<null>"),
+			Primitive ? *DIVE::NormalizeComponentToken(Primitive->GetName()) : TEXT("<null>"),
 			Primitive ? *Primitive->GetClass()->GetName() : TEXT("<null>"),
 			*Resolved.SemanticPartId.ToString()));
 	}
@@ -281,7 +246,7 @@ void DumpPrimitiveRow(
 		TEXT("  Prim FName='%s' GetName='%s' Normalized='%s' Class=%s Owner=%s"),
 		*Primitive->GetFName().ToString(),
 		*Primitive->GetName(),
-		*NormalizeComponentToken(Primitive->GetName()),
+		*DIVE::NormalizeComponentToken(Primitive->GetName()),
 		*Primitive->GetClass()->GetName(),
 		Primitive->GetOwner() ? *Primitive->GetOwner()->GetName() : TEXT("<none>")));
 	AppendLine(Out, FString::Printf(
@@ -374,12 +339,12 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 				continue;
 			}
 
-			NormalizedToFNames.FindOrAdd(NormalizeComponentToken(Primitive->GetName())).Add(Primitive->GetFName().ToString());
+			NormalizedToFNames.FindOrAdd(DIVE::NormalizeComponentToken(Primitive->GetName())).Add(Primitive->GetFName().ToString());
 		}
 
 		for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : Inspectable->PickContextMenuByComponent)
 		{
-			const FString KeyNorm = NormalizeComponentToken(Entry.Key.ToString());
+			const FString KeyNorm = DIVE::NormalizeComponentToken(Entry.Key.ToString());
 			if (const TArray<FString>* Names = NormalizedToFNames.Find(KeyNorm))
 			{
 				AppendLine(Out, FString::Printf(
@@ -404,7 +369,7 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 			bool bHasCatalog = false;
 			for (const TPair<FName, FDIVEPickContextMenuActionList>& CatalogEntry : Inspectable->PickContextMenuByComponent)
 			{
-				if (NormalizeComponentToken(CatalogEntry.Key.ToString()).Equals(NormEntry.Key, ESearchCase::IgnoreCase))
+				if (DIVE::NormalizeComponentToken(CatalogEntry.Key.ToString()).Equals(NormEntry.Key, ESearchCase::IgnoreCase))
 				{
 					bHasCatalog = true;
 					break;
@@ -628,6 +593,9 @@ FString DIVEDebugDump::DumpFromConsole(UWorld* World, const TArray<FString>& Arg
 
 void DIVEDebugDump::RegisterConsoleCommands()
 {
+#if UE_BUILD_SHIPPING
+	return;
+#else
 	UnregisterConsoleCommands();
 
 	auto Bind = [](const TCHAR* Name, const TCHAR* Help, bool bAll)
@@ -668,6 +636,7 @@ void DIVEDebugDump::RegisterConsoleCommands()
 		TEXT("DIVE_DumpAll"),
 		TEXT("Alias of DIVE.DumpAll."),
 		true);
+#endif
 }
 
 void DIVEDebugDump::UnregisterConsoleCommands()

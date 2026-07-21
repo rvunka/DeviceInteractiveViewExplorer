@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "0.7-dev",
 	"FriendlyName": "DIVE - Device Interactive View Explorer",
-	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, authored viewpoints, in-session context menu, and physical proxy controls. DIVERuntime is self-contained (no ACTS or MESS). Optional GRIP integration for Physical-mode pawn grab via DIVEGRIPBridge.",
+	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, authored viewpoints, in-session context menu, and physical proxy controls. DIVERuntime is self-contained (no ACTS or MESS). Optional GRIP integration for Physical-mode pawn grab via DIVEGRIPBridge (module always present; GRIP link is conditional in Build.cs — no manual module removal).",
 	"Category": "Gameplay",
 	"CreatedBy": "",
 	"CreatedByURL": "",
@@ -14,6 +14,10 @@
 	"IsExperimentalVersion": false,
 	"Installed": false,
 	"Plugins": [
+		{
+			"Name": "SharedPluginUtils",
+			"Enabled": true
+		},
 		{
 			"Name": "DataValidation",
 			"Enabled": true

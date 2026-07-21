@@ -3,6 +3,7 @@
 #include "Input/DIVELegacyKbmInputComponent.h"
 
 #include "Components/InputComponent.h"
+#include "DIVELog.h"
 #include "DIVESessionSubsystem.h"
 #include "DIVETypes.h"
 #include "DIVEInspectableComponent.h"
@@ -108,11 +109,8 @@ void UDIVELegacyKbmInputComponent::RefreshSessionInputBindings()
 		BindInput();
 		if (!bInputBound && GetWorld())
 		{
-			GetWorld()->GetTimerManager().SetTimer(
-				PendingBindInputTimerHandle,
-				FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput),
-				0.f,
-				false);
+			GetWorld()->GetTimerManager().SetTimerForNextTick(
+				FTimerDelegate::CreateUObject(this, &UDIVELegacyKbmInputComponent::BindInput));
 		}
 	}
 	else
@@ -151,7 +149,7 @@ void UDIVELegacyKbmInputComponent::WarnMissingInputOnce()
 
 	bLoggedMissingInput = true;
 	UE_LOG(
-		LogTemp,
+		LogDIVE,
 		Warning,
 		TEXT("DIVE Legacy KBM Input on '%s': no DIVE Input component found. Link Input Component or add UDIVEInputComponent to the pawn."),
 		*GetNameSafe(GetOwner()));
@@ -363,11 +361,6 @@ void UDIVELegacyKbmInputComponent::ClearLegacyKeyBindings()
 
 void UDIVELegacyKbmInputComponent::UnbindInput()
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(PendingBindInputTimerHandle);
-	}
-
 	if (LegacyInputComponent)
 	{
 		if (APawn* Pawn = Cast<APawn>(GetOwner()))
@@ -395,11 +388,6 @@ void UDIVELegacyKbmInputComponent::BindInput()
 	if (!Pawn || !Pawn->IsLocallyControlled())
 	{
 		return;
-	}
-
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(PendingBindInputTimerHandle);
 	}
 
 	if (!LegacyInputComponent)

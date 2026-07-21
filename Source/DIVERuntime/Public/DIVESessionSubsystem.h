@@ -22,6 +22,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEFocusChanged, const FDIVEFocu
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEContextMenuVisibilityChanged, bool, bIsOpen);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEInteractionModeChanged, EDIVESessionInteractionMode, NewMode);
 
+struct FDIVESessionFocusOps;
+struct FDIVESessionIsolationOps;
+struct FDIVESessionPhysicalDriveOps;
+struct FDIVESessionPickOps;
+
 UCLASS()
 class DIVERUNTIME_API UDIVESessionSubsystem : public UGameInstanceSubsystem
 {
@@ -152,6 +157,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu|Admin")
 	bool DeleteMeshForTarget(const FDIVEFocusTarget& Target);
 
+	/** True when admin mesh rows may appear/run (flag on inspectable + non-Shipping). */
+	bool AreAdminContextMenuEntriesAllowed() const;
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ClearIsolation();
 
@@ -169,6 +177,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void HandleActivePawnPhysicalManualRotateReleased();
+
+	friend struct FDIVESessionFocusOps;
+	friend struct FDIVESessionIsolationOps;
+	friend struct FDIVESessionPhysicalDriveOps;
+	friend struct FDIVESessionPickOps;
 
 private:
 	enum class EDIVEActivePhysicalDriveKind : uint8
@@ -213,6 +226,15 @@ private:
 	FVector2D ContextMenuScreenPosition = FVector2D::ZeroVector;
 
 	TWeakObjectPtr<UPrimitiveComponent> PickHoverPrimitive;
+
+	FVector2D LastPickHoverScreenPosition = FVector2D::ZeroVector;
+	bool bHasLastPickHoverScreenPosition = false;
+
+	bool ResolvePickAtScreenPositionWithHit(
+		const FVector2D& ScreenPosition,
+		APlayerController* PlayerController,
+		FDIVEFocusTarget& OutPickTarget,
+		FHitResult& OutHit) const;
 
 	bool ApplyFocusTarget(const FDIVEFocusTarget& Target, bool bPushToStack, bool bBlendCamera = true, bool bResetOrbitDistance = false);
 	bool ApplyInitialSessionFocus(FName InitialFocusId);

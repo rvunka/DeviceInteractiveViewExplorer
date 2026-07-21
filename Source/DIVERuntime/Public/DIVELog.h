@@ -4,4 +4,4 @@
 
 #include "Logging/LogMacros.h"
 
-DECLARE_LOG_CATEGORY_EXTERN(LogDIVE, Log, All);
+DIVERUNTIME_API DECLARE_LOG_CATEGORY_EXTERN(LogDIVE, Log, All);

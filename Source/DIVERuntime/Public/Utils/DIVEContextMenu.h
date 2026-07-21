@@ -15,6 +15,7 @@ DIVERUNTIME_API void BuildStandardEntries(
 	const UDIVESessionSubsystem* Subsystem,
 	const FDIVEFocusTarget& PickTarget,
 	bool bHasValidPick,
+	bool bIncludeAdminMeshEntries,
 	TArray<FDIVEContextMenuEntry>& InOutEntries);
 
 DIVERUNTIME_API void AppendCustomEntries(

@@ -3,6 +3,7 @@
 #include "Input/DIVEInputComponent.h"
 
 #include "DIVESessionSubsystem.h"
+#include "DIVELog.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
@@ -214,7 +215,7 @@ void UDIVEInputComponent::WarnMissingContextMenuUIOnce()
 
 	bLoggedMissingContextMenuUI = true;
 	UE_LOG(
-		LogTemp,
+		LogDIVE,
 		Warning,
 		TEXT("DIVE Input on '%s': no UDIVEContextMenuUIComponent found on the pawn — add it to show the context menu widget."),
 		*GetNameSafe(GetOwner()));
@@ -369,7 +370,10 @@ void UDIVEInputComponent::CapturePreSessionInputState(APlayerController* PlayerC
 	bPreservedShowMouseCursor = PlayerController->bShowMouseCursor;
 	bPreservedEnableClickEvents = PlayerController->bEnableClickEvents;
 	bPreservedEnableMouseOverEvents = PlayerController->bEnableMouseOverEvents;
-	bPreservedUsedGameAndUI = PlayerController->bShowMouseCursor || PlayerController->bEnableClickEvents;
+	// GameAndUI only when both cursor and click events were already on (avoids false restore after debug cursor).
+	PreservedInputMode = (PlayerController->bShowMouseCursor && PlayerController->bEnableClickEvents)
+		? EDIVEPreservedInputMode::GameAndUI
+		: EDIVEPreservedInputMode::GameOnly;
 
 	if (const UWorld* World = PlayerController->GetWorld())
 	{
@@ -401,7 +405,7 @@ void UDIVEInputComponent::RestorePreSessionInputState(APlayerController* PlayerC
 		bSessionAppliedInputFlags = false;
 	}
 
-	if (bPreservedUsedGameAndUI)
+	if (PreservedInputMode == EDIVEPreservedInputMode::GameAndUI)
 	{
 		FInputModeGameAndUI InputMode;
 		InputMode.SetLockMouseToViewportBehavior(PreservedMouseLockMode);

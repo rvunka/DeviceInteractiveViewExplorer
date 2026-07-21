@@ -13,7 +13,8 @@ public class DIVERuntime : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
-			"DIVECore"
+			"DIVECore",
+			"SharedPluginUtils"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

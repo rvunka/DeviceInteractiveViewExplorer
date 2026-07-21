@@ -2,34 +2,27 @@
 
 #pragma once
 
-#include "UObject/NameTypes.h"
+#include "Utils/SharedComponentResolve.h"
 
 class AActor;
 class UActorComponent;
 
 namespace DIVEComponentResolve
 {
-	DIVERUNTIME_API UActorComponent* FindComponentByName(AActor* Owner, FName ComponentName);
+	inline UActorComponent* FindComponentByName(AActor* Owner, FName ComponentName)
+	{
+		return SharedComponentResolve::FindComponentByName(Owner, ComponentName);
+	}
 
 	template<typename ComponentType>
 	ComponentType* FindComponentByName(AActor* Owner, FName ComponentName)
 	{
-		if (UActorComponent* Component = FindComponentByName(Owner, ComponentName))
-		{
-			return Cast<ComponentType>(Component);
-		}
-
-		return nullptr;
+		return SharedComponentResolve::FindComponentByName<ComponentType>(Owner, ComponentName);
 	}
 
 	template<typename ComponentType>
 	ComponentType* FindComponentByNameOrClass(AActor* Owner, FName ComponentName)
 	{
-		if (ComponentType* NamedComponent = FindComponentByName<ComponentType>(Owner, ComponentName))
-		{
-			return NamedComponent;
-		}
-
-		return Owner ? Owner->FindComponentByClass<ComponentType>() : nullptr;
+		return SharedComponentResolve::FindComponentByNameOrClass<ComponentType>(Owner, ComponentName);
 	}
 }

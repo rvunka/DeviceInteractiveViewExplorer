@@ -14,6 +14,14 @@ class APlayerController;
 class UDIVEContextMenuUIComponent;
 class UDIVESessionChromeWidget;
 
+/** PC does not expose the previous FInputMode; restore approximates GameOnly vs GameAndUI. */
+UENUM()
+enum class EDIVEPreservedInputMode : uint8
+{
+	GameOnly,
+	GameAndUI
+};
+
 UCLASS(ClassGroup = (DIVE), meta = (BlueprintSpawnableComponent, DisplayName = "DIVE Input"))
 class DIVERUNTIME_API UDIVEInputComponent : public UActorComponent
 {
@@ -160,7 +168,7 @@ protected:
 	bool bPreservedShowMouseCursor = false;
 	bool bPreservedEnableClickEvents = false;
 	bool bPreservedEnableMouseOverEvents = false;
-	bool bPreservedUsedGameAndUI = false;
+	EDIVEPreservedInputMode PreservedInputMode = EDIVEPreservedInputMode::GameOnly;
 	EMouseCaptureMode PreservedMouseCaptureMode = EMouseCaptureMode::CapturePermanently;
 	EMouseLockMode PreservedMouseLockMode = EMouseLockMode::LockOnCapture;
 };

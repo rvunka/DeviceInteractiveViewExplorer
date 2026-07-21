@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
+#include "DIVEConvention.h"
 #include "DIVETypes.generated.h"
 
 UENUM(BlueprintType)
@@ -69,6 +70,43 @@ struct DIVECORE_API FDIVEFocusTarget
 	static FDIVEFocusTarget FromPrimitive(UPrimitiveComponent* InPrimitive, FName InSemanticPartId = NAME_None);
 
 	static FDIVEFocusTarget FromAnchor(USceneComponent* InAnchor, FName InSemanticPartId);
+};
+
+/** Resolved orbit/zoom/focus camera parameters (Inspectable or DeviceDefinition). */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVECameraEffectiveSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float OrbitSensitivity = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float ZoomSensitivity = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	bool bScaleZoomWithOrbitDistance = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float ZoomDistanceReferenceCm = DIVE::kDefaultZoomDistanceReference;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float MinOrbitDistanceCm = DIVE::kDefaultMinOrbitDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float MaxOrbitDistanceCm = DIVE::kDefaultMaxOrbitDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float FocusOrbitFitMultiplier = DIVE::kDefaultFocusOrbitFitMultiplier;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float FocusNearPaddingFactor = DIVE::kDefaultFocusNearPaddingFactor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float DefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	float FocusBlendDuration = 0.35f;
 };
 
 USTRUCT(BlueprintType)

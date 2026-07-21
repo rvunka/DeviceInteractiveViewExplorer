@@ -1,8 +1,8 @@
-# DIVE and physical device controls
+﻿# DIVE and physical device controls
 
 > **Audience:** device authors, game integration (ATSEP), VR planning.  
 > **Status:** architecture contract (v0.7).  
-> **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `Project_docs/Plugin_Architecture_Principles.md`.
+> **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `../../../Docs/Plugin_Architecture_Principles.md`.
 
 ---
 
@@ -281,11 +281,17 @@ DIVERuntime          GRIPRuntime          DIVEGRIPBridge (optional)
 
 **Option B — Pawn GRIP bridge (generic simulating-mesh drag)**
 
-1. Pawn keeps `UGRIPHandComponent` + optional `UGRIPHandAimComponent` + `UDIVEGRIPBridgeComponent`.
-2. In **Physical** mode, if no device proxy handles the pick, session falls back to `IDIVEPawnPhysicalDrive` on the pawn.
-3. Bridge calls GRIP Hand API (`TryGrabFromHit`, `SetHandWorldTransform`, `SetAimSuppressed`) — see GRIP `INTEGRATION.md`.
-4. Cursor-follow drag: bridge deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate (same `UGRIPHandComponent` path as standalone GRIP; Legacy KBM binds **R** via `UDIVELegacyKbmInputComponent`).
-5. **Do not** add bridge components to device actors; one bridge per pawn.
+1. Pawn keeps **two** grip instances when DIVE must not steal the player hand:
+   - `GRIP Hand` / `GRIP Hand Player` — gameplay grab
+   - `GRIP Hand Dive` — Physical drag (+ matching Aim if needed)
+   - `UDIVEGRIPBridgeComponent` with **GRIP Hand Component** = `GRIP Hand Dive`
+2. Single-Hand fallback: leave Dive name empty only when there is **one** Hand on the pawn (legacy hijack + warning).
+3. In **Physical** mode, if no device proxy handles the pick, session falls back to `IDIVEPawnPhysicalDrive` on the pawn.
+4. Bridge calls GRIP Hand API (`TryGrabFromHit`, `SetHandWorldTransform`, aim suppress **on the Dive Aim**) — see GRIP `INTEGRATION.md` / multi-hand slots.
+5. Cursor-follow drag: bridge deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate.
+6. **Do not** add bridge components to device actors; one bridge per pawn.
+
+See GRIP [`ARCHITECTURE.md`](../../GraspRigidbodyInertialPhysics/Docs/ARCHITECTURE.md) § Grip instances and [`MultiInstance_Anchor_Architecture.md`](../../GraspRigidbodyInertialPhysics/Docs/MultiInstance_Anchor_Architecture.md).
 
 Use **B** for «grab and pull» on simulating bodies (admin **Simulate Physics** + Physical mode). Use **A** for deterministic kinematic drive (training sim, snap ticks, no physics jitter).
 

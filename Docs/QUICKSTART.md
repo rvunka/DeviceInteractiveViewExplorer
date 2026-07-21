@@ -1,4 +1,4 @@
-# DIVE QUICKSTART
+﻿# DIVE QUICKSTART
 
 ## 1. Device setup
 
@@ -126,7 +126,7 @@ IA_DIVE_PrimaryAction Started
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog `Primary Action Id`.
 
-Built-in rows (Focus, Isolate, Simulate Physics, Delete Mesh) are handled inside the plugin, not via `Handle_*`.
+Built-in rows (Focus, Isolate) are handled inside the plugin. **Simulate Physics / Delete Mesh** appear only when the active inspectable has **Enable Admin Context Menu Entries** checked (and not in Shipping). Custom catalog rows use `IDIVEDeviceActionHandler` (preferred) or `Handle_*`.
 
 ---
 
@@ -225,4 +225,4 @@ Use the dump when custom menu rows are missing: compare **CatalogKey** to each p
 
 ## 6. Compliance
 
-Runtime input: `UDIVEInputComponent` **Handle\*** only (no `BindKey` in `DIVERuntime`). Legacy KBM in `DIVERuntimeDev` for PIE. Physical keys and `IA_*` assets live in **host Content** — see `Project_docs/Plugin_Architecture_Principles.md`.
+Runtime input: `UDIVEInputComponent` **Handle\*** only (no `BindKey` in `DIVERuntime`). Legacy KBM in `DIVERuntimeDev` for PIE. Physical keys and `IA_*` assets live in **host Content** — see `../../../Docs/Plugin_Architecture_Principles.md`.

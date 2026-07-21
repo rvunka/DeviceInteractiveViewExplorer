@@ -15,18 +15,15 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameViewportClient.h"
 #include "InputCoreTypes.h"
-#include "Styling/CoreStyle.h"
+#include "UI/SharedUmgStyle.h"
 
 namespace
 {
-FSlateBrush MakeFlatColorBrush(const FLinearColor& Color)
+constexpr ESlateBrushDrawType::Type kDiveFlatBrushDrawAs = ESlateBrushDrawType::Image;
+
+FSlateBrush MakeDiveFlatColorBrush(const FLinearColor& Color)
 {
-	FSlateBrush Brush;
-	Brush.DrawAs = ESlateBrushDrawType::Image;
-	Brush.TintColor = FSlateColor(Color);
-	Brush.Margin = FMargin(0.f);
-	Brush.ImageSize = FVector2D(1.f, 1.f);
-	return Brush;
+	return SharedUmgStyle::MakeFlatColorBrush(Color, kDiveFlatBrushDrawAs);
 }
 
 float GetViewportScaleSafe(const UObject* WorldContextObject)
@@ -48,10 +45,10 @@ float OnePhysicalPixelInSlateUnits(float ViewportScale)
 FButtonStyle MakeRowButtonStyle(const FDIVEContextMenuStyle& Style)
 {
 	FButtonStyle ButtonStyle;
-	ButtonStyle.Normal = MakeFlatColorBrush(FLinearColor::Transparent);
-	ButtonStyle.Hovered = MakeFlatColorBrush(Style.RowHoverBackground);
-	ButtonStyle.Pressed = MakeFlatColorBrush(Style.RowPressedBackground);
-	ButtonStyle.Disabled = MakeFlatColorBrush(FLinearColor::Transparent);
+	ButtonStyle.Normal = MakeDiveFlatColorBrush(FLinearColor::Transparent);
+	ButtonStyle.Hovered = MakeDiveFlatColorBrush(Style.RowHoverBackground);
+	ButtonStyle.Pressed = MakeDiveFlatColorBrush(Style.RowPressedBackground);
+	ButtonStyle.Disabled = MakeDiveFlatColorBrush(FLinearColor::Transparent);
 	ButtonStyle.NormalPadding = FMargin(Style.RowHorizontalPadding, 0.f);
 	ButtonStyle.PressedPadding = FMargin(Style.RowHorizontalPadding, 0.f);
 	return ButtonStyle;
@@ -60,7 +57,7 @@ FButtonStyle MakeRowButtonStyle(const FDIVEContextMenuStyle& Style)
 FButtonStyle MakeTransparentDismissButtonStyle()
 {
 	FButtonStyle ButtonStyle;
-	const FSlateBrush TransparentBrush = MakeFlatColorBrush(FLinearColor::Transparent);
+	const FSlateBrush TransparentBrush = MakeDiveFlatColorBrush(FLinearColor::Transparent);
 	ButtonStyle.Normal = TransparentBrush;
 	ButtonStyle.Hovered = TransparentBrush;
 	ButtonStyle.Pressed = TransparentBrush;
@@ -70,31 +67,19 @@ FButtonStyle MakeTransparentDismissButtonStyle()
 	return ButtonStyle;
 }
 
-FSlateFontInfo ResolveMenuFont(const UObject* FontObject, EDIVEContextMenuTypeface Typeface, int32 Size)
+FName ResolveDiveMenuTypefaceName(EDIVEContextMenuTypeface Typeface)
 {
-	const int32 ClampedSize = FMath::Clamp(Size, 6, 24);
-	FName TypefaceName = NAME_None;
-
 	switch (Typeface)
 	{
 	case EDIVEContextMenuTypeface::Bold:
-		TypefaceName = FName(TEXT("Bold"));
-		break;
+		return FName(TEXT("Bold"));
 	case EDIVEContextMenuTypeface::Light:
-		TypefaceName = FName(TEXT("Light"));
-		break;
+		return FName(TEXT("Light"));
 	default:
-		TypefaceName = FName(TEXT("Regular"));
-		break;
+		return FName(TEXT("Regular"));
 	}
-
-	if (FontObject)
-	{
-		return FSlateFontInfo(FontObject, ClampedSize, TypefaceName);
-	}
-
-	return FCoreStyle::GetDefaultFontStyle(*TypefaceName.ToString(), ClampedSize);
 }
+
 } // namespace
 
 UDIVEContextMenuWidget::UDIVEContextMenuWidget(const FObjectInitializer& ObjectInitializer)
@@ -103,7 +88,7 @@ UDIVEContextMenuWidget::UDIVEContextMenuWidget(const FObjectInitializer& ObjectI
 	SetIsFocusable(true);
 }
 
-void UDIVEContextMenuRowHost::HandleClicked()
+void UDIVEContextMenuActionButton::HandleClicked()
 {
 	if (UDIVEContextMenuWidget* Menu = OwnerWidget.Get())
 	{
@@ -294,7 +279,11 @@ FVector2D UDIVEContextMenuWidget::ClampPositionToViewport(const FVector2D& Scree
 
 FSlateFontInfo UDIVEContextMenuWidget::ResolveRowFont() const
 {
-	return ResolveMenuFont(CachedStyle.RowFont, CachedStyle.RowTypeface, CachedStyle.RowFontSize);
+	return SharedUmgStyle::ResolveMenuFont(
+		CachedStyle.RowFont,
+		ResolveDiveMenuTypefaceName(CachedStyle.RowTypeface),
+		CachedStyle.RowFontSize,
+		24);
 }
 
 void UDIVEContextMenuWidget::HandleEntryClicked(FName ActionId)
@@ -329,9 +318,12 @@ void UDIVEContextMenuWidget::AddActionRow(
 	RowSize->SetMinDesiredHeight(TotalRowHeight);
 	RowSize->SetWidthOverride(CachedStyle.MenuWidth);
 
-	UButton* RowButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+	UDIVEContextMenuActionButton* RowButton =
+		WidgetTree->ConstructWidget<UDIVEContextMenuActionButton>(UDIVEContextMenuActionButton::StaticClass());
 	RowButton->SetStyle(RowButtonStyle);
 	RowButton->SetIsEnabled(Entry.bEnabled);
+	RowButton->ActionId = Entry.ActionId;
+	RowButton->OwnerWidget = this;
 
 	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 	Label->SetText(Entry.DisplayName);
@@ -355,7 +347,7 @@ void UDIVEContextMenuWidget::AddActionRow(
 		LineSize->SetMinDesiredHeight(SeparatorHeight);
 
 		UImage* Line = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
-		Line->SetBrush(MakeFlatColorBrush(CachedStyle.SectionSeparator));
+		Line->SetBrush(MakeDiveFlatColorBrush(CachedStyle.SectionSeparator));
 		LineSize->SetContent(Line);
 
 		if (UVerticalBoxSlot* LineSlot = SectionColumn->AddChildToVerticalBox(LineSize))
@@ -385,13 +377,7 @@ void UDIVEContextMenuWidget::AddActionRow(
 
 	if (Entry.bEnabled)
 	{
-		UDIVEContextMenuRowHost* RowHost = NewObject<UDIVEContextMenuRowHost>(
-			this,
-			MakeUniqueObjectName(this, UDIVEContextMenuRowHost::StaticClass(), TEXT("ContextMenuRowHost")));
-		RowHost->ActionId = Entry.ActionId;
-		RowHost->OwnerWidget = this;
-		RowHosts.Add(RowHost);
-		RowButton->OnClicked.AddDynamic(RowHost, &UDIVEContextMenuRowHost::HandleClicked);
+		RowButton->OnClicked.AddDynamic(RowButton, &UDIVEContextMenuActionButton::HandleClicked);
 	}
 
 	if (UVerticalBoxSlot* RowSlot = EntryList->AddChildToVerticalBox(RowSize))
@@ -415,7 +401,6 @@ void UDIVEContextMenuWidget::RebuildList()
 	PanelBorder->SetBrushColor(CachedStyle.PanelBackground);
 
 	EntryList->ClearChildren();
-	RowHosts.Reset();
 
 	const FSlateFontInfo RowFont = ResolveRowFont();
 	const FButtonStyle RowButtonStyle = MakeRowButtonStyle(CachedStyle);

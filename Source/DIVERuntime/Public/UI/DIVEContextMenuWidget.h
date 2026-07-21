@@ -3,6 +3,7 @@
 #pragma once
 
 #include "Blueprint/UserWidget.h"
+#include "Components/Button.h"
 #include "DIVETypes.h"
 #include "UI/DIVEContextMenuStyle.h"
 
@@ -14,7 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDIVEContextMenuDismissed);
 class UDIVEContextMenuWidget;
 
 UCLASS()
-class UDIVEContextMenuRowHost : public UObject
+class UDIVEContextMenuActionButton : public UButton
 {
 	GENERATED_BODY()
 
@@ -81,13 +82,10 @@ protected:
 	UPROPERTY(Transient)
 	TArray<FDIVEContextMenuEntry> CachedEntries;
 
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UDIVEContextMenuRowHost>> RowHosts;
-
 	FDIVEContextMenuStyle CachedStyle;
 	FVector2D CachedScreenPosition = FVector2D::ZeroVector;
 
-	friend class UDIVEContextMenuRowHost;
+	friend class UDIVEContextMenuActionButton;
 
 	void HandleEntryClicked(FName ActionId);
 

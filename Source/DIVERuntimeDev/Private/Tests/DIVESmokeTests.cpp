@@ -29,7 +29,7 @@ bool FDIVEContextMenuBuiltInEntriesSmokeTest::RunTest(const FString& Parameters)
 	TArray<FDIVEContextMenuEntry> Entries;
 	FDIVEFocusTarget PickTarget = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
 
-	DIVEContextMenu::BuildStandardEntries(nullptr, PickTarget, false, Entries);
+	DIVEContextMenu::BuildStandardEntries(nullptr, PickTarget, false, false, Entries);
 	TestEqual(TEXT("Standard entries without pick"), Entries.Num(), 2);
 	TestEqual(TEXT("Focus entry id"), Entries[0].ActionId, DIVE::kContextFocus);
 	TestFalse(TEXT("Focus disabled without pick"), Entries[0].bEnabled);
@@ -37,7 +37,7 @@ bool FDIVEContextMenuBuiltInEntriesSmokeTest::RunTest(const FString& Parameters)
 
 	Entries.Reset();
 	const FDIVEFocusTarget DeviceRootPick = FDIVEFocusTarget::MakeDeviceRoot();
-	DIVEContextMenu::BuildStandardEntries(nullptr, DeviceRootPick, true, Entries);
+	DIVEContextMenu::BuildStandardEntries(nullptr, DeviceRootPick, true, false, Entries);
 	TestEqual(TEXT("Device root has navigation only"), Entries.Num(), 2);
 	TestFalse(TEXT("Focus disabled for device root pick"), Entries[0].bEnabled);
 	TestFalse(TEXT("Isolate disabled for device root pick"), Entries[1].bEnabled);

@@ -144,7 +144,6 @@ protected:
 
 	bool bInputBound = false;
 	bool bLoggedMissingInput = false;
-	FTimerHandle PendingBindInputTimerHandle;
 
 	void ResolveComponentReferences();
 	void EnsureInputReady();

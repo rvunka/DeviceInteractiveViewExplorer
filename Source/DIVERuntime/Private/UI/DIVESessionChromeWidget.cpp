@@ -9,20 +9,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "Styling/CoreStyle.h"
-
-namespace
-{
-FSlateBrush MakeFlatColorBrush(const FLinearColor& Color)
-{
-	FSlateBrush Brush;
-	Brush.DrawAs = ESlateBrushDrawType::Image;
-	Brush.TintColor = FSlateColor(Color);
-	Brush.Margin = FMargin(0.f);
-	Brush.ImageSize = FVector2D(1.f, 1.f);
-	return Brush;
-}
-} // namespace
+#include "UI/SharedUmgStyle.h"
 
 UDIVESessionChromeWidget::UDIVESessionChromeWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -95,7 +82,7 @@ void UDIVESessionChromeWidget::RebuildChrome()
 
 	UBorder* PanelOutline = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ModePanelOutline"));
 	PanelOutline->SetPadding(FMargin(1.f));
-	PanelOutline->SetBrush(MakeFlatColorBrush(CachedStyle.PanelBorder));
+	PanelOutline->SetBrush(SharedUmgStyle::MakeFlatColorBrush(CachedStyle.PanelBorder, ESlateBrushDrawType::Image));
 	PanelOutline->SetContent(ModePanel);
 
 	UVerticalBox* ContentBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ModeContent"));
@@ -113,7 +100,9 @@ void UDIVESessionChromeWidget::RebuildChrome()
 
 	ModeHint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ModeHint"));
 	ModeHint->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), CachedStyle.HintFontSize));
-	ModeHint->SetText(NSLOCTEXT("DIVE", "SessionModeHint", "Tab — switch mode"));
+	ModeHint->SetText(CachedStyle.ModeSwitchHint.IsEmpty()
+		? NSLOCTEXT("DIVE", "DefaultModeSwitchHint", "Switch mode")
+		: CachedStyle.ModeSwitchHint);
 	ModeHint->SetColorAndOpacity(CachedStyle.HintText);
 	ModeHint->SetVisibility(bShowModeHint ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 

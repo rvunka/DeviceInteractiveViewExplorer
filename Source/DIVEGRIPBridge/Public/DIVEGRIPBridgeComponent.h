@@ -27,8 +27,13 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|GRIP", meta = (
 		DisplayName = "GRIP Hand Component",
-		ToolTip = "On this pawn. Leave empty to auto-find UGRIPHandComponent."))
-	FName GripHandComponentName;
+		ToolTip = "Dive grip instance name (convention: GRIP Hand Dive). Required when the pawn has more than one UGRIPHandComponent. Empty + single Hand = legacy player-hand fallback."))
+	FName GripHandComponentName = TEXT("GRIP Hand Dive");
+
+	UPROPERTY(EditAnywhere, Category = "DIVE|GRIP", meta = (
+		DisplayName = "GRIP Hand Aim Component",
+		ToolTip = "Aim to suppress while driving. Empty = match Hand by replacing 'Hand' with 'Hand Aim' in the Hand name, else unique Aim if only one."))
+	FName GripHandAimComponentName;
 
 	/** Hide GRIP hand target/physics proxy spheres for the duration of a DIVE session. */
 	UPROPERTY(EditAnywhere, Category = "DIVE|GRIP", meta = (
@@ -55,6 +60,7 @@ protected:
 	void HandleDiveSessionEnded(EDIVESessionEndReason Reason, AActor* DeviceHost);
 
 	UGRIPHandComponent* ResolveGripHand() const;
+	UGRIPHandAimComponent* ResolveGripHandAim() const;
 	APlayerController* ResolvePlayerController() const;
 	bool IsLocallyControlledOwner() const;
 	bool TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const;
@@ -83,6 +89,8 @@ protected:
 	bool bDiveSessionActive = false;
 	bool bGripHandProxyVisibilitySuppressed = false;
 	bool bPreservedShowHandProxyVisuals = true;
+	mutable bool bLoggedLegacyHandFallback = false;
+	mutable bool bLoggedAmbiguousHandResolve = false;
 	FVector2D PreservedCursorScreenPositionDuringRotate = FVector2D::ZeroVector;
 	EMouseCaptureMode PreservedMouseCaptureModeDuringRotate = EMouseCaptureMode::CapturePermanently;
 	float GrabHoldDistance = 0.f;

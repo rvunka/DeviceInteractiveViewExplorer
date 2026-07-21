@@ -1,6 +1,7 @@
 // Copyright (c) 2026. All Rights Reserved.
 
 #include "DIVEDeviceScan.h"
+#include "DIVELog.h"
 #include "Debug/DIVEDebugDump.h"
 
 #include "Editor.h"
@@ -42,7 +43,7 @@ void ExecuteScanSelectedActors()
 		if (AActor* Actor = Cast<AActor>(*It))
 		{
 			const FDIVEDeviceScanReport Report = DIVEDeviceScan::ScanActor(Actor);
-			UE_LOG(LogTemp, Display, TEXT("%s"), *Report.ToLogString());
+			UE_LOG(LogDIVE, Display, TEXT("%s"), *Report.ToLogString());
 		}
 	}
 }

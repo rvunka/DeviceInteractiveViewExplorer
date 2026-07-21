@@ -2,8 +2,11 @@
 
 #include "DIVEGRIPBridgeComponent.h"
 
+#if DIVE_GRIP_BRIDGE_WITH_GRIP
+
 #include "Components/PrimitiveComponent.h"
 #include "DIVEInspectableComponent.h"
+#include "DIVELog.h"
 #include "DIVESessionSubsystem.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
@@ -74,7 +77,7 @@ void UDIVEGRIPBridgeComponent::ConfigureHandDriveTickOrder()
 		return;
 	}
 
-	if (UGRIPHandAimComponent* Aim = Owner->FindComponentByClass<UGRIPHandAimComponent>())
+	if (UGRIPHandAimComponent* Aim = ResolveGripHandAim())
 	{
 		DiveInput->PrimaryComponentTick.AddPrerequisite(Aim, Aim->PrimaryComponentTick);
 	}
@@ -217,7 +220,90 @@ UGRIPHandComponent* UDIVEGRIPBridgeComponent::ResolveGripHand() const
 		return nullptr;
 	}
 
-	return GRIPComponentResolve::FindComponentByNameOrClass<UGRIPHandComponent>(Owner, GripHandComponentName);
+	TArray<UGRIPHandComponent*> Hands;
+	Owner->GetComponents<UGRIPHandComponent>(Hands);
+
+	if (!GripHandComponentName.IsNone())
+	{
+		if (UGRIPHandComponent* Named = GRIPComponentResolve::FindComponentByName<UGRIPHandComponent>(Owner, GripHandComponentName))
+		{
+			return Named;
+		}
+	}
+
+	if (Hands.Num() == 1)
+	{
+		if (!GripHandComponentName.IsNone() && !bLoggedLegacyHandFallback)
+		{
+			bLoggedLegacyHandFallback = true;
+			UE_LOG(LogDIVE, Warning,
+				TEXT("DIVE GRIP bridge: Hand '%s' not found; using sole UGRIPHandComponent '%s' (legacy)."),
+				*GripHandComponentName.ToString(),
+				*Hands[0]->GetName());
+		}
+		else if (GripHandComponentName.IsNone() && !bLoggedLegacyHandFallback)
+		{
+			bLoggedLegacyHandFallback = true;
+			UE_LOG(LogDIVE, Warning,
+				TEXT("DIVE GRIP bridge: GripHandComponentName empty; using sole Hand '%s' (legacy hijack). Prefer 'GRIP Hand Dive'."),
+				*Hands[0]->GetName());
+		}
+		return Hands[0];
+	}
+
+	if (Hands.Num() > 1 && !bLoggedAmbiguousHandResolve)
+	{
+		bLoggedAmbiguousHandResolve = true;
+		UE_LOG(LogDIVE, Warning,
+			TEXT("DIVE GRIP bridge: %d UGRIPHandComponent(s) on '%s' but Dive Hand '%s' unresolved — set Grip Hand Component name (no silent FindComponentByClass)."),
+			Hands.Num(),
+			*GetNameSafe(Owner),
+			*GripHandComponentName.ToString());
+	}
+
+	return nullptr;
+}
+
+UGRIPHandAimComponent* UDIVEGRIPBridgeComponent::ResolveGripHandAim() const
+{
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return nullptr;
+	}
+
+	if (!GripHandAimComponentName.IsNone())
+	{
+		if (UGRIPHandAimComponent* Named = GRIPComponentResolve::FindComponentByName<UGRIPHandAimComponent>(Owner, GripHandAimComponentName))
+		{
+			return Named;
+		}
+	}
+
+	// Convention: "GRIP Hand Dive" → "GRIP Hand Aim Dive" (insert "Aim " after "Hand ").
+	if (!GripHandComponentName.IsNone())
+	{
+		const FString HandName = GripHandComponentName.ToString();
+		const FString Marker = TEXT("Hand ");
+		const int32 MarkerIdx = HandName.Find(Marker, ESearchCase::CaseSensitive);
+		if (MarkerIdx != INDEX_NONE)
+		{
+			const FString AimName = HandName.Left(MarkerIdx + Marker.Len()) + TEXT("Aim ") + HandName.Mid(MarkerIdx + Marker.Len());
+			if (UGRIPHandAimComponent* Derived = GRIPComponentResolve::FindComponentByName<UGRIPHandAimComponent>(Owner, FName(*AimName)))
+			{
+				return Derived;
+			}
+		}
+	}
+
+	TArray<UGRIPHandAimComponent*> Aims;
+	Owner->GetComponents<UGRIPHandAimComponent>(Aims);
+	if (Aims.Num() == 1)
+	{
+		return Aims[0];
+	}
+
+	return nullptr;
 }
 
 APlayerController* UDIVEGRIPBridgeComponent::ResolvePlayerController() const
@@ -406,8 +492,7 @@ void UDIVEGRIPBridgeComponent::SuspendGripAimUpdates()
 		return;
 	}
 
-	AActor* Owner = GetOwner();
-	if (UGRIPHandAimComponent* Aim = Owner ? Owner->FindComponentByClass<UGRIPHandAimComponent>() : nullptr)
+	if (UGRIPHandAimComponent* Aim = ResolveGripHandAim())
 	{
 		CachedAimComponent = Aim;
 		Aim->SetAimSuppressed(true);
@@ -463,7 +548,7 @@ bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVE
 		{
 			Distance = FVector::Distance(RayOrigin, GrabPoint);
 		}
-		Distance = FMath::Clamp(Distance, Hand->MinGrabHoldDistance, Hand->MaxGrabHoldDistance);
+		Distance = FMath::Clamp(Distance, Hand->GetTuning().MinGrabHoldDistance, Hand->GetTuning().MaxGrabHoldDistance);
 		OutHandLocation = RayOrigin + RayDirection * Distance;
 		return Distance;
 	};
@@ -523,13 +608,15 @@ void UDIVEGRIPBridgeComponent::ApplyGrabHoldDistanceScroll(const float WheelDelt
 	const float DeltaCm = WheelDelta * Hand->GetGrabHoldDistanceScrollStepCm();
 	GrabHoldDistance = FMath::Clamp(
 		GrabHoldDistance + DeltaCm,
-		Hand->MinGrabHoldDistance,
-		Hand->MaxGrabHoldDistance);
+		Hand->GetTuning().MinGrabHoldDistance,
+		Hand->GetTuning().MaxGrabHoldDistance);
 	UpdateHandTargetFromCursor();
 }
 
 void UDIVEGRIPBridgeComponent::ApplyPawnPhysicalDriveDelta_Implementation(FVector2D ScreenDelta)
 {
+	// Cursor-pull model: bridge reads the cursor in Tick while driving.
+	// Subsystem may still call this; ignore deltas to avoid double application.
 	(void)ScreenDelta;
 }
 
@@ -590,3 +677,150 @@ void UDIVEGRIPBridgeComponent::EndPawnPhysicalDrive_Implementation(bool bCommit)
 	GrabHoldDistance = 0.f;
 	SetDriveTickEnabled(false);
 }
+
+#else // !DIVE_GRIP_BRIDGE_WITH_GRIP — GRIP disabled / missing: no-op stub keeps DIVE buildable.
+
+UDIVEGRIPBridgeComponent::UDIVEGRIPBridgeComponent()
+{
+	PrimaryComponentTick.bCanEverTick = false;
+	SetComponentTickEnabled(false);
+}
+
+void UDIVEGRIPBridgeComponent::BeginPlay()
+{
+	Super::BeginPlay();
+}
+
+void UDIVEGRIPBridgeComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+}
+
+void UDIVEGRIPBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+}
+
+void UDIVEGRIPBridgeComponent::HandleDiveSessionStarted(AActor* /*DeviceHost*/, UDIVEInspectableComponent* /*Inspectable*/)
+{
+}
+
+void UDIVEGRIPBridgeComponent::HandleDiveSessionEnded(EDIVESessionEndReason /*Reason*/, AActor* /*DeviceHost*/)
+{
+}
+
+UGRIPHandComponent* UDIVEGRIPBridgeComponent::ResolveGripHand() const
+{
+	return nullptr;
+}
+
+UGRIPHandAimComponent* UDIVEGRIPBridgeComponent::ResolveGripHandAim() const
+{
+	return nullptr;
+}
+
+APlayerController* UDIVEGRIPBridgeComponent::ResolvePlayerController() const
+{
+	return nullptr;
+}
+
+bool UDIVEGRIPBridgeComponent::IsLocallyControlledOwner() const
+{
+	return false;
+}
+
+bool UDIVEGRIPBridgeComponent::TryGetCursorScreenPosition(FVector2D& /*OutScreenPosition*/) const
+{
+	return false;
+}
+
+bool UDIVEGRIPBridgeComponent::ResolveHandTargetFromScreen(const FVector2D& /*ScreenPosition*/, FVector& /*OutWorldLocation*/) const
+{
+	return false;
+}
+
+void UDIVEGRIPBridgeComponent::UpdateHandTargetFromCursor()
+{
+}
+
+void UDIVEGRIPBridgeComponent::ApplyManualRotationFromMouse()
+{
+}
+
+bool UDIVEGRIPBridgeComponent::TryEnterManualRotateMouseCapture()
+{
+	return false;
+}
+
+void UDIVEGRIPBridgeComponent::ExitManualRotateMouseCapture()
+{
+}
+
+void UDIVEGRIPBridgeComponent::ConfigureHandDriveTickOrder()
+{
+}
+
+void UDIVEGRIPBridgeComponent::SuspendGripAimUpdates()
+{
+}
+
+void UDIVEGRIPBridgeComponent::RestoreGripAimUpdates()
+{
+}
+
+void UDIVEGRIPBridgeComponent::SetDriveTickEnabled(bool /*bEnabled*/)
+{
+}
+
+void UDIVEGRIPBridgeComponent::BindDiveSessionDelegates()
+{
+}
+
+void UDIVEGRIPBridgeComponent::UnbindDiveSessionDelegates()
+{
+}
+
+void UDIVEGRIPBridgeComponent::SyncGripHandProxyVisibilityToDiveSession()
+{
+}
+
+UDIVESessionSubsystem* UDIVEGRIPBridgeComponent::ResolveDiveSessionSubsystem() const
+{
+	return nullptr;
+}
+
+bool UDIVEGRIPBridgeComponent::CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& /*Context*/) const
+{
+	return false;
+}
+
+bool UDIVEGRIPBridgeComponent::BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& /*Context*/)
+{
+	return false;
+}
+
+void UDIVEGRIPBridgeComponent::ApplyGrabHoldDistanceScroll(const float /*WheelDelta*/)
+{
+}
+
+void UDIVEGRIPBridgeComponent::ApplyPawnPhysicalDriveDelta_Implementation(FVector2D ScreenDelta)
+{
+	// Cursor-pull model: bridge reads the cursor in Tick while driving.
+	// Subsystem may still call this; ignore deltas to avoid double application.
+	(void)ScreenDelta;
+}
+
+void UDIVEGRIPBridgeComponent::HandlePawnPhysicalManualRotatePressed_Implementation()
+{
+}
+
+void UDIVEGRIPBridgeComponent::HandlePawnPhysicalManualRotateReleased_Implementation()
+{
+}
+
+void UDIVEGRIPBridgeComponent::EndPawnPhysicalDrive_Implementation(bool /*bCommit*/)
+{
+}
+
+#endif // DIVE_GRIP_BRIDGE_WITH_GRIP
+

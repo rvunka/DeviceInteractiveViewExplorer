@@ -1,9 +1,12 @@
 # DIVEGRIPBridge
 
-Optional runtime module connecting DIVE **Physical** mode to the GRIP Hand API.
+Runtime module connecting DIVE **Physical** mode to the GRIP Hand API (§7 bridge).
 
-- **Depends on:** `DIVECore`, `GRIPCore`, `GRIPRuntime`
-- **Does not modify:** `DIVERuntime` (no GRIP link there)
+- **Depends on:** `DIVECore`, `DIVERuntime`; **conditionally** `GRIPCore` / `GRIPRuntime`
+  when GraspRigidbodyInertialPhysics is enabled for the target (`DIVEGRIPBridge.Build.cs`).
+- **Does not modify:** `DIVERuntime` (no GRIP link there).
+- **Without GRIP:** the module still builds; `UDIVEGRIPBridgeComponent` is a no-op stub.
+  Do **not** remove the module from `.uplugin` by hand.
 
 ## Pawn setup
 
@@ -11,10 +14,13 @@ Add to the **player pawn** (not device actors):
 
 | Component | Role |
 |-----------|------|
-| `UGRIPHandComponent` | PD grab (`GrabPolicy = AllowSimulatingPhysics` for admin physics test) |
-| `UGRIPHandAimComponent` | Optional; bridge suppresses aim during drag |
-| `UDIVEGRIPBridgeComponent` | Implements `IDIVEPawnPhysicalDrive` |
-| `UDIVEInputComponent` | Session input (already required for DIVE) |
+| `UGRIPHandComponent` named **`GRIP Hand`** (or `GRIP Hand Player`) | Gameplay grab |
+| `UGRIPHandComponent` named **`GRIP Hand Dive`** | Physical drag (bridge default) |
+| Matching `UGRIPHandAimComponent` (optional per slot) | Aim; bridge suppresses Dive Aim while dragging |
+| `UDIVEGRIPBridgeComponent` | `Grip Hand Component` = `GRIP Hand Dive` |
+| `UDIVEInputComponent` | Session input |
+
+Single-Hand legacy: one Hand on the pawn + empty/unresolved Dive name → bridge uses that Hand once and logs a warning.
 
 ## Session visuals
 
@@ -56,7 +62,8 @@ Hanging bare `IDIVEProxyDrive` on an actor without implementing its methods does
 
 ## Manual smoke test
 
-1. Start DIVE session on a device with simulating meshes (context menu → Simulate Physics).
+1. Enable admin context menu on the inspectable (`bEnableAdminContextMenuEntries`), start DIVE,
+   enable Simulate Physics on a mesh.
 2. `IA_DIVE_SetMode_Physical` (Legacy PIE: **Tab**).
 3. Hold **primary action** on a simulating cube — it should move via GRIP (Legacy PIE: **LMB** drag).
 4. While holding primary action, **hold R** (Legacy manual-rotate key) and move the mouse to rotate. Mouse switches to relative capture (no screen-edge limit). On R release the cursor returns to its pre-rotate position for drag.

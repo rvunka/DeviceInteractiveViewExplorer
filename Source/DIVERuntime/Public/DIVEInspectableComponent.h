@@ -17,6 +17,7 @@
 class UDIVEDeviceDefinitionAsset;
 class UDIVEAnchorComponent;
 class UPrimitiveComponent;
+struct FDIVESessionPickOps;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVESessionLifecycle, bool, bSessionActive);
 
@@ -117,6 +118,15 @@ public:
 		ToolTip = "Key = exact component name (not a label). Duplicate often yields Switch1_1 — rename before adding a catalog key. Matching also strips _GEN_VARIABLE and trailing _N. Runtime: DIVE.DumpDevice."))
 	TMap<FName, FDIVEPickContextMenuActionList> PickContextMenuByComponent;
 
+	/**
+	 * When true (and not a Shipping build), context menu includes Simulate Physics / Delete Mesh.
+	 * Off by default — these are administrator/dev operations, not end-user actions.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		DisplayName = "Enable Admin Context Menu Entries",
+		ToolTip = "Adds Simulate Physics and Delete Mesh for mesh picks. Ignored in Shipping builds."))
+	bool bEnableAdminContextMenuEntries = false;
+
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
 	FOnDIVESessionLifecycle OnSessionLifecycle;
 
@@ -173,8 +183,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
 	float GetEffectiveFocusNearPaddingFactor() const;
 
-	UFUNCTION(BlueprintPure, Category = "DIVE|View")
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
 	float GetEffectiveDefaultOrbitDistance() const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
+	FDIVECameraEffectiveSettings GetEffectiveCameraSettings() const;
 
 	/** Orbit distance used when focusing a target (primitive fit or device default). */
 	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
@@ -207,6 +220,7 @@ private:
 	bool bSessionActive = false;
 
 	friend class UDIVESessionSubsystem;
+	friend struct FDIVESessionPickOps;
 
 	void NotifySessionLifecycle(bool bActive);
 	bool NotifyPickContextMenuAction(FName QualifiedActionId, const FDIVEFocusTarget& PickTarget);
