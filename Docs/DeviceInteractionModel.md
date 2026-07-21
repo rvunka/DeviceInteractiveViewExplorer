@@ -96,7 +96,7 @@ IDIVEProxyDrive (DIVECore) — backend for Physical mode only
 | Interaction | Mechanism |
 |-------------|-----------|
 | Door, slider, knob, switch | **Physical** mode → proxy drive or GRIP (same device state) |
-| Read label, use button, demount module | **Context menu** on pick → **`Handle_{Key}_{ActionId}`** on device actor |
+| Read label, use button, demount module | **Context menu** on pick → **`IDIVEDeviceActionHandler`** (preferred) or legacy **`Handle_{Key}_{ActionId}`** |
 | Cable, grab | GRIP + MESS in host project |
 
 ---
@@ -155,8 +155,8 @@ Flow:
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
 2. **Built-in entries** (plugin): **Focus**, **Isolate**; administrator section: **Enable/Disable Physics**, **Delete Mesh** (picked primitive only).
 3. **Device extensions** (host): **`PickContextMenuByComponent`** on inspectable (component name → short `ActionId` per row).
-4. Custom row click → **`Handle_{ComponentKey}_{ActionId}`** on device actor (e.g. `Handle_Screw1_Unscrew`). See **`QUICKSTART.md`** §1.
-5. Optional toggle: `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — `Handle_*` runs on current value, then DIVE flips `Is_*`.
+4. Custom row click → prefer **`IDIVEDeviceActionHandler::HandleDeviceAction`** on the device actor; legacy fallback **`Handle_{ComponentKey}_{ActionId}`** (one-shot Warning). See **`QUICKSTART.md`** §1.
+5. Optional toggle: `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — handler runs on current value, then DIVE flips `Is_*`.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 
@@ -201,7 +201,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Default / Physical |
 | `HandlePrimaryAction*` | Default → catalog `Primary Action Id` or anchor focus; hover overlay; Physical → proxy drive |
 | Context menu + widget | Focus, Isolate on primitive pick; anchor → primary action focus in Default when no `Primary Action Id` |
-| `PickContextMenuByComponent` + `Handle_{Key}_{ActionId}` | Catalog on inspectable; `Primary Action Id`; handler on device |
+| `PickContextMenuByComponent` + `IDIVEDeviceActionHandler` / legacy `Handle_*` | Catalog on inspectable; `Primary Action Id`; preferred interface on device |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
 | `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices |
 | Anchor | Viewpoint + PartId only |
@@ -212,7 +212,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 |------|--------|
 | `IA_DIVE_*` Content + `IMC_DIVE` | Host Content |
 | Registry / proxy drive on prefabs | Host / devices |
-| Context menu rows per pick | `PickContextMenuByComponent` + `Handle_{Key}_{ActionId}` on device |
+| Context menu rows per pick | `PickContextMenuByComponent` + `IDIVEDeviceActionHandler` (or legacy `Handle_*`) |
 | GRIP / MESS for cables | Host project |
 
 ---
@@ -257,10 +257,10 @@ GRIP is a **hand / grab engine**, not a **slider constraint engine**. Constraint
 - Plugin rule: **no module dependency** on GRIP (same as ACTS / MESS). `DIVERuntime.Build.cs` must stay self-contained.
 - Shipping projects without VR should not pull GRIP because DIVE is enabled.
 
-### Recommended pattern: optional DIVEGRIPBridge module
+### Recommended pattern: sibling plugin `DIVEGRIPBridge`
 
 ```text
-DIVERuntime          GRIPRuntime          DIVEGRIPBridge (optional)
+DIVERuntime          GRIPRuntime          DIVEGRIPBridge (sibling plugin)
 (self-contained)     (self-contained)     pawn component only
      │                    │                        │
      │  pick / session    │  hand / grab           │
@@ -306,7 +306,7 @@ Pick hit → IDIVEProxyDrive (device) → IDIVEPawnPhysicalDrive (pawn bridge) �
 | Approach | DIVE → GRIP link | When |
 |----------|------------------|------|
 | None (default) | No | DIVE-only titles, tests |
-| `DIVEGRIPBridge` module | Optional pawn component; `DIVERuntime` stays GRIP-free | Generic Physical drag with GRIP |
+| `DIVEGRIPBridge` sibling plugin | Enable separately; `DIVERuntime` stays GRIP-free | Generic Physical drag with GRIP |
 | Device `IDIVEProxyDrive` | No GRIP on monitor | Sliders, hinges, custom DOF |
 
 **MUST NOT:** `#include` GRIP headers or link `GRIPRuntime` from `DIVERuntime`.
@@ -347,7 +347,7 @@ Exact VR policy (DIVE session in HMD or not) is a **game** decision; DIVE expose
 | `HandlePrimaryAction*` rename; mode-gated proxy routing | DIVE plugin |
 | `IA_DIVE_*` + IMC for DIVE session | ATSEP Content |
 | Control registry + drive backends | ATSEP / devices |
-| Optional virtual GRIP hand | `DIVEGRIPBridge` (`UDIVEGRIPBridgeComponent` on pawn) |
+| Optional virtual GRIP hand | Sibling plugin `DIVEGRIPBridge` (`UDIVEGRIPBridgeComponent` on pawn) |
 | VR two-hand + OpenXR | GRIPVR / game |
 
 ---

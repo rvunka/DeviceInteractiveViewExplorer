@@ -14,6 +14,10 @@ class UDIVEPawnPhysicalDrive : public UInterface
 	GENERATED_BODY()
 };
 
+/**
+ * Pawn-side Physical drive backend (e.g. DIVEGRIPBridge).
+ * Cursor motion is owned by the backend (cursor-pull / tick) — the session does not push screen deltas.
+ */
 class DIVECORE_API IDIVEPawnPhysicalDrive
 {
 	GENERATED_IINTERFACE_BODY()
@@ -28,13 +32,7 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
 	void EndPawnPhysicalDrive(bool bCommit);
 
-	/**
-	 * Optional: backends that push cursor deltas from the subsystem.
-	 * GRIP bridge ignores this and pulls cursor in its own tick — preferred for pawn grab.
-	 */
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
-	void ApplyPawnPhysicalDriveDelta(FVector2D ScreenDelta);
-
+	/** Optional: grab backends that support manual rotate (e.g. GRIP). No-op if unsupported. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
 	void HandlePawnPhysicalManualRotatePressed();
 

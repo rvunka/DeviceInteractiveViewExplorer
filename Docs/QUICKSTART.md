@@ -42,23 +42,24 @@ Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over 
 
 Hover overlay still applies only to `UMeshComponent`.
 
-### Custom context menu row (example: Unscrew on screw)
+### Custom context menu row (preferred: `IDIVEDeviceActionHandler`)
 
-**Only on the device actor.** No Events, no delegate, no Switch.
+**Only on the device actor.** Implement **`IDIVEDeviceActionHandler`** → `HandleDeviceAction(CatalogKey, ActionId, Target, bActiveBefore)` and return **true** when handled.
 
 1. **DIVEInspectable** → **Pick Context Menu By Component** → add key `Screw1`, row `ActionId` = `Unscrew`, `DisplayName` = menu label.
-2. Optional on the same catalog entry: **`Primary Action Id`** = `Unscrew` (primary action in Default mode invokes the same handler as the menu row).
-3. **My Blueprint → Functions → +** → name **`Handle_Screw1_Unscrew`** (pattern: `Handle_{map key}_{ActionId}`).
-4. Optional input: **`TargetComponent`** (Primitive Component) = picked mesh.
-5. Function body: your logic (`UnscrewByRef`, etc.). Compile.
+2. Optional: **`Primary Action Id`** = `Unscrew`.
+3. Device BP: Class Settings → Implement Interface → **DIVE Device Action Handler** → Switch on `ActionId` / `CatalogKey`.
+4. Optional: use `Target` (picked primitive). Compile.
+
+**Legacy (transitional):** Blueprint function named **`Handle_Screw1_Unscrew`** (`Handle_{map key}_{ActionId}`). DIVE falls back to this if the interface is missing or returns false; logs a one-shot Warning. Prefer the interface for new devices.
 
 **Toggle row (`*` when active):** enable **`Toggle Active Suffix`**.
 
 1. Bool `Is_{Key}_{ActionId}` (default matches initial light state).
-2. `Handle_{Key}_{ActionId}` reads **current** `Is_*` and applies the toggle action (e.g. true→turn off, false→turn on).
-3. DIVE then flips `Is_*` **after** Handle.
+2. Handler (interface or legacy `Handle_*`) reads **current** `Is_*` and applies the toggle action.
+3. DIVE then flips `Is_*` **after** the handler.
 
-Do not also flip `Is_*` inside Handle.
+Do not also flip `Is_*` inside the handler.
 
 Done. **Unscrew** runs from the context menu, or from **primary action** when `Primary Action Id` is set.
 
@@ -90,7 +91,7 @@ Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_M
 
 **Player character** — menu open + UI. Already handled by the plugin if components and IMC are set up (§4). **You do not add Unscrew here.**
 
-**Device actor** — catalog + `Handle_*` functions.
+**Device actor** — catalog + **`IDIVEDeviceActionHandler`** (preferred) or legacy `Handle_*`.
 
 ### Menu open path (already in plugin — do not override for Unscrew)
 
@@ -105,12 +106,13 @@ IA_DIVE_ContextMenu (project IMC — e.g. RMB in Legacy PIE)
 
 `DIVE Context Menu UI` on the player character only **shows** the widget; it does not run `Handle_Screw1_Unscrew`.
 
-### Menu click path (your `Handle_*` function)
+### Menu click path (handler)
 
 ```text
 Click "Unscrew"
  → UI → Session subsystem::ExecuteContextMenuAction
- → DIVEInspectable calls Handle_Screw1_Unscrew on the device actor
+ → DIVEInspectable → IDIVEDeviceActionHandler::HandleDeviceAction (preferred)
+   or legacy Handle_Screw1_Unscrew
 ```
 
 Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`Primary Action Id`** is set on that catalog entry (no menu open).
@@ -121,7 +123,7 @@ Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimary
 IA_DIVE_PrimaryAction Started
  → DIVE Input::HandlePrimaryActionPressed()
  → Session::ExecutePrimaryActionAtScreenPosition (Default mode)
- → DIVEInspectable → Handle_Screw1_Unscrew on the device actor
+ → DIVEInspectable → HandleDeviceAction / legacy Handle_* on the device actor
 ```
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog `Primary Action Id`.
@@ -155,7 +157,7 @@ Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional **Show Vie
 2. Admin context menu → **Simulate Physics** on a mesh.
 3. Physical mode → primary-action hold drag moves the body via GRIP PD. Legacy PIE: **LMB** + drag; **hold R** + mouse move rotates the grabbed body.
 
-See `DeviceInteractionModel.md` §6–§7 and `Source/DIVEGRIPBridge/README.md`.
+See `DeviceInteractionModel.md` §6–§7 and `../../DIVEGRIPBridge/README.md`.
 
 ### Camera sensitivity
 

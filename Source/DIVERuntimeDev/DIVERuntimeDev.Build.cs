@@ -39,8 +39,8 @@ public class DIVERuntimeDev : ModuleRules
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=0");
 		}
 
-		// Bridge module always exists; GRIP link inside it is conditional.
-		if (Directory.Exists(Path.Combine(ModuleDirectory, "..", "DIVEGRIPBridge")))
+		// Sibling plugin Plugins/DIVEGRIPBridge (not a module inside DIVE).
+		if (IsSiblingPluginEnabled(Target, ModuleDirectory, "DIVEGRIPBridge", "DIVEGRIPBridge"))
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP_BRIDGE=1");
 			PrivateDependencyModuleNames.Add("DIVEGRIPBridge");

@@ -7,12 +7,14 @@
 #include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
+#include "DIVELog.h"
 #include "DIVESessionSubsystem.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/ShapeComponent.h"
 #include "Engine/GameInstance.h"
 #include "Utils/DIVEContextMenu.h"
+#include "UObject/ObjectKey.h"
 #include "UObject/UnrealType.h"
 
 #if WITH_EDITOR
@@ -214,9 +216,26 @@ bool TryInvokePickContextMenuHandler(
 		}
 	}
 
+	const FName LegacyHandlerName = DIVE::MakePickContextMenuHandlerName(ComponentName, LocalActionId);
+	if (Owner && Owner->FindFunction(LegacyHandlerName))
+	{
+		static TSet<FObjectKey> WarnedLegacyHandleOwners;
+		const FObjectKey OwnerKey(Owner);
+		if (!WarnedLegacyHandleOwners.Contains(OwnerKey))
+		{
+			WarnedLegacyHandleOwners.Add(OwnerKey);
+			UE_LOG(
+				LogDIVE,
+				Warning,
+				TEXT("DIVE: '%s' dispatched via legacy %s — prefer IDIVEDeviceActionHandler (HandleDeviceAction)."),
+				*GetNameSafe(Owner),
+				*LegacyHandlerName.ToString());
+		}
+	}
+
 	return InvokeActorFunctionWithOptionalTarget(
 		Owner,
-		DIVE::MakePickContextMenuHandlerName(ComponentName, LocalActionId),
+		LegacyHandlerName,
 		TargetComponent,
 		OptionalActiveState);
 }

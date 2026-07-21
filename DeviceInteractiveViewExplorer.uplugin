@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "0.7-dev",
 	"FriendlyName": "DIVE - Device Interactive View Explorer",
-	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, authored viewpoints, in-session context menu, and physical proxy controls. DIVERuntime is self-contained (no ACTS or MESS). Optional GRIP integration for Physical-mode pawn grab via DIVEGRIPBridge (module always present; GRIP link is conditional in Build.cs — no manual module removal).",
+	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, authored viewpoints, in-session context menu, and physical proxy controls. DIVERuntime is self-contained (no ACTS or MESS). Physical-mode GRIP grab lives in the sibling plugin DIVEGRIPBridge (enable separately).",
 	"Category": "Gameplay",
 	"CreatedBy": "",
 	"CreatedByURL": "",
@@ -21,6 +21,11 @@
 		{
 			"Name": "DataValidation",
 			"Enabled": true
+		},
+		{
+			"Name": "DIVEGRIPBridge",
+			"Enabled": true,
+			"Optional": true
 		},
 		{
 			"Name": "GraspRigidbodyInertialPhysics",
@@ -47,11 +52,6 @@
 		{
 			"Name": "DIVEUnrealEditor",
 			"Type": "Editor",
-			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "DIVEGRIPBridge",
-			"Type": "Runtime",
 			"LoadingPhase": "Default"
 		}
 	]

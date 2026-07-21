@@ -3,6 +3,7 @@
 #include "Debug/DIVEDebugDump.h"
 
 #include "DIVEConvention.h"
+#include "DIVEDeviceActionHandler.h"
 #include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
@@ -306,6 +307,40 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 		*YesNo(Inspectable->IsSessionActive()),
 		Inspectable->PickContextMenuByComponent.Num(),
 		Inspectable->PickInteractionExclusions.Num()));
+
+	AppendLine(Out, TEXT("-- Device action dispatch --"));
+	AppendLine(Out, FString::Printf(
+		TEXT("  IDIVEDeviceActionHandler: %s (preferred)"),
+		*YesNo(DeviceActor->Implements<UDIVEDeviceActionHandler>())));
+	{
+		TArray<FString> LegacyHandlers;
+		for (TFieldIterator<UFunction> It(DeviceActor->GetClass()); It; ++It)
+		{
+			const UFunction* Function = *It;
+			if (!Function)
+			{
+				continue;
+			}
+			const FString Name = Function->GetName();
+			if (Name.StartsWith(TEXT("Handle_"), ESearchCase::CaseSensitive))
+			{
+				LegacyHandlers.Add(Name);
+			}
+		}
+		LegacyHandlers.Sort();
+		if (LegacyHandlers.IsEmpty())
+		{
+			AppendLine(Out, TEXT("  Legacy Handle_* functions: (none)"));
+		}
+		else
+		{
+			AppendLine(Out, FString::Printf(TEXT("  Legacy Handle_* functions (%d):"), LegacyHandlers.Num()));
+			for (const FString& Name : LegacyHandlers)
+			{
+				AppendLine(Out, FString::Printf(TEXT("    %s"), *Name));
+			}
+		}
+	}
 
 	AppendLine(Out, TEXT("-- Catalog (PickContextMenuByComponent) --"));
 	if (Inspectable->PickContextMenuByComponent.IsEmpty())

@@ -13,7 +13,7 @@
 │ DIVEUnrealEditor (editor only)          │
 │  DIVE Scan Device · validation reports  │
 ├─────────────────────────────────────────┤
-│ DIVEGRIPBridge (optional §7)            │
+│ DIVEGRIPBridge (sibling plugin, optional §7) │
 │  UDIVEGRIPBridgeComponent — pawn physical │
 │  drive via GRIP Hand API                │
 ├─────────────────────────────────────────┤
@@ -92,7 +92,7 @@ In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**; ad
 | Intent | Mechanism |
 |--------|-----------|
 | Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
-| Quick device action | **Primary action** (`Primary Action Id`) or context menu row → **`IDIVEDeviceActionHandler`** (preferred) or **`Handle_{Key}_{ActionId}`** |
+| Custom device action | Context menu / primary → **`IDIVEDeviceActionHandler`** (preferred) or legacy **`Handle_{Key}_{ActionId}`** |
 | Default-mode hover | **DIVE \| Pick \| Hover** — `Hover Overlay Material` + optional `Pick Hover Overlay By Component` |
 | Non-interactive meshes | `Pick Interaction Exclusions` or `Skip Component Tag` |
 | Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
@@ -132,11 +132,13 @@ Automation smoke tests: `DIVE.ContextMenu.BuiltInEntries`, `DIVE.PawnPhysicalDri
 | Module | ACTS | GRIP | MESS |
 |--------|------|------|------|
 | **DIVERuntime** | no | no | no |
-| **DIVEGRIPBridge** | no | yes (§7 bridge) | no |
+| **DIVEGRIPBridge** (sibling plugin) | no | yes (§7 bridge) | no |
 | **DIVERuntimeDev** | no | co-location only (§3.3 PIE) | no |
 
-**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is the documented §7 bridge for Physical-mode pawn grab: it always ships as a module, but **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (see `DIVEGRIPBridge.Build.cs`). Without GRIP the bridge compiles as a no-op stub — do **not** manually remove the module from `.uplugin`. No Enhanced Input assets or `BindKey` in production Runtime modules.
+**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (see `DIVEGRIPBridge.Build.cs`). Without GRIP the bridge compiles as a no-op stub. No Enhanced Input assets or `BindKey` in production Runtime modules.
 
-**Diagnostics:** `DIVE.DumpDevice` / `DIVE.DumpAll` live in `DIVERuntime` under `#if !UE_BUILD_SHIPPING` (accepted trainer trade-off with `CanContainContent=false`).
+**Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn bridge (device `IDIVEProxyDrive` still receives deltas).
+
+**Diagnostics:** `DIVE.DumpDevice` / `DIVE.DumpAll` live in **`DIVERuntimeDev`** (PIE / Editor). Not registered from Shipping `DIVERuntime`.
 
 Normative principles: [`Docs/Plugin_Architecture_Principles.md`](../../../Docs/Plugin_Architecture_Principles.md).

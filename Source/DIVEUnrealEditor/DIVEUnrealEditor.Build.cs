@@ -14,7 +14,8 @@ public class DIVEUnrealEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"DIVECore",
-			"DIVERuntime"
+			"DIVERuntime",
+			"DIVERuntimeDev"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
