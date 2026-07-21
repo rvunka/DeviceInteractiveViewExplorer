@@ -135,7 +135,7 @@ Automation smoke tests: `DIVE.ContextMenu.BuiltInEntries`, `DIVE.PawnPhysicalDri
 | **DIVEGRIPBridge** (sibling plugin) | no | yes (§7 bridge) | no |
 | **DIVERuntimeDev** | no | co-location only (§3.3 PIE) | no |
 
-**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (see `DIVEGRIPBridge.Build.cs`). Without GRIP the bridge compiles as a no-op stub. No Enhanced Input assets or `BindKey` in production Runtime modules.
+**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (see `DIVEGRIPBridge.Build.cs`). Without GRIP the bridge compiles as a no-op stub. DIVE must **not** list `DIVEGRIPBridge` in its `.uplugin` deps (that would cycle: bridge → DIVE). `DIVERuntimeDev` may still link the bridge module when the sibling plugin is present (UBT may warn; same pattern as ACTS RuntimeDev co-location). No Enhanced Input assets or `BindKey` in production Runtime modules.
 
 **Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn bridge (device `IDIVEProxyDrive` still receives deltas).
 
