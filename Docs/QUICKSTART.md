@@ -42,7 +42,7 @@ Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over 
 
 Hover overlay still applies only to `UMeshComponent`.
 
-### Custom context menu row (preferred: `IDIVEDeviceActionHandler`)
+### Custom context menu row (`IDIVEDeviceActionHandler`)
 
 **Only on the device actor.** Implement **`IDIVEDeviceActionHandler`** → `HandleDeviceAction(CatalogKey, ActionId, Target, bActiveBefore)` and return **true** when handled.
 
