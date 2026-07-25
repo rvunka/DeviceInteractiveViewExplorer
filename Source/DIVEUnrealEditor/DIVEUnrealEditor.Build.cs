@@ -21,6 +21,7 @@ public class DIVEUnrealEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"UnrealEd",
+			"AssetTools",
 			"Slate",
 			"SlateCore",
 			"ToolMenus",

@@ -24,6 +24,14 @@ inline const FName kContextIsolate = TEXT("DIVE.Context.Isolate");
 inline const FName kContextToggleMeshPhysics = TEXT("DIVE.Context.ToggleMeshPhysics");
 inline const FName kContextDeleteMesh = TEXT("DIVE.Context.DeleteMesh");
 
+inline bool IsReservedContextMenuActionId(const FName ActionId)
+{
+	return ActionId == kContextFocus
+		|| ActionId == kContextIsolate
+		|| ActionId == kContextToggleMeshPhysics
+		|| ActionId == kContextDeleteMesh;
+}
+
 inline FName MakeQualifiedPickContextMenuActionId(const FName ComponentName, const FName LocalActionId)
 {
 	if (ComponentName.IsNone() || LocalActionId.IsNone())

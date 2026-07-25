@@ -46,17 +46,31 @@ Hover overlay still applies only to `UMeshComponent`.
 
 **Only on the device actor.** Implement **`IDIVEDeviceActionHandler`** → `HandleDeviceAction(CatalogKey, ActionId, Target, bActiveBefore)` and return **true** when handled.
 
-1. **DIVEInspectable** → **Pick Context Menu By Component** → add key `Screw1`, row `ActionId` = `Unscrew`, `DisplayName` = menu label.
-2. Optional: **`Primary Action Id`** = `Unscrew`.
-3. Device BP: Class Settings → Implement Interface → **DIVE Device Action Handler** → Switch on `ActionId` / `CatalogKey`.
-4. Optional: use `Target` (picked primitive). Compile.
+`CatalogKey` and `ActionId` are **not** duplicates:
 
-**Legacy (transitional):** Blueprint function named **`Handle_Screw1_Unscrew`** (`Handle_{map key}_{ActionId}`). DIVE falls back to this if the interface is missing or returns false; logs a one-shot Warning. Prefer the interface for new devices.
+| Arg | Meaning | Example |
+|-----|---------|---------|
+| **CatalogKey** | which part (map key = component name / PartId) | `Screw1`, `CoverA` |
+| **ActionId** | which operation on that part | `Unscrew`, `Open`, `Toggle` |
 
-**Toggle row (`*` when active):** enable **`Toggle Active Suffix`**.
+`HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
+
+**Author `ActionId` on a DataAsset** (preferred), not as a free string on every row:
+
+1. Content Browser → Miscellaneous → **DIVE Device Action Definition** (or **DIVE Unscrew Action Definition** for turn count). Set `ActionId` = `Unscrew` / `Toggle`, default display name, toggle flag; Unscrew: `DefaultTurnCount`.
+2. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset. Optional row **DisplayName** override; **Instance Overrides → Unscrew Turn Count** (`-1` = use asset default).
+3. Optional: **`Primary Action Id`** = resolved id (`Unscrew`).
+4. Device BP: Class Settings → Implement Interface → **DIVE Device Action Handler** → Switch on `ActionId`, then `CatalogKey` / `Target`. For turns: `TryGetResolvedActionRow(CatalogKey, ActionId)`.
+5. Compile.
+
+**Legacy row:** leave Definition empty and set row **ActionId** FName (same as before). Prefer Definition for new devices.
+
+**Legacy handler (transitional):** Blueprint function **`Handle_Screw1_Unscrew`**. DIVE falls back if the interface is missing or returns false; one-shot Warning.
+
+**Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition (or legacy row flag).
 
 1. Bool `Is_{Key}_{ActionId}` (default matches initial light state).
-2. Handler (interface or legacy `Handle_*`) reads **current** `Is_*` and applies the toggle action.
+2. Handler reads **current** `Is_*` / `bActiveBefore` and applies the toggle.
 3. DIVE then flips `Is_*` **after** the handler.
 
 Do not also flip `Is_*` inside the handler.

@@ -205,6 +205,10 @@ public:
 	bool TryResolvePrimaryPickAction(const FDIVEFocusTarget& PickTarget, FName& OutQualifiedActionId) const;
 	UMaterialInterface* ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const;
 
+	/** Look up a catalog row by CatalogKey + resolved ActionId (Definition or legacy). */
+	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
+	bool TryGetResolvedActionRow(FName CatalogKey, FName ActionId, FDIVEResolvedPickAction& OutResolved) const;
+
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;
 

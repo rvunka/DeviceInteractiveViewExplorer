@@ -4,6 +4,7 @@
 
 #include "DIVEAnchorComponent.h"
 #include "DIVEConvention.h"
+#include "DIVEDeviceActionResolve.h"
 #include "DIVEInspectableComponent.h"
 
 namespace
@@ -132,25 +133,32 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 
 		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 		{
-			if (Action.ActionId.IsNone())
+			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+			if (ResolvedId.IsNone())
 			{
 				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with an empty ActionId."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition and empty ActionId."),
 					*ComponentName.ToString()));
 				continue;
 			}
 
-			if (Action.ActionId == DIVE::kContextFocus
-				|| Action.ActionId == DIVE::kContextIsolate
-				|| Action.ActionId == DIVE::kContextToggleMeshPhysics
-				|| Action.ActionId == DIVE::kContextDeleteMesh)
+			if (Action.Definition && !Action.ActionId.IsNone() && Action.ActionId != Action.Definition->ActionId)
+			{
+				AddWarning(Report, FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' row ActionId '%s' ignored; Definition uses '%s'."),
+					*ComponentName.ToString(),
+					*Action.ActionId.ToString(),
+					*Action.Definition->ActionId.ToString()));
+			}
+
+			if (DIVE::IsReservedContextMenuActionId(ResolvedId))
 			{
 				AddError(Report, FString::Printf(
 					TEXT("PickContextMenuByComponent ActionId '%s' is reserved by DIVE built-in menu rows."),
-					*Action.ActionId.ToString()));
+					*ResolvedId.ToString()));
 			}
 
-			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
+			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, ResolvedId);
 			if (QualifiedActionIds.Contains(QualifiedActionId))
 			{
 				AddError(Report, FString::Printf(
@@ -183,7 +191,7 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			bool bFoundPrimary = false;
 			for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 			{
-				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
+				if (DIVEDeviceActionResolve::ResolveActionId(Action) == ComponentEntry.Value.PrimaryActionId)
 				{
 					bFoundPrimary = true;
 					if (!Action.bEnabled)
@@ -200,7 +208,7 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			if (!bFoundPrimary)
 			{
 				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any ActionId."),
+					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any resolved ActionId."),
 					*ComponentName.ToString(),
 					*ComponentEntry.Value.PrimaryActionId.ToString()));
 			}

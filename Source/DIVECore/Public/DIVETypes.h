@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "DIVEConvention.h"
+#include "DIVEDeviceActionDefinition.h"
 #include "DIVETypes.generated.h"
 
 UENUM(BlueprintType)
@@ -168,6 +169,17 @@ struct DIVECORE_API FDIVEContextMenuEntry
 	bool bIsSeparator = false;
 };
 
+/** Per-row overrides when a Definition is assigned (INDEX_NONE = use definition default). */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEDeviceActionInstanceOverrides
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "Override Unscrew turn count. INDEX_NONE (-1) = use UDIVEUnscrewActionDefinition::DefaultTurnCount."))
+	int32 UnscrewTurnCount = INDEX_NONE;
+};
+
 /** One custom context-menu row (IDIVEDeviceActionHandler preferred; legacy Handle_{Key}_{ActionId} fallback). */
 USTRUCT(BlueprintType)
 struct DIVECORE_API FDIVEPickContextMenuAction
@@ -175,18 +187,55 @@ struct DIVECORE_API FDIVEPickContextMenuAction
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Short id within this component's action list (e.g. Unscrew). Dispatched via IDIVEDeviceActionHandler or legacy Handle_{map key}_{ActionId}."))
+		ToolTip = "Preferred: shared action DataAsset (ActionId + defaults). When set, row ActionId is ignored for dispatch."))
+	TObjectPtr<UDIVEDeviceActionDefinition> Definition = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "Legacy: short id when Definition is null (e.g. Unscrew). Prefer Definition for new devices."))
 	FName ActionId = NAME_None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "Menu label. Empty = Definition DefaultDisplayName, else ActionId."))
 	FText DisplayName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bEnabled = true;
 
-	/** When true: handler runs on current Is_*, then DIVE flips Is_{Key}_{ActionId}. Do not also flip Is_* in the handler. "*" shows when Is_* is true. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	/** Legacy toggle when Definition is null. With Definition, toggle comes from Definition->bToggleActiveSuffix. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "Legacy only (no Definition): handler runs on current Is_*, then DIVE flips Is_*. With Definition, use Definition.bToggleActiveSuffix."))
 	bool bToggleActiveSuffix = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
+	FDIVEDeviceActionInstanceOverrides InstanceOverrides;
+};
+
+/** Resolved catalog row for Blueprint helpers / diagnostics. */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEResolvedPickAction
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	FName CatalogKey = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	FName ActionId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	FText DisplayName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	bool bEnabled = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	bool bToggleActiveSuffix = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	int32 UnscrewTurnCount = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	TObjectPtr<UDIVEDeviceActionDefinition> Definition = nullptr;
 };
 
 /** Action list value for PickContextMenuByComponent (TMap value; UHT does not allow TArray as map value). */
@@ -195,9 +244,9 @@ struct DIVECORE_API FDIVEPickContextMenuActionList
 {
 	GENERATED_BODY()
 
-	/** ActionId from Actions invoked by primary action in Default mode. Must match exactly one row when set. */
+	/** Resolved ActionId from Actions invoked by primary action in Default mode. Must match exactly one row when set. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "One ActionId from Actions below. Primary action (IA_DIVE_PrimaryAction → HandlePrimaryAction*) in Default mode invokes the same Handle_{key}_{ActionId} as the context menu row."))
+		ToolTip = "One resolved ActionId from Actions below (from Definition or legacy ActionId). Primary action invokes the same handler as the menu row."))
 	FName PrimaryActionId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")

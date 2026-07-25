@@ -4,6 +4,7 @@
 
 #include "DIVEConvention.h"
 #include "DIVEDeviceActionHandler.h"
+#include "DIVEDeviceActionResolve.h"
 #include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
@@ -168,14 +169,33 @@ void DumpCatalogEntry(
 
 	for (const FDIVEPickContextMenuAction& Action : ActionList.Actions)
 	{
-		const FName HandlerName = DIVE::MakePickContextMenuHandlerName(CatalogKey, Action.ActionId);
-		const FName IsName = DIVE::MakePickContextMenuActiveStateName(CatalogKey, Action.ActionId);
+		const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+		const FName HandlerName = DIVE::MakePickContextMenuHandlerName(CatalogKey, ResolvedId);
+		const FName IsName = DIVE::MakePickContextMenuActiveStateName(CatalogKey, ResolvedId);
+		const FText ResolvedDisplay = DIVEDeviceActionResolve::ResolveDisplayName(Action);
+		const bool bToggle = DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action);
+		const int32 Turns = DIVEDeviceActionResolve::ResolveUnscrewTurnCount(Action);
+
 		AppendLine(Out, FString::Printf(
 			TEXT("    ActionId='%s' Display='%s' Enabled=%s ToggleSuffix=%s"),
-			*Action.ActionId.ToString(),
-			Action.DisplayName.IsEmpty() ? TEXT("<empty → falls back to ActionId>") : *Action.DisplayName.ToString(),
+			*ResolvedId.ToString(),
+			ResolvedDisplay.IsEmpty() ? TEXT("<empty>") : *ResolvedDisplay.ToString(),
 			*YesNo(Action.bEnabled),
-			*YesNo(Action.bToggleActiveSuffix)));
+			*YesNo(bToggle)));
+		if (Action.Definition)
+		{
+			AppendLine(Out, FString::Printf(
+				TEXT("      Definition=%s"),
+				*Action.Definition->GetPathName()));
+		}
+		else
+		{
+			AppendLine(Out, TEXT("      Definition=<none — legacy ActionId>"));
+		}
+		if (Turns != INDEX_NONE)
+		{
+			AppendLine(Out, FString::Printf(TEXT("      UnscrewTurnCount=%d"), Turns));
+		}
 		AppendLine(Out, FString::Printf(
 			TEXT("      Handler %s -> %s"),
 			*HandlerName.ToString(),
@@ -205,7 +225,7 @@ void DumpCatalogEntry(
 				(bInstance != bCdo) ? TEXT("  <-- instance differs from BP default") : TEXT("")));
 		}
 
-		if (Action.bToggleActiveSuffix
+		if (bToggle
 			&& !HasBoolProperty(Owner, IsName)
 			&& !HasBoolFunction(Owner, IsName))
 		{

@@ -4,6 +4,7 @@
 
 #include "DIVEAnchorComponent.h"
 #include "DIVEDeviceActionHandler.h"
+#include "DIVEDeviceActionResolve.h"
 #include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
@@ -766,7 +767,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 			bool bFoundPrimary = false;
 			for (const FDIVEPickContextMenuAction& Action : Actions)
 			{
-				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
+				if (DIVEDeviceActionResolve::ResolveActionId(Action) == ComponentEntry.Value.PrimaryActionId)
 				{
 					bFoundPrimary = true;
 					if (!Action.bEnabled)
@@ -783,7 +784,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 			if (!bFoundPrimary)
 			{
 				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any ActionId in Actions."),
+					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any resolved ActionId in Actions."),
 					*ComponentName.ToString(),
 					*ComponentEntry.Value.PrimaryActionId.ToString())));
 				Result = EDataValidationResult::Invalid;
@@ -792,31 +793,39 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 
 		for (const FDIVEPickContextMenuAction& Action : Actions)
 		{
-			if (Action.ActionId.IsNone())
+			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+			if (ResolvedId.IsNone())
 			{
 				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with an empty ActionId."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition and empty ActionId."),
 					*ComponentName.ToString())));
 				Result = EDataValidationResult::Invalid;
 				continue;
 			}
 
-			if (Action.ActionId == DIVE::kContextFocus
-				|| Action.ActionId == DIVE::kContextIsolate
-				|| Action.ActionId == DIVE::kContextToggleMeshPhysics
-				|| Action.ActionId == DIVE::kContextDeleteMesh)
+			if (Action.Definition && !Action.ActionId.IsNone() && Action.ActionId != Action.Definition->ActionId)
+			{
+				Context.AddWarning(FText::FromString(FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' row ActionId '%s' ignored; Definition uses '%s'."),
+					*ComponentName.ToString(),
+					*Action.ActionId.ToString(),
+					*Action.Definition->ActionId.ToString())));
+			}
+
+			if (DIVE::IsReservedContextMenuActionId(ResolvedId))
 			{
 				Context.AddError(FText::FromString(FString::Printf(
 					TEXT("PickContextMenuByComponent ActionId '%s' is reserved by DIVE built-in menu rows."),
-					*Action.ActionId.ToString())));
+					*ResolvedId.ToString())));
 				Result = EDataValidationResult::Invalid;
 			}
 
-			if (Action.DisplayName.IsEmpty())
+			if (DIVEDeviceActionResolve::ResolveDisplayName(Action).IsEmpty())
 			{
 				Context.AddWarning(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with an empty DisplayName."),
-					*ComponentName.ToString())));
+					TEXT("PickContextMenuByComponent '%s' action '%s' has an empty resolved DisplayName."),
+					*ComponentName.ToString(),
+					*ResolvedId.ToString())));
 			}
 		}
 	}
@@ -883,12 +892,13 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 
 		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 		{
-			if (Action.ActionId.IsNone())
+			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+			if (ResolvedId.IsNone())
 			{
 				continue;
 			}
 
-			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
+			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, ResolvedId);
 			if (QualifiedActionIds.Contains(QualifiedActionId))
 			{
 				Context.AddError(FText::FromString(FString::Printf(
@@ -946,7 +956,8 @@ bool UDIVEInspectableComponent::NotifyPickContextMenuAction(
 	{
 		for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 		{
-			if (Action.ActionId != LocalActionId || !Action.bToggleActiveSuffix)
+			if (DIVEDeviceActionResolve::ResolveActionId(Action) != LocalActionId
+				|| !DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action))
 			{
 				continue;
 			}
@@ -1108,15 +1119,16 @@ bool UDIVEInspectableComponent::ResolvePickContextMenuAction(
 
 	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 	{
-		if (Action.ActionId.IsNone())
+		const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+		if (ResolvedId.IsNone())
 		{
 			continue;
 		}
 
-		if (DIVE::MakeQualifiedPickContextMenuActionId(MatchedComponentName, Action.ActionId) == QualifiedActionId)
+		if (DIVE::MakeQualifiedPickContextMenuActionId(MatchedComponentName, ResolvedId) == QualifiedActionId)
 		{
 			OutComponentName = MatchedComponentName;
-			OutLocalActionId = Action.ActionId;
+			OutLocalActionId = ResolvedId;
 			return true;
 		}
 	}
@@ -1140,20 +1152,19 @@ void UDIVEInspectableComponent::AppendConfiguredPickContextMenuEntries(
 
 	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 	{
-		if (Action.ActionId.IsNone())
+		const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+		if (ResolvedId.IsNone())
 		{
 			continue;
 		}
 
 		FDIVEContextMenuEntry Entry;
-		Entry.ActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
-		Entry.DisplayName = Action.DisplayName.IsEmpty()
-			? FText::FromName(Action.ActionId)
-			: Action.DisplayName;
-		if (Action.bToggleActiveSuffix && Owner)
+		Entry.ActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, ResolvedId);
+		Entry.DisplayName = DIVEDeviceActionResolve::ResolveDisplayName(Action);
+		if (DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action) && Owner)
 		{
 			bool bActive = false;
-			if (TryQueryPickContextMenuActiveState(Owner, ComponentName, Action.ActionId, bActive))
+			if (TryQueryPickContextMenuActiveState(Owner, ComponentName, ResolvedId, bActive))
 			{
 				Entry.DisplayName = DIVEContextMenu::FormatActiveLabelSuffix(Entry.DisplayName, bActive);
 			}
@@ -1178,11 +1189,49 @@ bool UDIVEInspectableComponent::TryResolvePrimaryPickAction(
 
 	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
 	{
-		if (Action.ActionId == Catalog->PrimaryActionId && Action.bEnabled)
+		const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+		if (ResolvedId == Catalog->PrimaryActionId && Action.bEnabled)
 		{
-			OutQualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
+			OutQualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, ResolvedId);
 			return true;
 		}
+	}
+
+	return false;
+}
+
+bool UDIVEInspectableComponent::TryGetResolvedActionRow(
+	const FName CatalogKey,
+	const FName ActionId,
+	FDIVEResolvedPickAction& OutResolved) const
+{
+	OutResolved = FDIVEResolvedPickAction();
+	if (CatalogKey.IsNone() || ActionId.IsNone())
+	{
+		return false;
+	}
+
+	const FDIVEPickContextMenuActionList* Catalog = PickContextMenuByComponent.Find(CatalogKey);
+	if (!Catalog)
+	{
+		return false;
+	}
+
+	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
+	{
+		if (DIVEDeviceActionResolve::ResolveActionId(Action) != ActionId)
+		{
+			continue;
+		}
+
+		OutResolved.CatalogKey = CatalogKey;
+		OutResolved.ActionId = ActionId;
+		OutResolved.DisplayName = DIVEDeviceActionResolve::ResolveDisplayName(Action);
+		OutResolved.bEnabled = Action.bEnabled;
+		OutResolved.bToggleActiveSuffix = DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action);
+		OutResolved.UnscrewTurnCount = DIVEDeviceActionResolve::ResolveUnscrewTurnCount(Action);
+		OutResolved.Definition = Action.Definition;
+		return true;
 	}
 
 	return false;
