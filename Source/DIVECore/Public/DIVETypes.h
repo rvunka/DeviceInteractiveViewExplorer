@@ -191,7 +191,8 @@ struct DIVECORE_API FDIVEPickContextMenuAction
 	TObjectPtr<UDIVEDeviceActionDefinition> Definition = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Legacy: short id when Definition is null (e.g. Unscrew). Prefer Definition for new devices."))
+		ToolTip = "Legacy: short id when Definition is null (e.g. Unscrew). Prefer Definition for new devices.",
+		EditCondition = "Definition == nullptr"))
 	FName ActionId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
@@ -203,7 +204,8 @@ struct DIVECORE_API FDIVEPickContextMenuAction
 
 	/** Legacy toggle when Definition is null. With Definition, toggle comes from Definition->bToggleActiveSuffix. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Legacy only (no Definition): handler runs on current Is_*, then DIVE flips Is_*. With Definition, use Definition.bToggleActiveSuffix."))
+		ToolTip = "Legacy only (no Definition): handler runs on current Is_*, then DIVE flips Is_*. With Definition, use Definition.bToggleActiveSuffix.",
+		EditCondition = "Definition == nullptr"))
 	bool bToggleActiveSuffix = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")

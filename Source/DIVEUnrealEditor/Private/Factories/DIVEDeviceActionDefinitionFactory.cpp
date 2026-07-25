@@ -2,8 +2,8 @@
 
 #include "Factories/DIVEDeviceActionDefinitionFactory.h"
 
-#include "AssetTypeCategories.h"
 #include "DIVEDeviceActionDefinition.h"
+#include "DIVEEditorAssetCategory.h"
 
 UDIVEDeviceActionDefinitionFactory::UDIVEDeviceActionDefinitionFactory()
 {
@@ -36,5 +36,5 @@ FText UDIVEDeviceActionDefinitionFactory::GetDisplayName() const
 
 uint32 UDIVEDeviceActionDefinitionFactory::GetMenuCategories() const
 {
-	return EAssetTypeCategories::Misc;
+	return DIVEEditor::GetDIVEAssetCategory();
 }

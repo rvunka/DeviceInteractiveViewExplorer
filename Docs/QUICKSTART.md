@@ -57,7 +57,7 @@ Hover overlay still applies only to `UMeshComponent`.
 
 **Author `ActionId` on a DataAsset** (preferred), not as a free string on every row:
 
-1. Content Browser → Miscellaneous → **DIVE Device Action Definition** (or **DIVE Unscrew Action Definition** for turn count). Set `ActionId` = `Unscrew` / `Toggle`, default display name, toggle flag; Unscrew: `DefaultTurnCount`.
+1. Content Browser → **DIVE** → **DIVE Device Action Definition** (or **DIVE Unscrew Action Definition** for turn count). Set `ActionId` = `Unscrew` / `Toggle`, default display name, toggle flag; Unscrew: `DefaultTurnCount`.
 2. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset. Optional row **DisplayName** override; **Instance Overrides → Unscrew Turn Count** (`-1` = use asset default).
 3. Optional: **`Primary Action Id`** = resolved id (`Unscrew`).
 4. Device BP: Class Settings → Implement Interface → **DIVE Device Action Handler** → Switch on `ActionId`, then `CatalogKey` / `Target`. For turns: `TryGetResolvedActionRow(CatalogKey, ActionId)`.

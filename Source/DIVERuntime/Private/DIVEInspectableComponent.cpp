@@ -797,7 +797,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 			if (ResolvedId.IsNone())
 			{
 				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition and empty ActionId."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with unresolved ActionId (set Definition.ActionId or legacy ActionId)."),
 					*ComponentName.ToString())));
 				Result = EDataValidationResult::Invalid;
 				continue;

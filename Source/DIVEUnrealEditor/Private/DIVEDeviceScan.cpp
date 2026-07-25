@@ -137,7 +137,7 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			if (ResolvedId.IsNone())
 			{
 				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition and empty ActionId."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with unresolved ActionId (set Definition.ActionId or legacy ActionId)."),
 					*ComponentName.ToString()));
 				continue;
 			}

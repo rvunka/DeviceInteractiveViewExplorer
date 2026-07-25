@@ -2,7 +2,7 @@
 
 #include "Factories/DIVEUnscrewActionDefinitionFactory.h"
 
-#include "AssetTypeCategories.h"
+#include "DIVEEditorAssetCategory.h"
 #include "DIVEUnscrewActionDefinition.h"
 
 UDIVEUnscrewActionDefinitionFactory::UDIVEUnscrewActionDefinitionFactory()
@@ -36,5 +36,5 @@ FText UDIVEUnscrewActionDefinitionFactory::GetDisplayName() const
 
 uint32 UDIVEUnscrewActionDefinitionFactory::GetMenuCategories() const
 {
-	return EAssetTypeCategories::Misc;
+	return DIVEEditor::GetDIVEAssetCategory();
 }
