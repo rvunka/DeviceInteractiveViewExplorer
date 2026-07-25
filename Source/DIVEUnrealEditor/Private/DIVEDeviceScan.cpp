@@ -4,6 +4,7 @@
 
 #include "DIVEAnchorComponent.h"
 #include "DIVEConvention.h"
+#include "DIVEDeviceActionHandler.h"
 #include "DIVEDeviceActionResolve.h"
 #include "DIVEInspectableComponent.h"
 
@@ -68,6 +69,12 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 	}
 
 	Inspectable->BuildSemanticRegistry();
+
+	if (!Inspectable->PickContextMenuByComponent.IsEmpty()
+		&& !DeviceActor->Implements<UDIVEDeviceActionHandler>())
+	{
+		AddWarning(Report, TEXT("PickContextMenuByComponent is non-empty but the actor does not implement IDIVEDeviceActionHandler."));
+	}
 
 	TArray<UDIVEAnchorComponent*> Anchors;
 	DeviceActor->GetComponents<UDIVEAnchorComponent>(Anchors);

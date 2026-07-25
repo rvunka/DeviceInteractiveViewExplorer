@@ -642,6 +642,18 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		}
 	}
 
+	if (!PickContextMenuByComponent.IsEmpty())
+	{
+		if (const AActor* Owner = GetOwner())
+		{
+			if (!Owner->Implements<UDIVEDeviceActionHandler>())
+			{
+				Context.AddWarning(FText::FromString(
+					TEXT("PickContextMenuByComponent is non-empty but the owner does not implement IDIVEDeviceActionHandler.")));
+			}
+		}
+	}
+
 	for (const TPair<FName, FDIVEPickContextMenuActionList>& ComponentEntry : PickContextMenuByComponent)
 	{
 		const FName ComponentName = ComponentEntry.Key;
