@@ -15,7 +15,6 @@
 #include "Components/ShapeComponent.h"
 #include "Engine/GameInstance.h"
 #include "Utils/DIVEContextMenu.h"
-#include "UObject/ObjectKey.h"
 #include "UObject/UnrealType.h"
 
 #if WITH_EDITOR
@@ -135,67 +134,6 @@ bool TryToggleActorBoolProperty(AActor* Owner, const FName PropertyName, bool& O
 	return true;
 }
 
-bool InvokeActorFunctionWithOptionalTarget(
-	AActor* Owner,
-	const FName FunctionName,
-	UPrimitiveComponent* TargetComponent,
-	const bool* OptionalActiveState)
-{
-	if (!Owner || FunctionName.IsNone())
-	{
-		return false;
-	}
-
-	UFunction* Function = Owner->FindFunction(FunctionName);
-	if (!Function)
-	{
-		return false;
-	}
-
-	TArray<uint8> Params;
-	const bool bHasParams = Function->ParmsSize > 0;
-	if (bHasParams)
-	{
-		Params.SetNumZeroed(Function->ParmsSize);
-	}
-
-	for (TFieldIterator<FProperty> ParamIt(Function); ParamIt; ++ParamIt)
-	{
-		FProperty* Param = *ParamIt;
-		if (!Param || (Param->PropertyFlags & CPF_Parm) == 0 || (Param->PropertyFlags & CPF_ReturnParm) != 0)
-		{
-			continue;
-		}
-
-		if (FObjectProperty* ObjectParam = CastField<FObjectProperty>(Param))
-		{
-			if (!ObjectParam->PropertyClass->IsChildOf(UPrimitiveComponent::StaticClass()))
-			{
-				return false;
-			}
-
-			ObjectParam->SetObjectPropertyValue(Params.GetData() + ObjectParam->GetOffset_ForUFunction(), TargetComponent);
-			continue;
-		}
-
-		if (FBoolProperty* BoolParam = CastField<FBoolProperty>(Param))
-		{
-			if (OptionalActiveState)
-			{
-				BoolParam->SetPropertyValue(
-					Params.GetData() + BoolParam->GetOffset_ForUFunction(),
-					*OptionalActiveState);
-			}
-			continue;
-		}
-
-		return false;
-	}
-
-	Owner->ProcessEvent(Function, bHasParams ? Params.GetData() : nullptr);
-	return true;
-}
-
 bool TryInvokePickContextMenuHandler(
 	AActor* Owner,
 	const FName ComponentName,
@@ -203,42 +141,18 @@ bool TryInvokePickContextMenuHandler(
 	UPrimitiveComponent* TargetComponent,
 	const bool* OptionalActiveState)
 {
-	if (Owner && Owner->Implements<UDIVEDeviceActionHandler>())
+	if (!Owner || !Owner->Implements<UDIVEDeviceActionHandler>())
 	{
-		const bool bActiveBefore = OptionalActiveState ? *OptionalActiveState : false;
-		if (IDIVEDeviceActionHandler::Execute_HandleDeviceAction(
-				Owner,
-				ComponentName,
-				LocalActionId,
-				TargetComponent,
-				bActiveBefore))
-		{
-			return true;
-		}
+		return false;
 	}
 
-	const FName LegacyHandlerName = DIVE::MakePickContextMenuHandlerName(ComponentName, LocalActionId);
-	if (Owner && Owner->FindFunction(LegacyHandlerName))
-	{
-		static TSet<FObjectKey> WarnedLegacyHandleOwners;
-		const FObjectKey OwnerKey(Owner);
-		if (!WarnedLegacyHandleOwners.Contains(OwnerKey))
-		{
-			WarnedLegacyHandleOwners.Add(OwnerKey);
-			UE_LOG(
-				LogDIVE,
-				Warning,
-				TEXT("DIVE: '%s' dispatched via legacy %s — prefer IDIVEDeviceActionHandler (HandleDeviceAction)."),
-				*GetNameSafe(Owner),
-				*LegacyHandlerName.ToString());
-		}
-	}
-
-	return InvokeActorFunctionWithOptionalTarget(
+	const bool bActiveBefore = OptionalActiveState ? *OptionalActiveState : false;
+	return IDIVEDeviceActionHandler::Execute_HandleDeviceAction(
 		Owner,
-		LegacyHandlerName,
+		ComponentName,
+		LocalActionId,
 		TargetComponent,
-		OptionalActiveState);
+		bActiveBefore);
 }
 
 bool TryQueryPickContextMenuActiveState(
@@ -793,23 +707,24 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 
 		for (const FDIVEPickContextMenuAction& Action : Actions)
 		{
-			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
-			if (ResolvedId.IsNone())
+			if (!Action.Definition)
 			{
 				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with unresolved ActionId (set Definition.ActionId or legacy ActionId)."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition."),
 					*ComponentName.ToString())));
 				Result = EDataValidationResult::Invalid;
 				continue;
 			}
 
-			if (Action.Definition && !Action.ActionId.IsNone() && Action.ActionId != Action.Definition->ActionId)
+			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+			if (ResolvedId.IsNone())
 			{
-				Context.AddWarning(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' row ActionId '%s' ignored; Definition uses '%s'."),
+				Context.AddError(FText::FromString(FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' Definition '%s' has empty ActionId."),
 					*ComponentName.ToString(),
-					*Action.ActionId.ToString(),
-					*Action.Definition->ActionId.ToString())));
+					*GetNameSafe(Action.Definition))));
+				Result = EDataValidationResult::Invalid;
+				continue;
 			}
 
 			if (DIVE::IsReservedContextMenuActionId(ResolvedId))
@@ -1229,7 +1144,6 @@ bool UDIVEInspectableComponent::TryGetResolvedActionRow(
 		OutResolved.DisplayName = DIVEDeviceActionResolve::ResolveDisplayName(Action);
 		OutResolved.bEnabled = Action.bEnabled;
 		OutResolved.bToggleActiveSuffix = DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action);
-		OutResolved.UnscrewTurnCount = DIVEDeviceActionResolve::ResolveUnscrewTurnCount(Action);
 		OutResolved.Definition = Action.Definition;
 		return true;
 	}

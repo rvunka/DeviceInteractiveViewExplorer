@@ -205,7 +205,7 @@ public:
 	bool TryResolvePrimaryPickAction(const FDIVEFocusTarget& PickTarget, FName& OutQualifiedActionId) const;
 	UMaterialInterface* ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const;
 
-	/** Look up a catalog row by CatalogKey + resolved ActionId (Definition or legacy). */
+	/** Look up a catalog row by CatalogKey + Definition.ActionId. */
 	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
 	bool TryGetResolvedActionRow(FName CatalogKey, FName ActionId, FDIVEResolvedPickAction& OutResolved) const;
 

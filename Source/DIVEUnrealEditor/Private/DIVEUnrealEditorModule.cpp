@@ -107,7 +107,7 @@ private:
 			Section.AddMenuEntry(
 				"DIVE_DumpDevice",
 				LOCTEXT("DumpDeviceLabel", "DIVE Dump Device"),
-				LOCTEXT("DumpDeviceTooltip", "Dump catalog keys vs component FNames / Handle_* / Is_* to Output Log and Saved/DIVE/Dumps (cyan on-screen toast)."),
+				LOCTEXT("DumpDeviceTooltip", "Dump catalog keys vs component FNames / Definition / Is_* to Output Log and Saved/DIVE/Dumps (cyan on-screen toast)."),
 				FSlateIcon(),
 				FUIAction(FExecuteAction::CreateStatic(&ExecuteDumpSelectedActors)));
 		}

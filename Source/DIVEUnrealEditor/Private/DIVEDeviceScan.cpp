@@ -133,22 +133,22 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 
 		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 		{
-			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
-			if (ResolvedId.IsNone())
+			if (!Action.Definition)
 			{
 				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with unresolved ActionId (set Definition.ActionId or legacy ActionId)."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition."),
 					*ComponentName.ToString()));
 				continue;
 			}
 
-			if (Action.Definition && !Action.ActionId.IsNone() && Action.ActionId != Action.Definition->ActionId)
+			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
+			if (ResolvedId.IsNone())
 			{
-				AddWarning(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' row ActionId '%s' ignored; Definition uses '%s'."),
+				AddError(Report, FString::Printf(
+					TEXT("PickContextMenuByComponent '%s' Definition '%s' has empty ActionId."),
 					*ComponentName.ToString(),
-					*Action.ActionId.ToString(),
-					*Action.Definition->ActionId.ToString()));
+					*GetNameSafe(Action.Definition)));
+				continue;
 			}
 
 			if (DIVE::IsReservedContextMenuActionId(ResolvedId))

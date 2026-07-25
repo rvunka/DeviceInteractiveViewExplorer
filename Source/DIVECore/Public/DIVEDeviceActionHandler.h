@@ -14,8 +14,8 @@ class UDIVEDeviceActionHandler : public UInterface
 };
 
 /**
- * Preferred device pick-action dispatch. Implement on the device actor;
- * when HandleDeviceAction returns true, DIVE skips the legacy Handle_{Key}_{ActionId} reflection path.
+ * Preferred device pick-action dispatch. Implement on the device actor.
+ * Catalog rows require UDIVEDeviceActionDefinition; HandleDeviceAction must return true when handled.
  */
 class DIVECORE_API IDIVEDeviceActionHandler
 {

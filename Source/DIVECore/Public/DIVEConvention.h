@@ -42,18 +42,7 @@ inline FName MakeQualifiedPickContextMenuActionId(const FName ComponentName, con
 	return FName(*FString::Printf(TEXT("%s_%s"), *ComponentName.ToString(), *LocalActionId.ToString()));
 }
 
-/** Blueprint function name convention: Handle_{ComponentName}_{ActionId} (e.g. Handle_Screw1_Unscrew). */
-inline FName MakePickContextMenuHandlerName(const FName ComponentName, const FName LocalActionId)
-{
-	if (ComponentName.IsNone() || LocalActionId.IsNone())
-	{
-		return NAME_None;
-	}
-
-	return FName(*FString::Printf(TEXT("Handle_%s_%s"), *ComponentName.ToString(), *LocalActionId.ToString()));
-}
-
-/** Optional toggle query: Is_{ComponentName}_{ActionId} returns whether to append "*" to the menu label. */
+/** Optional toggle query: Is_{ComponentName}_{ActionId} — append "*" when true. */
 inline FName MakePickContextMenuActiveStateName(const FName ComponentName, const FName LocalActionId)
 {
 	if (ComponentName.IsNone() || LocalActionId.IsNone())

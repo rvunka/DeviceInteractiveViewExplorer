@@ -79,11 +79,6 @@ bool HasBoolFunction(const AActor* Owner, const FName FunctionName)
 	return Function && CastField<FBoolProperty>(Function->GetReturnProperty()) != nullptr;
 }
 
-bool HasHandlerFunction(const AActor* Owner, const FName FunctionName)
-{
-	return Owner && !FunctionName.IsNone() && Owner->FindFunction(FunctionName) != nullptr;
-}
-
 FString WriteDumpFile(const FString& Tag, const FString& Body)
 {
 	GLastDumpFilePath.Reset();
@@ -170,11 +165,9 @@ void DumpCatalogEntry(
 	for (const FDIVEPickContextMenuAction& Action : ActionList.Actions)
 	{
 		const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
-		const FName HandlerName = DIVE::MakePickContextMenuHandlerName(CatalogKey, ResolvedId);
 		const FName IsName = DIVE::MakePickContextMenuActiveStateName(CatalogKey, ResolvedId);
 		const FText ResolvedDisplay = DIVEDeviceActionResolve::ResolveDisplayName(Action);
 		const bool bToggle = DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action);
-		const int32 Turns = DIVEDeviceActionResolve::ResolveUnscrewTurnCount(Action);
 
 		AppendLine(Out, FString::Printf(
 			TEXT("    ActionId='%s' Display='%s' Enabled=%s ToggleSuffix=%s"),
@@ -190,16 +183,8 @@ void DumpCatalogEntry(
 		}
 		else
 		{
-			AppendLine(Out, TEXT("      Definition=<none — legacy ActionId>"));
+			AppendLine(Out, TEXT("      Definition=<MISSING>"));
 		}
-		if (Turns != INDEX_NONE)
-		{
-			AppendLine(Out, FString::Printf(TEXT("      UnscrewTurnCount=%d"), Turns));
-		}
-		AppendLine(Out, FString::Printf(
-			TEXT("      Handler %s -> %s"),
-			*HandlerName.ToString(),
-			*YesNo(HasHandlerFunction(Owner, HandlerName))));
 		AppendLine(Out, FString::Printf(
 			TEXT("      IsState %s -> property=%s function=%s"),
 			*IsName.ToString(),
@@ -330,36 +315,11 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 
 	AppendLine(Out, TEXT("-- Device action dispatch --"));
 	AppendLine(Out, FString::Printf(
-		TEXT("  IDIVEDeviceActionHandler: %s (preferred)"),
+		TEXT("  IDIVEDeviceActionHandler: %s"),
 		*YesNo(DeviceActor->Implements<UDIVEDeviceActionHandler>())));
+	if (!DeviceActor->Implements<UDIVEDeviceActionHandler>())
 	{
-		TArray<FString> LegacyHandlers;
-		for (TFieldIterator<UFunction> It(DeviceActor->GetClass()); It; ++It)
-		{
-			const UFunction* Function = *It;
-			if (!Function)
-			{
-				continue;
-			}
-			const FString Name = Function->GetName();
-			if (Name.StartsWith(TEXT("Handle_"), ESearchCase::CaseSensitive))
-			{
-				LegacyHandlers.Add(Name);
-			}
-		}
-		LegacyHandlers.Sort();
-		if (LegacyHandlers.IsEmpty())
-		{
-			AppendLine(Out, TEXT("  Legacy Handle_* functions: (none)"));
-		}
-		else
-		{
-			AppendLine(Out, FString::Printf(TEXT("  Legacy Handle_* functions (%d):"), LegacyHandlers.Num()));
-			for (const FString& Name : LegacyHandlers)
-			{
-				AppendLine(Out, FString::Printf(TEXT("    %s"), *Name));
-			}
-		}
+		AppendLine(Out, TEXT("  WARNING: device must implement IDIVEDeviceActionHandler for custom catalog actions."));
 	}
 
 	AppendLine(Out, TEXT("-- Catalog (PickContextMenuByComponent) --"));

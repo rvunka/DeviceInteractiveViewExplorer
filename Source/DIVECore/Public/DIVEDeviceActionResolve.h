@@ -4,17 +4,12 @@
 
 #include "DIVEDeviceActionDefinition.h"
 #include "DIVETypes.h"
-#include "DIVEUnscrewActionDefinition.h"
 
 namespace DIVEDeviceActionResolve
 {
 inline FName ResolveActionId(const FDIVEPickContextMenuAction& Action)
 {
-	if (Action.Definition)
-	{
-		return Action.Definition->ActionId;
-	}
-	return Action.ActionId;
+	return Action.Definition ? Action.Definition->ActionId : NAME_None;
 }
 
 inline FText ResolveDisplayName(const FDIVEPickContextMenuAction& Action)
@@ -33,23 +28,6 @@ inline FText ResolveDisplayName(const FDIVEPickContextMenuAction& Action)
 
 inline bool ResolveToggleActiveSuffix(const FDIVEPickContextMenuAction& Action)
 {
-	if (Action.Definition)
-	{
-		return Action.Definition->bToggleActiveSuffix;
-	}
-	return Action.bToggleActiveSuffix;
-}
-
-inline int32 ResolveUnscrewTurnCount(const FDIVEPickContextMenuAction& Action)
-{
-	if (Action.InstanceOverrides.UnscrewTurnCount != INDEX_NONE)
-	{
-		return Action.InstanceOverrides.UnscrewTurnCount;
-	}
-	if (const UDIVEUnscrewActionDefinition* Unscrew = Cast<UDIVEUnscrewActionDefinition>(Action.Definition.Get()))
-	{
-		return Unscrew->DefaultTurnCount;
-	}
-	return INDEX_NONE;
+	return Action.Definition && Action.Definition->bToggleActiveSuffix;
 }
 }

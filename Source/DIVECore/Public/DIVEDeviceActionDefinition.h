@@ -13,7 +13,7 @@
 
 /**
  * Shared definition for a custom pick/context action (ActionId + defaults).
- * Assign on catalog rows so many parts share one Unscrew / Toggle identity.
+ * Assign on catalog rows so many parts share one ActionId (e.g. Toggle, Unscrew).
  */
 UCLASS(BlueprintType, Blueprintable)
 class DIVECORE_API UDIVEDeviceActionDefinition : public UDataAsset

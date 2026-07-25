@@ -55,19 +55,13 @@ Hover overlay still applies only to `UMeshComponent`.
 
 `HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
 
-**Author `ActionId` on a DataAsset** (preferred), not as a free string on every row:
-
-1. Content Browser → **DIVE** → **DIVE Device Action Definition** (or **DIVE Unscrew Action Definition** for turn count). Set `ActionId` = `Unscrew` / `Toggle`, default display name, toggle flag; Unscrew: `DefaultTurnCount`.
-2. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset. Optional row **DisplayName** override; **Instance Overrides → Unscrew Turn Count** (`-1` = use asset default).
-3. Optional: **`Primary Action Id`** = resolved id (`Unscrew`).
-4. Device BP: Class Settings → Implement Interface → **DIVE Device Action Handler** → Switch on `ActionId`, then `CatalogKey` / `Target`. For turns: `TryGetResolvedActionRow(CatalogKey, ActionId)`.
+1. Content Browser → **DIVE** → **DIVE Device Action Definition**. Set `ActionId` = `Toggle` / `Unscrew`, default display name, optional `bToggleActiveSuffix`.
+2. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset. Optional row **DisplayName** override.
+3. Optional: **`Primary Action Id`** = Definition `ActionId` (e.g. `Unscrew`).
+4. Device BP: Class Settings → Implement Interface → **DIVE Device Action Handler** → Switch on `ActionId`, then `CatalogKey` / `Target`. Optional: `TryGetResolvedActionRow`.
 5. Compile.
 
-**Legacy row:** leave Definition empty and set row **ActionId** FName (same as before). Prefer Definition for new devices.
-
-**Legacy handler (transitional):** Blueprint function **`Handle_Screw1_Unscrew`**. DIVE falls back if the interface is missing or returns false; one-shot Warning.
-
-**Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition (or legacy row flag).
+**Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition.
 
 1. Bool `Is_{Key}_{ActionId}` (default matches initial light state).
 2. Handler reads **current** `Is_*` / `bActiveBefore` and applies the toggle.
@@ -75,7 +69,7 @@ Hover overlay still applies only to `UMeshComponent`.
 
 Do not also flip `Is_*` inside the handler.
 
-Done. **Unscrew** runs from the context menu, or from **primary action** when `Primary Action Id` is set.
+Done. Action runs from the context menu, or from **primary action** when `Primary Action Id` is set.
 
 ### Default mode: hover highlight
 
@@ -90,7 +84,7 @@ Uses `UMeshComponent::SetOverlayMaterial` (Default mode only). Non-mesh primitiv
 
 ### Pick interaction exclusions
 
-**DIVE Inspectable → DIVE | Pick → Pick Interaction Exclusions** — component names or PartIds that DIVE ignores entirely: no context menu, no `Handle_*`, no primary action, no hover. Same key rules as the context menu catalog.
+**DIVE Inspectable → DIVE | Pick → Pick Interaction Exclusions** — component names or PartIds that DIVE ignores entirely: no context menu, no handler, no primary action, no hover. Same key rules as the context menu catalog.
 
 Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to exclude them from pick at a lower level (visibility/bounds rules still apply).
 
@@ -98,16 +92,16 @@ Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to 
 
 ```text
 Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_MyDevice)
-├─ DIVE Input                                           ├─ DIVE Inspectable  ← catalog here
-├─ DIVE Context Menu UI  ← draws menu on screen        └─ Handle_Screw1_Unscrew  ← your logic here
+├─ DIVE Input                                           ├─ DIVE Inspectable  ← catalog + Definition
+├─ DIVE Context Menu UI  ← draws menu on screen        └─ IDIVEDeviceActionHandler
 └─ (GRIP / bridge as needed)
 ```
 
-**Player character** — menu open + UI. Already handled by the plugin if components and IMC are set up (§4). **You do not add Unscrew here.**
+**Player character** — menu open + UI. Already handled by the plugin if components and IMC are set up (§4). **You do not add device actions here.**
 
-**Device actor** — catalog + **`IDIVEDeviceActionHandler`** (preferred) or legacy `Handle_*`.
+**Device actor** — catalog (**Definition** per row) + **`IDIVEDeviceActionHandler`**.
 
-### Menu open path (already in plugin — do not override for Unscrew)
+### Menu open path (already in plugin — do not override for device actions)
 
 ```text
 IA_DIVE_ContextMenu (project IMC — e.g. RMB in Legacy PIE)
@@ -118,15 +112,14 @@ IA_DIVE_ContextMenu (project IMC — e.g. RMB in Legacy PIE)
 
 `HandleContextMenuRequested` is **not** your hook for device actions. It only opens/toggles the menu. It is called from **DIVE Input** on the **player character**, not from the device Blueprint.
 
-`DIVE Context Menu UI` on the player character only **shows** the widget; it does not run `Handle_Screw1_Unscrew`.
+`DIVE Context Menu UI` on the player character only **shows** the widget; it does not run device handlers.
 
 ### Menu click path (handler)
 
 ```text
 Click "Unscrew"
  → UI → Session subsystem::ExecuteContextMenuAction
- → DIVEInspectable → IDIVEDeviceActionHandler::HandleDeviceAction (preferred)
-   or legacy Handle_Screw1_Unscrew
+ → DIVEInspectable → IDIVEDeviceActionHandler::HandleDeviceAction
 ```
 
 Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`Primary Action Id`** is set on that catalog entry (no menu open).
@@ -137,12 +130,12 @@ Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimary
 IA_DIVE_PrimaryAction Started
  → DIVE Input::HandlePrimaryActionPressed()
  → Session::ExecutePrimaryActionAtScreenPosition (Default mode)
- → DIVEInspectable → HandleDeviceAction / legacy Handle_* on the device actor
+ → DIVEInspectable → HandleDeviceAction on the device actor
 ```
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog `Primary Action Id`.
 
-Built-in rows (Focus, Isolate) are handled inside the plugin. **Simulate Physics / Delete Mesh** appear only when the active inspectable has **Enable Admin Context Menu Entries** checked (and not in Shipping). Custom catalog rows use `IDIVEDeviceActionHandler` (preferred) or `Handle_*`.
+Built-in rows (Focus, Isolate) are handled inside the plugin. **Simulate Physics / Delete Mesh** appear only when the active inspectable has **Enable Admin Context Menu Entries** checked (and not in Shipping). Custom catalog rows require **`UDIVEDeviceActionDefinition`** + **`IDIVEDeviceActionHandler`**.
 
 ---
 
