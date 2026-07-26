@@ -12,8 +12,9 @@ EDataValidationResult UDIVEDeviceActionDefinition::IsDataValid(FDataValidationCo
 
 	if (ActionId.IsNone())
 	{
-		Context.AddError(FText::FromString(TEXT("ActionId must be set.")));
-		Result = EDataValidationResult::Invalid;
+		// Warning only: Error blocks Content Browser rename/save before authors finish editing.
+		// Catalog Validate/Scan still treat empty resolved ActionId as an error when the asset is used.
+		Context.AddWarning(FText::FromString(TEXT("ActionId is empty — set it before assigning this asset to a catalog row.")));
 	}
 	else if (DIVE::IsReservedContextMenuActionId(ActionId))
 	{

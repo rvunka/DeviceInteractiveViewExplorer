@@ -4,16 +4,29 @@
 
 #include "DIVEDeviceActionDefinition.h"
 #include "DIVEEditorAssetCategory.h"
-#include "Engine/Blueprint.h"
 
 UDIVEDeviceActionDefinitionFactory::UDIVEDeviceActionDefinitionFactory()
 {
-	SupportedClass = UBlueprint::StaticClass();
-	ParentClass = UDIVEDeviceActionDefinition::StaticClass();
-	BlueprintType = BPTYPE_Normal;
+	SupportedClass = UDIVEDeviceActionDefinition::StaticClass();
 	bCreateNew = true;
 	bEditAfterNew = true;
-	bSkipClassPicker = true;
+}
+
+UObject* UDIVEDeviceActionDefinitionFactory::FactoryCreateNew(
+	UClass* InClass,
+	UObject* InParent,
+	FName InName,
+	EObjectFlags Flags,
+	UObject* Context,
+	FFeedbackContext* Warn)
+{
+	(void)Context;
+	(void)Warn;
+	return NewObject<UDIVEDeviceActionDefinition>(
+		InParent,
+		InClass ? InClass : UDIVEDeviceActionDefinition::StaticClass(),
+		InName,
+		Flags);
 }
 
 FText UDIVEDeviceActionDefinitionFactory::GetDisplayName() const
@@ -26,7 +39,7 @@ FText UDIVEDeviceActionDefinitionFactory::GetToolTip() const
 	return NSLOCTEXT(
 		"DIVE",
 		"DeviceActionDefinitionFactoryTip",
-		"Creates a Blueprint — add your own variables, set ActionId, then Right-click → Create Data Asset for catalog rows.");
+		"Thin DataAsset: ActionId + menu defaults. Need custom fields? Blueprint child of DIVEDeviceActionDefinition, then Create Data Asset.");
 }
 
 uint32 UDIVEDeviceActionDefinitionFactory::GetMenuCategories() const

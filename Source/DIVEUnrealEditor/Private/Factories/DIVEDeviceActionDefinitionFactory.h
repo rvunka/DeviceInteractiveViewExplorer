@@ -2,19 +2,26 @@
 
 #pragma once
 
-#include "Factories/BlueprintFactory.h"
+#include "Factories/Factory.h"
 
 #include "DIVEDeviceActionDefinitionFactory.generated.h"
 
-/** Creates a Blueprint child of UDIVEDeviceActionDefinition so authors can add their own variables. */
+/** Creates a thin UDIVEDeviceActionDefinition DataAsset (ActionId + menu defaults). */
 UCLASS()
-class UDIVEDeviceActionDefinitionFactory : public UBlueprintFactory
+class UDIVEDeviceActionDefinitionFactory : public UFactory
 {
 	GENERATED_BODY()
 
 public:
 	UDIVEDeviceActionDefinitionFactory();
 
+	virtual UObject* FactoryCreateNew(
+		UClass* InClass,
+		UObject* InParent,
+		FName InName,
+		EObjectFlags Flags,
+		UObject* Context,
+		FFeedbackContext* Warn) override;
 	virtual bool ShouldShowInNewMenu() const override { return true; }
 	virtual FText GetDisplayName() const override;
 	virtual FText GetToolTip() const override;
