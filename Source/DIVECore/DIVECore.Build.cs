@@ -12,7 +12,8 @@ public class DIVECore : ModuleRules
 		{
 			"Core",
 			"CoreUObject",
-			"Engine"
+			"Engine",
+			"StructUtils"
 		});
 	}
 }

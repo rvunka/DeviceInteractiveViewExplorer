@@ -178,9 +178,19 @@ void DumpCatalogEntry(
 		if (Action.Definition)
 		{
 			AppendLine(Out, FString::Printf(
-				TEXT("      Definition=%s (%s)"),
-				*Action.Definition->GetPathName(),
-				*GetNameSafe(Action.Definition->GetClass())));
+				TEXT("      Definition=%s"),
+				*Action.Definition->GetPathName()));
+			if (Action.Definition->Settings.IsValid())
+			{
+				const UScriptStruct* SettingsStruct = Action.Definition->Settings.GetScriptStruct();
+				AppendLine(Out, FString::Printf(
+					TEXT("      Settings=%s"),
+					SettingsStruct ? *SettingsStruct->GetName() : TEXT("<valid>")));
+			}
+			else
+			{
+				AppendLine(Out, TEXT("      Settings=<none>"));
+			}
 		}
 		else
 		{

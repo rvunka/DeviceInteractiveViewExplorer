@@ -55,11 +55,11 @@ Hover overlay still applies only to `UMeshComponent`.
 
 `HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
 
-1. Content Browser → **DIVE** → **DIVE Device Action Definition** → **Blueprint**. **Add Variable** for your fields. Class Defaults: `ActionId`, display name, optional `bToggleActiveSuffix`.
-2. Right-click Blueprint → **Create Data Asset** (values per instance). Logic stays on device `HandleDeviceAction`, not on the Definition.
-3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that Data Asset.
+1. Content Browser → **DIVE** → **DIVE Device Action Definition** — DataAsset. Set `ActionId`, display name, optional `bToggleActiveSuffix`.
+2. **Need extra fields?** Content Browser → **User Defined Struct** (e.g. `UnscrewParams`). On the Definition, **Settings** → pick that struct → fill values. Skip this for simple Toggle/Open.
+3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset.
 4. Optional: **`Primary Action Id`** = Definition `ActionId`.
-5. Device BP: **DIVE Device Action Handler** → Switch on `ActionId` → `TryGetResolvedActionRow` → Cast `Definition` to your Blueprint class.
+5. Device BP: **DIVE Device Action Handler** → Switch on `ActionId`. Read Settings via `TryGetResolvedActionRow` → `Definition` → `Settings` (break/cast to your struct). Logic stays on the device, not on the Definition.
 6. Compile.
 
 **Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition.

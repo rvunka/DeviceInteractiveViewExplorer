@@ -155,7 +155,7 @@ Flow:
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
 2. **Built-in entries** (plugin): **Focus**, **Isolate**; administrator section: **Enable/Disable Physics**, **Delete Mesh** (picked primitive only).
 3. **Device extensions** (host): **`PickContextMenuByComponent`** on inspectable (component name → short `ActionId` per row).
-4. Custom row click → **`IDIVEDeviceActionHandler::HandleDeviceAction`** (catalog row must have a **Definition** DataAsset). See **`QUICKSTART.md`** §1.
+4. Custom row click → **`IDIVEDeviceActionHandler::HandleDeviceAction`** (catalog row must have a **Definition** DataAsset; optional **Settings** struct). See **`QUICKSTART.md`** §1.
 5. Optional toggle: Definition `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — handler runs on current value, then DIVE flips `Is_*`.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.

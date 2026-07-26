@@ -85,7 +85,7 @@ Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = foc
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**; administrator **Simulate Physics / Delete Mesh** only when `UDIVEInspectableComponent::bEnableAdminContextMenuEntries` is true (default **false**) and **not** in Shipping builds. Custom rows from **`PickContextMenuByComponent`** require **`UDIVEDeviceActionDefinition`** + **`IDIVEDeviceActionHandler`**. **`Primary Action Id`** = Definition `ActionId` via **`HandlePrimaryActionPressed`**. Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. **No menu on anchor pick** — primary focuses anchor in Default mode when no `Primary Action Id`.
+In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**; administrator **Simulate Physics / Delete Mesh** only when `UDIVEInspectableComponent::bEnableAdminContextMenuEntries` is true (default **false**) and **not** in Shipping builds. Custom rows from **`PickContextMenuByComponent`** require **`UDIVEDeviceActionDefinition`** (optional **Settings** / InstancedStruct) + **`IDIVEDeviceActionHandler`**. **`Primary Action Id`** = Definition `ActionId` via **`HandlePrimaryActionPressed`**. Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. **No menu on anchor pick** — primary focuses anchor in Default mode when no `Primary Action Id`.
 
 ## Device interaction (direct manipulation)
 
