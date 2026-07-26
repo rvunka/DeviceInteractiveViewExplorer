@@ -55,11 +55,11 @@ Hover overlay still applies only to `UMeshComponent`.
 
 `HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
 
-1. Content Browser → **DIVE** → **DIVE Device Action Definition** — thin DataAsset. Set `ActionId`, display name, optional `bToggleActiveSuffix`.
-2. **Need extra fields?** Only then: Blueprint (or C++ class) child of `DIVEDeviceActionDefinition`, add variables, **Create Data Asset** from that class. Logic/macros stay on the **device** `HandleDeviceAction`, not on the Definition.
-3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset. Optional row **DisplayName** override.
-4. Optional: **`Primary Action Id`** = Definition `ActionId` (e.g. `Unscrew`).
-5. Device BP: Interface **DIVE Device Action Handler** → Switch on `ActionId`. Extra fields: `TryGetResolvedActionRow` → `Definition` → Cast to your child class.
+1. Content Browser → **DIVE** → **DIVE Device Action Definition** → **Blueprint**. **Add Variable** for your fields. Class Defaults: `ActionId`, display name, optional `bToggleActiveSuffix`.
+2. Right-click Blueprint → **Create Data Asset** (values per instance). Logic stays on device `HandleDeviceAction`, not on the Definition.
+3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that Data Asset.
+4. Optional: **`Primary Action Id`** = Definition `ActionId`.
+5. Device BP: **DIVE Device Action Handler** → Switch on `ActionId` → `TryGetResolvedActionRow` → Cast `Definition` to your Blueprint class.
 6. Compile.
 
 **Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition.

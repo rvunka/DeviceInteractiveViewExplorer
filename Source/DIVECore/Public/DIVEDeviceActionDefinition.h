@@ -12,8 +12,8 @@
 #include "DIVEDeviceActionDefinition.generated.h"
 
 /**
- * Thin shared definition for a custom pick/context action (ActionId + menu defaults).
- * Logic stays on IDIVEDeviceActionHandler. Custom fields: optional Blueprint/C++ child.
+ * Base for pick/context action definitions. DIVE menu creates a Blueprint child so you can Add Variable.
+ * Assign Data Asset instances of that Blueprint to catalog rows. Logic stays on IDIVEDeviceActionHandler.
  */
 UCLASS(BlueprintType, Blueprintable)
 class DIVECORE_API UDIVEDeviceActionDefinition : public UDataAsset

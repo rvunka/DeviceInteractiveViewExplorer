@@ -176,7 +176,7 @@ struct DIVECORE_API FDIVEPickContextMenuAction
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Action Definition DataAsset (ActionId + defaults; optional Blueprint/C++ child for extra fields). Required."))
+		ToolTip = "Data Asset instance of your Action Definition Blueprint (ActionId + your variables). Required."))
 	TObjectPtr<UDIVEDeviceActionDefinition> Definition = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
