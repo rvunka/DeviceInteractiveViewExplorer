@@ -55,14 +55,12 @@ Hover overlay still applies only to `UMeshComponent`.
 
 `HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
 
-1. (Optional params) Content Browser → **User Defined Struct** — e.g. `UnscrewParams` with `Turns`, `Torque`.
-2. Content Browser → **DIVE** → **DIVE Device Action Definition**. Set `ActionId`, display name, optional `bToggleActiveSuffix`. Under **Params**, pick your struct and fill fields.
-3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset. Optional row **DisplayName** override.
+1. Content Browser → **DIVE** → **DIVE Device Action Definition** — creates a **Blueprint**. Add your variables (`Turns`, `Torque`, …). In Class Defaults set `ActionId`, display name, optional `bToggleActiveSuffix`.
+2. Right-click that Blueprint → **Create Data Asset** — fill per-instance values (or one shared asset).
+3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that Data Asset. Optional row **DisplayName** override.
 4. Optional: **`Primary Action Id`** = Definition `ActionId` (e.g. `Unscrew`).
-5. Device BP: Interface **DIVE Device Action Handler** → Switch on `ActionId`. Read params via `TryGetResolvedActionRow` → `Definition` → `Params` (break / cast to your struct).
+5. Device BP: Interface **DIVE Device Action Handler** → Switch on `ActionId`. Read fields via `TryGetResolvedActionRow` → `Definition` → **Cast** to your Blueprint class.
 6. Compile.
-
-Blueprint subclass of the Definition is still fine if you prefer normal BP variables instead of `Params`.
 
 **Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition.
 

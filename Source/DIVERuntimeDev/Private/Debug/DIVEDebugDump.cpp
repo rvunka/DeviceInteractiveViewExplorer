@@ -178,19 +178,9 @@ void DumpCatalogEntry(
 		if (Action.Definition)
 		{
 			AppendLine(Out, FString::Printf(
-				TEXT("      Definition=%s"),
-				*Action.Definition->GetPathName()));
-			if (Action.Definition->Params.IsValid())
-			{
-				const UScriptStruct* ParamsStruct = Action.Definition->Params.GetScriptStruct();
-				AppendLine(Out, FString::Printf(
-					TEXT("      Params=%s"),
-					ParamsStruct ? *ParamsStruct->GetName() : TEXT("<valid>")));
-			}
-			else
-			{
-				AppendLine(Out, TEXT("      Params=<none>"));
-			}
+				TEXT("      Definition=%s (%s)"),
+				*Action.Definition->GetPathName(),
+				*GetNameSafe(Action.Definition->GetClass())));
 		}
 		else
 		{
