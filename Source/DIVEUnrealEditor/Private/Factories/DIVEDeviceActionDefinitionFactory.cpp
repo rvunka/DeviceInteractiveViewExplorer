@@ -34,6 +34,14 @@ FText UDIVEDeviceActionDefinitionFactory::GetDisplayName() const
 	return NSLOCTEXT("DIVE", "DeviceActionDefinitionFactory", "DIVE Device Action Definition");
 }
 
+FText UDIVEDeviceActionDefinitionFactory::GetToolTip() const
+{
+	return NSLOCTEXT(
+		"DIVE",
+		"DeviceActionDefinitionFactoryTip",
+		"ActionId + menu defaults, plus optional Params (pick any struct and fill fields). Assign on catalog rows.");
+}
+
 uint32 UDIVEDeviceActionDefinitionFactory::GetMenuCategories() const
 {
 	return DIVEEditor::GetDIVEAssetCategory();

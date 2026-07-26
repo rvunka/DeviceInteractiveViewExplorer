@@ -23,5 +23,6 @@ public:
 		FFeedbackContext* Warn) override;
 	virtual bool ShouldShowInNewMenu() const override { return true; }
 	virtual FText GetDisplayName() const override;
+	virtual FText GetToolTip() const override;
 	virtual uint32 GetMenuCategories() const override;
 };
