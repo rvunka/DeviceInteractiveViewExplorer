@@ -15,7 +15,7 @@ class UDIVEDeviceActionHandler : public UInterface
 
 /**
  * Preferred device pick-action dispatch. Implement on the device actor.
- * Catalog rows require UDIVEDeviceActionDefinition; HandleDeviceAction must return true when handled.
+ * Catalog row ActionId is the source of truth; HandleDeviceAction must return true when handled.
  */
 class DIVECORE_API IDIVEDeviceActionHandler
 {

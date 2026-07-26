@@ -96,7 +96,7 @@ IDIVEProxyDrive (DIVECore) — backend for Physical mode only
 | Interaction | Mechanism |
 |-------------|-----------|
 | Door, slider, knob, switch | **Physical** mode → proxy drive or GRIP (same device state) |
-| Read label, use button, demount module | **Context menu** on pick → **`UDIVEDeviceActionDefinition`** + **`IDIVEDeviceActionHandler`** |
+| Read label, use button, demount module | **Context menu** on pick → catalog **`ActionId`** + **`IDIVEDeviceActionHandler`** |
 | Cable, grab | GRIP + MESS in host project |
 
 ---
@@ -155,8 +155,8 @@ Flow:
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
 2. **Built-in entries** (plugin): **Focus**, **Isolate**; administrator section: **Enable/Disable Physics**, **Delete Mesh** (picked primitive only).
 3. **Device extensions** (host): **`PickContextMenuByComponent`** on inspectable (component name → short `ActionId` per row).
-4. Custom row click → **`IDIVEDeviceActionHandler::HandleDeviceAction`** (catalog row must have a **Definition** DataAsset; optional **Settings** struct). See **`QUICKSTART.md`** §1.
-5. Optional toggle: Definition `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — handler runs on current value, then DIVE flips `Is_*`.
+4. Custom row click → **`IDIVEDeviceActionHandler::HandleDeviceAction`** (catalog row **`ActionId`** is the source of truth). See **`QUICKSTART.md`** §1.
+5. Optional toggle: row `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — handler runs on current value, then DIVE flips `Is_*`.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 
@@ -201,7 +201,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Default / Physical |
 | `HandlePrimaryAction*` | Default → catalog `Primary Action Id` or anchor focus; hover overlay; Physical → proxy drive |
 | Context menu + widget | Focus, Isolate on primitive pick; anchor → primary action focus in Default when no `Primary Action Id` |
-| `PickContextMenuByComponent` + Definition + `IDIVEDeviceActionHandler` | Catalog on inspectable; `Primary Action Id`; interface on device |
+| `PickContextMenuByComponent` + `IDIVEDeviceActionHandler` | Catalog on inspectable (`ActionId` per row); `Primary Action Id`; interface on device |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
 | `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices |
 | Anchor | Viewpoint + PartId only |
@@ -212,7 +212,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 |------|--------|
 | `IA_DIVE_*` Content + `IMC_DIVE` | Host Content |
 | Registry / proxy drive on prefabs | Host / devices |
-| Context menu rows per pick | `PickContextMenuByComponent` + Definition + `IDIVEDeviceActionHandler` |
+| Context menu rows per pick | `PickContextMenuByComponent` (`ActionId`) + `IDIVEDeviceActionHandler` |
 | GRIP / MESS for cables | Host project |
 
 ---

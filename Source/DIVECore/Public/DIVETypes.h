@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "DIVEConvention.h"
-#include "DIVEDeviceActionDefinition.h"
 #include "DIVETypes.generated.h"
 
 UENUM(BlueprintType)
@@ -169,22 +168,35 @@ struct DIVECORE_API FDIVEContextMenuEntry
 	bool bIsSeparator = false;
 };
 
-/** One custom context-menu row. Requires Definition; dispatched via IDIVEDeviceActionHandler. */
+/** One custom context-menu row. Single source of truth; dispatched via IDIVEDeviceActionHandler. */
 USTRUCT(BlueprintType)
 struct DIVECORE_API FDIVEPickContextMenuAction
 {
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Action Definition DataAsset (ActionId + optional Settings struct). Required."))
-	TObjectPtr<UDIVEDeviceActionDefinition> Definition = nullptr;
+		ToolTip = "Operation id for HandleDeviceAction (e.g. Toggle, Unscrew, Open)."))
+	FName ActionId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Menu label. Empty = Definition DefaultDisplayName, else ActionId."))
+		ToolTip = "Menu label. Empty = ActionId."))
 	FText DisplayName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")
 	bool bEnabled = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
+		ToolTip = "When true, DIVE treats the row as a toggle (Is_* suffix / flip after handler)."))
+	bool bToggleActiveSuffix = false;
+
+	FText GetResolvedDisplayName() const
+	{
+		if (!DisplayName.IsEmpty())
+		{
+			return DisplayName;
+		}
+		return ActionId.IsNone() ? FText::GetEmpty() : FText::FromName(ActionId);
+	}
 };
 
 /** Resolved catalog row for Blueprint helpers / diagnostics. */
@@ -207,9 +219,6 @@ struct DIVECORE_API FDIVEResolvedPickAction
 
 	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
 	bool bToggleActiveSuffix = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
-	TObjectPtr<UDIVEDeviceActionDefinition> Definition = nullptr;
 };
 
 /** Action list value for PickContextMenuByComponent (TMap value; UHT does not allow TArray as map value). */
@@ -218,9 +227,9 @@ struct DIVECORE_API FDIVEPickContextMenuActionList
 {
 	GENERATED_BODY()
 
-	/** ActionId from a row Definition; primary action invokes the same handler as that menu row. */
+	/** Must match ActionId of one enabled Actions row; primary invokes the same handler. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Must match Definition.ActionId of one enabled Actions row."))
+		ToolTip = "Must match ActionId of one enabled Actions row."))
 	FName PrimaryActionId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu")

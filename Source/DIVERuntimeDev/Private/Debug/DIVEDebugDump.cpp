@@ -4,7 +4,6 @@
 
 #include "DIVEConvention.h"
 #include "DIVEDeviceActionHandler.h"
-#include "DIVEDeviceActionResolve.h"
 #include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
@@ -164,38 +163,15 @@ void DumpCatalogEntry(
 
 	for (const FDIVEPickContextMenuAction& Action : ActionList.Actions)
 	{
-		const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
-		const FName IsName = DIVE::MakePickContextMenuActiveStateName(CatalogKey, ResolvedId);
-		const FText ResolvedDisplay = DIVEDeviceActionResolve::ResolveDisplayName(Action);
-		const bool bToggle = DIVEDeviceActionResolve::ResolveToggleActiveSuffix(Action);
+		const FName IsName = DIVE::MakePickContextMenuActiveStateName(CatalogKey, Action.ActionId);
+		const FText ResolvedDisplay = Action.GetResolvedDisplayName();
 
 		AppendLine(Out, FString::Printf(
 			TEXT("    ActionId='%s' Display='%s' Enabled=%s ToggleSuffix=%s"),
-			*ResolvedId.ToString(),
+			*Action.ActionId.ToString(),
 			ResolvedDisplay.IsEmpty() ? TEXT("<empty>") : *ResolvedDisplay.ToString(),
 			*YesNo(Action.bEnabled),
-			*YesNo(bToggle)));
-		if (Action.Definition)
-		{
-			AppendLine(Out, FString::Printf(
-				TEXT("      Definition=%s"),
-				*Action.Definition->GetPathName()));
-			if (Action.Definition->Settings.IsValid())
-			{
-				const UScriptStruct* SettingsStruct = Action.Definition->Settings.GetScriptStruct();
-				AppendLine(Out, FString::Printf(
-					TEXT("      Settings=%s"),
-					SettingsStruct ? *SettingsStruct->GetName() : TEXT("<valid>")));
-			}
-			else
-			{
-				AppendLine(Out, TEXT("      Settings=<none>"));
-			}
-		}
-		else
-		{
-			AppendLine(Out, TEXT("      Definition=<MISSING>"));
-		}
+			*YesNo(Action.bToggleActiveSuffix)));
 		AppendLine(Out, FString::Printf(
 			TEXT("      IsState %s -> property=%s function=%s"),
 			*IsName.ToString(),
@@ -221,7 +197,7 @@ void DumpCatalogEntry(
 				(bInstance != bCdo) ? TEXT("  <-- instance differs from BP default") : TEXT("")));
 		}
 
-		if (bToggle
+		if (Action.bToggleActiveSuffix
 			&& !HasBoolProperty(Owner, IsName)
 			&& !HasBoolFunction(Owner, IsName))
 		{

@@ -55,14 +55,12 @@ Hover overlay still applies only to `UMeshComponent`.
 
 `HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
 
-1. Content Browser → **DIVE** → **DIVE Device Action Definition** — DataAsset. Set `ActionId`, display name, optional `bToggleActiveSuffix`.
-2. **Need extra fields?** Content Browser → **User Defined Struct** (e.g. `UnscrewParams`). On the Definition, **Settings** → pick that struct → fill values. Skip this for simple Toggle/Open.
-3. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row **Definition** = that asset.
-4. Optional: **`Primary Action Id`** = Definition `ActionId`.
-5. Device BP: **DIVE Device Action Handler** → Switch on `ActionId`. Read Settings via `TryGetResolvedActionRow` → `Definition` → `Settings` (break/cast to your struct). Logic stays on the device, not on the Definition.
-6. Compile.
+1. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row: set **`ActionId`** (`Toggle` / `Unscrew` / …), optional **DisplayName**, optional **`bToggleActiveSuffix`**.
+2. Optional: **`Primary Action Id`** = that row's `ActionId`.
+3. Device BP: Interface **DIVE Device Action Handler** → Switch on `ActionId`, then `CatalogKey` / `Target`. Domain data lives on the device. Optional: `TryGetResolvedActionRow`.
+4. Compile.
 
-**Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the Definition.
+**Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the catalog row.
 
 1. Bool `Is_{Key}_{ActionId}` (default matches initial light state).
 2. Handler reads **current** `Is_*` / `bActiveBefore` and applies the toggle.
@@ -93,14 +91,14 @@ Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to 
 
 ```text
 Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_MyDevice)
-├─ DIVE Input                                           ├─ DIVE Inspectable  ← catalog + Definition
+├─ DIVE Input                                           ├─ DIVE Inspectable  ← catalog (ActionId per row)
 ├─ DIVE Context Menu UI  ← draws menu on screen        └─ IDIVEDeviceActionHandler
 └─ (GRIP / bridge as needed)
 ```
 
 **Player character** — menu open + UI. Already handled by the plugin if components and IMC are set up (§4). **You do not add device actions here.**
 
-**Device actor** — catalog (**Definition** per row) + **`IDIVEDeviceActionHandler`**.
+**Device actor** — catalog (`ActionId` per row) + **`IDIVEDeviceActionHandler`**.
 
 ### Menu open path (already in plugin — do not override for device actions)
 
@@ -136,7 +134,7 @@ IA_DIVE_PrimaryAction Started
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog `Primary Action Id`.
 
-Built-in rows (Focus, Isolate) are handled inside the plugin. **Simulate Physics / Delete Mesh** appear only when the active inspectable has **Enable Admin Context Menu Entries** checked (and not in Shipping). Custom catalog rows require **`UDIVEDeviceActionDefinition`** + **`IDIVEDeviceActionHandler`**.
+Built-in rows (Focus, Isolate) are handled inside the plugin. **Simulate Physics / Delete Mesh** appear only when the active inspectable has **Enable Admin Context Menu Entries** checked (and not in Shipping). Custom catalog rows require **`ActionId`** on the row + **`IDIVEDeviceActionHandler`**.
 
 ---
 

@@ -5,7 +5,6 @@
 #include "DIVEAnchorComponent.h"
 #include "DIVEConvention.h"
 #include "DIVEDeviceActionHandler.h"
-#include "DIVEDeviceActionResolve.h"
 #include "DIVEInspectableComponent.h"
 
 namespace
@@ -140,32 +139,22 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 
 		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 		{
-			if (!Action.Definition)
+			if (Action.ActionId.IsNone())
 			{
 				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with no Definition."),
+					TEXT("PickContextMenuByComponent '%s' has an entry with empty ActionId."),
 					*ComponentName.ToString()));
 				continue;
 			}
 
-			const FName ResolvedId = DIVEDeviceActionResolve::ResolveActionId(Action);
-			if (ResolvedId.IsNone())
-			{
-				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' Definition '%s' has empty ActionId."),
-					*ComponentName.ToString(),
-					*GetNameSafe(Action.Definition)));
-				continue;
-			}
-
-			if (DIVE::IsReservedContextMenuActionId(ResolvedId))
+			if (DIVE::IsReservedContextMenuActionId(Action.ActionId))
 			{
 				AddError(Report, FString::Printf(
 					TEXT("PickContextMenuByComponent ActionId '%s' is reserved by DIVE built-in menu rows."),
-					*ResolvedId.ToString()));
+					*Action.ActionId.ToString()));
 			}
 
-			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, ResolvedId);
+			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
 			if (QualifiedActionIds.Contains(QualifiedActionId))
 			{
 				AddError(Report, FString::Printf(
@@ -198,7 +187,7 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			bool bFoundPrimary = false;
 			for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
 			{
-				if (DIVEDeviceActionResolve::ResolveActionId(Action) == ComponentEntry.Value.PrimaryActionId)
+				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
 				{
 					bFoundPrimary = true;
 					if (!Action.bEnabled)
