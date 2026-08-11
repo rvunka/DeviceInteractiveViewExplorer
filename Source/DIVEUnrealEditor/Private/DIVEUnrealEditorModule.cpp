@@ -3,10 +3,17 @@
 #include "DIVEDeviceScan.h"
 #include "DIVELog.h"
 #include "Debug/DIVEDebugDump.h"
+#include "DIVEEditorAssetCategory.h"
+#include "AssetTypeActions_DIVEActionCatalog.h"
+#include "Customizations/DIVEActionBindingCustomization.h"
+#include "DIVEActionBinding.h"
 
+#include "AssetToolsModule.h"
 #include "Editor.h"
 #include "Framework/Notifications/NotificationManager.h"
+#include "IAssetTools.h"
 #include "Modules/ModuleManager.h"
+#include "PropertyEditorModule.h"
 #include "Selection.h"
 #include "ToolMenus.h"
 #include "Widgets/Notifications/SNotificationList.h"
@@ -15,6 +22,9 @@
 
 namespace
 {
+EAssetTypeCategories::Type GDIVEAssetCategory = EAssetTypeCategories::Misc;
+TSharedPtr<FAssetTypeActions_DIVEActionCatalog> GDIVEActionCatalogAssetTypeActions;
+
 void NotifyDumpResult(const FString& FilePath)
 {
 	FNotificationInfo Info(FilePath.IsEmpty()
@@ -75,11 +85,40 @@ void ExecuteDumpSelectedActors()
 }
 }
 
+namespace DIVEEditor
+{
+EAssetTypeCategories::Type GetDIVEAssetCategory()
+{
+	return GDIVEAssetCategory;
+}
+
+void SetDIVEAssetCategory(EAssetTypeCategories::Type Category)
+{
+	GDIVEAssetCategory = Category;
+}
+}
+
 class FDIVEUnrealEditorModule : public IModuleInterface
 {
 public:
 	void StartupModule() override
 	{
+		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+		DIVEEditor::SetDIVEAssetCategory(AssetTools.RegisterAdvancedAssetCategory(
+			FName(TEXT("DIVE")),
+			DIVEEditor::GetDIVECategoryText()));
+
+		GDIVEActionCatalogAssetTypeActions = MakeShared<FAssetTypeActions_DIVEActionCatalog>();
+		AssetTools.RegisterAssetTypeActions(GDIVEActionCatalogAssetTypeActions.ToSharedRef());
+
+		FPropertyEditorModule& PropertyEditor =
+			FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+		PropertyEditor.RegisterCustomPropertyTypeLayout(
+			FDIVEActionBinding::StaticStruct()->GetFName(),
+			FOnGetPropertyTypeCustomizationInstance::CreateStatic(
+				&FDIVEActionBindingCustomization::MakeInstance));
+		PropertyEditor.NotifyCustomizationModuleChanged();
+
 		UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
 			this,
 			&FDIVEUnrealEditorModule::RegisterMenus));
@@ -89,6 +128,22 @@ public:
 	{
 		UToolMenus::UnRegisterStartupCallback(this);
 		UToolMenus::UnregisterOwner(this);
+
+		if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
+		{
+			FPropertyEditorModule& PropertyEditor =
+				FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
+			PropertyEditor.UnregisterCustomPropertyTypeLayout(
+				FDIVEActionBinding::StaticStruct()->GetFName());
+			PropertyEditor.NotifyCustomizationModuleChanged();
+		}
+
+		if (FModuleManager::Get().IsModuleLoaded("AssetTools") && GDIVEActionCatalogAssetTypeActions.IsValid())
+		{
+			IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
+			AssetTools.UnregisterAssetTypeActions(GDIVEActionCatalogAssetTypeActions.ToSharedRef());
+		}
+		GDIVEActionCatalogAssetTypeActions.Reset();
 	}
 
 private:
@@ -101,13 +156,13 @@ private:
 			Section.AddMenuEntry(
 				"DIVE_ScanDevice",
 				LOCTEXT("ScanDeviceLabel", "DIVE Scan Device"),
-				LOCTEXT("ScanDeviceTooltip", "Validate anchors and pick context menu catalog on the selected device actor."),
+				LOCTEXT("ScanDeviceTooltip", "Validate anchors, Catalog / Bindings on the selected device actor."),
 				FSlateIcon(),
 				FUIAction(FExecuteAction::CreateStatic(&ExecuteScanSelectedActors)));
 			Section.AddMenuEntry(
 				"DIVE_DumpDevice",
 				LOCTEXT("DumpDeviceLabel", "DIVE Dump Device"),
-				LOCTEXT("DumpDeviceTooltip", "Dump catalog keys vs component FNames / Definition / Is_* to Output Log and Saved/DIVE/Dumps (cyan on-screen toast)."),
+				LOCTEXT("DumpDeviceTooltip", "Dump action bindings, sections, and resolved picks to Output Log and Saved/DIVE/Dumps."),
 				FSlateIcon(),
 				FUIAction(FExecuteAction::CreateStatic(&ExecuteDumpSelectedActors)));
 		}

@@ -1,4 +1,4 @@
-﻿# DIVE QUICKSTART
+# DIVE QUICKSTART
 
 ## 1. Device setup
 
@@ -34,41 +34,70 @@ When the device is one solid mesh, add **Box / Sphere / Capsule Collision** on t
    (DIVE’s `Pick Trace Channel` defaults to Visibility — there is no separate “Pick” channel).  
    Avoid the **Trigger** profile: it sets Visibility to Ignore.
 3. Shape can stay **Hidden in Game**.
-4. Wire context menu / handlers by the **collision component name**.
+4. Target bindings by **component tag / name / PartId** (or Any Primitive for built-ins).
 
 Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over the shell mesh in front of them. If the box still never wins, check Visibility is Block and the component is on the device actor.
 
+**Pickability rules**: a primitive is considered pickable if `IsVisible() && !bHiddenInGame` (or it is a pick-proxy with collision enabled). Primitives hidden via **Isolate** (`SetHiddenInGame(true)`) are automatically excluded from picking even though the renderer may report them as visible.
+
 **Isolate** on a pick volume keeps device **meshes** visible (the shell) and hides other volumes / unrelated primitives. Clearing Isolate restores each component’s original Hidden-in-Game state (so authored-hidden boxes stay hidden).
+
+**Hover overlay**: applied as `OverlayMaterial` on `UMeshComponent`. DIVE saves and restores any pre-existing overlay material owned by the device, so device-authored overlays survive hover highlight/clear.
 
 Hover overlay still applies only to `UMeshComponent`.
 
-### Custom context menu row (`IDIVEDeviceActionHandler`)
+### Custom context menu (`UDIVEDeviceAction`)
 
-**Only on the device actor.** Implement **`IDIVEDeviceActionHandler`** → `HandleDeviceAction(CatalogKey, ActionId, Target, bActiveBefore)` and return **true** when handled.
+**On the device actor:** `UDIVEInspectableComponent` merges **Bindings** (on the component) + **Action Catalog** (Data Asset) — union by section. Prefer the catalog for device-specific ops.
 
-`CatalogKey` and `ActionId` are **not** duplicates:
+| Layer | Question | Authoring |
+|-------|----------|-----------|
+| **Section** | Menu group (separator + optional Header label) | Component Sections / Catalog Sections |
+| **Binding** | Which parts get which actions? | Target query (tag / name / PartId / Any Primitive) + Instanced actions + `SectionId` |
+| **Action** | What runs? | Your BP/C++ subclass of `UDIVEDeviceAction` / Continuous; plus shipped Focus/Isolate/Admin |
 
-| Arg | Meaning | Example |
-|-----|---------|---------|
-| **CatalogKey** | which part (map key = component name / PartId) | `Screw1`, `CoverA` |
-| **ActionId** | which operation on that part | `Unscrew`, `Open`, `Toggle` |
+**Content Browser → DIVE:**
 
-`HandleDeviceAction` is a **thin router**, not the place for all device logic. Prefer **Switch on `ActionId`**, then use `CatalogKey` / `Target` for the instance. Same action on many meshes = one branch + key/mesh, not one branch per mesh. Put heavy logic in separate functions / components; return `true` when handled.
+| Create | Result |
+|--------|--------|
+| **Action Catalog** | Data Asset for sections + bindings |
+| **Device Action** | BP parented to `DIVE Device Action` — override **Execute** |
+| **Continuous Device Action** | BP for hold/drag — override **Begin / Update / End Interaction** |
+| **Action Condition** | BP predicate — override **Evaluate** (optional menu visibility) |
 
-1. **DIVEInspectable** → **Pick Context Menu By Component** → key `Screw1` → row: set **`ActionId`** (`Toggle` / `Unscrew` / …), optional **DisplayName**, optional **`bToggleActiveSuffix`**.
-2. Optional: **`Primary Action Id`** = that row's `ActionId`.
-3. Device BP: Interface **DIVE Device Action Handler** → Switch on `ActionId`, then `CatalogKey` / `Target`. Domain data lives on the device. Optional: `TryGetResolvedActionRow`.
-4. Compile.
+Then add an **instance** of your action BP inside a binding’s Actions array (Catalog or component Bindings).
 
-**Toggle row (`*` when active):** set **`bToggleActiveSuffix`** on the catalog row.
+**Session** is a **World Subsystem** (`UDIVESessionSubsystem`). From Blueprints use **Get World Subsystem**, not Game Instance Subsystem. Catalog-hosted actions get a valid world via runtime `ExecutionWorld` injection — Blueprint world-context nodes work when the action runs.
 
-1. Bool `Is_{Key}_{ActionId}` (default matches initial light state).
-2. Handler reads **current** `Is_*` / `bActiveBefore` and applies the toggle.
-3. DIVE then flips `Is_*` **after** the handler.
+On `UDIVEInspectableComponent`:
 
-Do not also flip `Is_*` inside the handler.
+1. **Bindings** CDO-seed Focus + Isolate + Admin (Simulate Physics / Delete Mesh). Edit/remove like any binding. Admin rows are hidden in Shipping.
+2. Prefer **Action Catalog** for device-specific ops.
 
-Done. Action runs from the context menu, or from **primary action** when `Primary Action Id` is set.
+**Where to put logic (no BeginPlay dump):**
+
+1. **Default:** put the handler in the **action BP** (`Execute` / continuous overrides). Use `Context.DeviceHost` / `Context.Target` there. Call a Blueprint Interface or function on the device when you need domain side-effects.
+2. **Optional Condition:** Content Browser → **DIVE → Action Condition** → `Evaluate` returns false to **hide** the menu row (example: “Remove Cover” only after bolts are gone). Assign the Condition instance on the action. Leave **None** if always visible.
+3. **Device Action Event (EI-like):** on the device Actor BP Event Graph, search **DIVE Action Event** or browse **DIVE → Events**. Pick the entry for your action class (one node per class). Fires when that action succeeds on this actor's Inspectable (instant `Execute` returned true, or continuous `Begin`). Pins: typed `Action` + `Context`. Still prefer putting heavy logic in the action BP; use the event when the device graph must react.
+4. **Device fan-out (optional):** Inspectable **On Action Executed** (Details **+**) still broadcasts every successful action — useful for logging/debug. Prefer DIVE Action Event nodes over Cast chains.
+5. **Avoid** wiring everything from device BeginPlay via `FindActionInstance` + per-action `OnExecuted` unless you intentionally listen to a shared C++/foreign action class.
+
+Matching bindings are **unioned** by section (not winner-take-all). Duplicate DisplayNames in one section log a warning. Duplicate non-empty **BindingId** is an error.
+
+Example — tagged bolts → continuous unscrew BP:
+
+1. Tag bolt meshes `DIVE.Bolt`.
+2. Content Browser → **DIVE → Continuous Device Action** → `BPA_Unscrew` (params + Begin/Update/End; on complete call device interface e.g. `NotifyBoltRemoved`).
+3. **DIVE → Action Catalog** → section `Maintenance`, binding Match=Component Tag `DIVE.Bolt`, add `BPA_Unscrew` instance.
+4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Default mode.
+**Continuous actions:**
+- **Primary (hold):** press → `BeginInteraction` → drag while held → release → `EndInteraction`.
+- **Context menu:** click row → `BeginInteraction` (modal drag without hold) → finish with next primary click / Escape / self-complete. Same LMB-up that confirms the menu row is ignored so the gesture is not cancelled immediately.
+- Session marks the action active after a successful `Begin`. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
+
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on Context Menu UI).
+
+Interaction parameters live on the action instance; device domain state lives on the device (see `DeviceInteractionModel.md`).
 
 ### Default mode: hover highlight
 
@@ -83,7 +112,7 @@ Uses `UMeshComponent::SetOverlayMaterial` (Default mode only). Non-mesh primitiv
 
 ### Pick interaction exclusions
 
-**DIVE Inspectable → DIVE | Pick → Pick Interaction Exclusions** — component names or PartIds that DIVE ignores entirely: no context menu, no handler, no primary action, no hover. Same key rules as the context menu catalog.
+**DIVE Inspectable → DIVE | Pick → Pick Interaction Exclusions** — component names or PartIds that DIVE ignores entirely: no context menu, no primary action, no hover.
 
 Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to exclude them from pick at a lower level (visibility/bounds rules still apply).
 
@@ -91,14 +120,14 @@ Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to 
 
 ```text
 Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_MyDevice)
-├─ DIVE Input                                           ├─ DIVE Inspectable  ← catalog (ActionId per row)
-├─ DIVE Context Menu UI  ← draws menu on screen        └─ IDIVEDeviceActionHandler
+├─ DIVE Input                                           ├─ DIVE Inspectable  ← Action Catalog + Bindings
+├─ DIVE Context Menu UI  ← draws menu on screen        └─ (optional) BP subclasses of UDIVEDeviceAction
 └─ (GRIP / bridge as needed)
 ```
 
 **Player character** — menu open + UI. Already handled by the plugin if components and IMC are set up (§4). **You do not add device actions here.**
 
-**Device actor** — catalog (`ActionId` per row) + **`IDIVEDeviceActionHandler`**.
+**Device actor** — **Action Catalog + Bindings** + action instances (defaults Focus/Isolate/Admin and/or your BP/C++ subclasses).
 
 ### Menu open path (already in plugin — do not override for device actions)
 
@@ -111,17 +140,17 @@ IA_DIVE_ContextMenu (project IMC — e.g. RMB in Legacy PIE)
 
 `HandleContextMenuRequested` is **not** your hook for device actions. It only opens/toggles the menu. It is called from **DIVE Input** on the **player character**, not from the device Blueprint.
 
-`DIVE Context Menu UI` on the player character only **shows** the widget; it does not run device handlers.
+`DIVE Context Menu UI` on the player character only **shows** the widget; it does not execute actions.
 
-### Menu click path (handler)
+### Menu click path
 
 ```text
-Click "Unscrew"
- → UI → Session subsystem::ExecuteContextMenuAction
- → DIVEInspectable → IDIVEDeviceActionHandler::HandleDeviceAction
+Click menu row
+ → UI → Session subsystem::ExecuteContextMenuAction(Action object)
+ → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`Primary Action Id`** is set on that catalog entry (no menu open).
+Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`PrimaryActionIndex`** is set on a matching binding.
 
 ### Primary action path (production)
 
@@ -129,13 +158,12 @@ Same handler from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimary
 IA_DIVE_PrimaryAction Started
  → DIVE Input::HandlePrimaryActionPressed()
  → Session::ExecutePrimaryActionAtScreenPosition (Default mode)
- → DIVEInspectable → HandleDeviceAction on the device actor
+ → matching binding PrimaryActionIndex → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog `Primary Action Id`.
+In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog primary actions.
 
-Built-in rows (Focus, Isolate) are handled inside the plugin. **Simulate Physics / Delete Mesh** appear only when the active inspectable has **Enable Admin Context Menu Entries** checked (and not in Shipping). Custom catalog rows require **`ActionId`** on the row + **`IDIVEDeviceActionHandler`**.
-
+Default rows come from component **Bindings** (Focus, Isolate, Admin). Device-specific rows: **Action Catalog** (and/or extra rows in Bindings). To hide Admin in editor, remove those actions from Bindings; Shipping hides them automatically.
 ---
 
 ## 1b. Anchors (optional)
@@ -218,7 +246,7 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 
 ## 5. Editor / diagnostics
 
-**DIVE Scan Device** (RMB on actor in level → DIVE) — validates anchors, catalog keys, **`Primary Action Id`**, reserved `ActionId` values, exclusions, hover keys.
+**DIVE Scan Device** (RMB on actor in level → DIVE) — validates anchors, **Catalog / Bindings** (`SectionId`, `PrimaryActionIndex`, MatchValues / AnyPrimitive), exclusions.
 
 **DIVE Dump Device** (same menu) or console in PIE:
 
@@ -229,7 +257,7 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 
 On success: cyan on-screen toast `DIVE dump saved: Saved/DIVE/Dumps/...` (same idea as MESS). Also **Output Log** filter `LogDIVE`, file under `Saved/DIVE/Dumps/`.
 
-Use the dump when custom menu rows are missing: compare **CatalogKey** to each prim **FName** / **Normalized**. Section **Cross-check** prints `OK` / `FAIL` per key. `CatalogMatch custom rows: (none)` on a Switch means the key did not match that component.
+Use the dump when menu rows are missing: check **Bindings + Catalog** and per-prim **Menu rows** / **Resolved bindings**. Match modes: tag / name / PartId / AnyPrimitive.
 
 ## 6. Compliance
 

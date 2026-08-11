@@ -2,30 +2,36 @@
 
 #include "Session/DIVESessionPhysicalDriveOps.h"
 
+#include "Actions/DIVEBuiltInActions.h"
+#include "DIVEDeviceAction.h"
 #include "DIVELog.h"
 #include "DIVEPawnPhysicalDrive.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
-#include "DIVEProxyDrive.h"
 #include "DIVEProxyDriveResolve.h"
 #include "DIVEProxyDriveTypes.h"
+#include "DIVEInspectableComponent.h"
 #include "DIVESessionSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "Engine/World.h"
 #include "Session/DIVESessionPickOps.h"
 
 void FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(UDIVESessionSubsystem& Session, const bool bCommit)
 {
 	switch (Session.ActivePhysicalDriveKind)
 	{
-	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::DeviceProxy:
-		if (UObject* ProxyObject = Session.ActiveProxyDrive.GetObject())
-		{
-			IDIVEProxyDrive::Execute_EndProxyDrive(ProxyObject, bCommit);
-		}
-		break;
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge:
 		if (UObject* PawnDriveObject = Session.ActivePawnPhysicalDrive.GetObject())
 		{
 			IDIVEPawnPhysicalDrive::Execute_EndPawnPhysicalDrive(PawnDriveObject, bCommit);
+		}
+		break;
+	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
+		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
+		{
+			Continuous->OnValueChanged.RemoveDynamic(
+				&Session,
+				&UDIVESessionSubsystem::HandleContinuousActionValueChanged);
+			Continuous->EndInteraction(bCommit);
 		}
 		break;
 	default:
@@ -37,8 +43,9 @@ void FDIVESessionPhysicalDriveOps::ResetPhysicalDriveState(UDIVESessionSubsystem
 {
 	Session.bProxyDriving = false;
 	Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::None;
-	Session.ActiveProxyDrive.Reset();
 	Session.ActivePawnPhysicalDrive.Reset();
+	Session.ActiveContinuousAction.Reset();
+	Session.bIgnoreNextPrimaryActionRelease = false;
 }
 
 void FDIVESessionPhysicalDriveOps::ClearProxyDrive(UDIVESessionSubsystem& Session)
@@ -50,6 +57,7 @@ void FDIVESessionPhysicalDriveOps::ClearProxyDrive(UDIVESessionSubsystem& Sessio
 
 	EndActivePhysicalDrive(Session, false);
 	ResetPhysicalDriveState(Session);
+	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), 0.f);
 }
 
 bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
@@ -80,27 +88,32 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 		return false;
 	}
 
+	// Device proxy path: route through InternalProxyDriveAction so the interaction uses the single
+	// continuous-action slot instead of a parallel device-proxy code path.
+	if (DIVEProxyDriveResolve::FindProxyDriveForHit(HitComponent))
+	{
+		UDIVEInspectableComponent* Inspectable = Session.ActiveInspectable.Get();
+		if (Inspectable && Session.InternalProxyDriveAction)
+		{
+			const FDIVEActionContext Context = Inspectable->MakeActionContext(
+				PickTarget,
+				NAME_None,
+				ScreenPosition,
+				HitResult);
+			if (Session.TryBeginContinuousAction(Session.InternalProxyDriveAction, Context))
+			{
+				return true;
+			}
+		}
+	}
+
+	// Pawn bridge path (e.g. GRIP): handled directly since it has its own lifecycle separate from
+	// the action system.
 	FDIVEProxyDriveContext DriveContext;
 	DriveContext.ScreenPosition = ScreenPosition;
 	DriveContext.FocusTarget = PickTarget;
 	DriveContext.HitComponent = HitComponent;
 	DriveContext.PickHit = HitResult;
-
-	if (IDIVEProxyDrive* ProxyDrive = DIVEProxyDriveResolve::FindProxyDriveForHit(HitComponent))
-	{
-		if (UObject* ProxyObject = Cast<UObject>(ProxyDrive))
-		{
-			if (IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject)
-				&& IDIVEProxyDrive::Execute_BeginProxyDrive(ProxyObject, DriveContext))
-			{
-				Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::DeviceProxy;
-				Session.ActiveProxyDrive = ProxyObject;
-				Session.ActivePawnPhysicalDrive.Reset();
-				Session.bProxyDriving = true;
-				return true;
-			}
-		}
-	}
 
 	if (IDIVEPawnPhysicalDrive* PawnDrive = DIVEPawnPhysicalDriveResolve::FindOnPlayerController(PlayerController))
 	{
@@ -111,7 +124,6 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 			{
 				Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge;
 				Session.ActivePawnPhysicalDrive = PawnDriveObject;
-				Session.ActiveProxyDrive.Reset();
 				Session.bProxyDriving = true;
 				return true;
 			}
@@ -127,7 +139,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 	return false;
 }
 
-void FDIVESessionPhysicalDriveOps::UpdateProxyDrive(UDIVESessionSubsystem& Session, const FVector2D& ScreenDelta)
+void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem& Session, const FVector2D& ScreenDelta)
 {
 	if (!Session.bProxyDriving)
 	{
@@ -136,18 +148,23 @@ void FDIVESessionPhysicalDriveOps::UpdateProxyDrive(UDIVESessionSubsystem& Sessi
 
 	switch (Session.ActivePhysicalDriveKind)
 	{
-	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::DeviceProxy:
-		if (UObject* ProxyObject = Session.ActiveProxyDrive.GetObject())
-		{
-			IDIVEProxyDrive::Execute_ApplyProxyDriveDelta(ProxyObject, ScreenDelta);
-		}
-		else
+	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge:
+		if (!Session.ActivePawnPhysicalDrive.GetObject())
 		{
 			ClearProxyDrive(Session);
 		}
 		break;
-	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge:
-		if (!Session.ActivePawnPhysicalDrive.GetObject())
+	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
+		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
+		{
+			const float DeltaTime = Session.GetWorld() ? Session.GetWorld()->GetDeltaSeconds() : 0.f;
+			Continuous->UpdateInteraction(ScreenDelta, DeltaTime);
+			if (!Continuous->IsInteractionActive())
+			{
+				EndProxyDrive(Session, true);
+			}
+		}
+		else
 		{
 			ClearProxyDrive(Session);
 		}
@@ -167,6 +184,7 @@ void FDIVESessionPhysicalDriveOps::EndProxyDrive(UDIVESessionSubsystem& Session,
 
 	EndActivePhysicalDrive(Session, bCommit);
 	ResetPhysicalDriveState(Session);
+	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), 0.f);
 }
 
 void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotatePressed(UDIVESessionSubsystem& Session)

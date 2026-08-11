@@ -14,5 +14,10 @@ public class DIVECore : ModuleRules
 			"CoreUObject",
 			"Engine"
 		});
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("DataValidation");
+		}
 	}
 }

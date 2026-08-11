@@ -4,12 +4,17 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Components/Button.h"
-#include "DIVETypes.h"
+#include "DIVEDeviceAction.h"
 #include "UI/DIVEContextMenuStyle.h"
 
 #include "DIVEContextMenuWidget.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEContextMenuEntrySelected, FName, ActionId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FOnDIVEContextMenuEntrySelected,
+	UDIVEDeviceAction*,
+	Action,
+	FName,
+	TargetKey);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDIVEContextMenuDismissed);
 
 class UDIVEContextMenuWidget;
@@ -20,7 +25,8 @@ class UDIVEContextMenuActionButton : public UButton
 	GENERATED_BODY()
 
 public:
-	FName ActionId = NAME_None;
+	TObjectPtr<UDIVEDeviceAction> Action = nullptr;
+	FName TargetKey = NAME_None;
 	TWeakObjectPtr<UDIVEContextMenuWidget> OwnerWidget;
 
 	UFUNCTION()
@@ -55,11 +61,13 @@ protected:
 	void AddActionRow(
 		const FDIVEContextMenuEntry& Entry,
 		const FSlateFontInfo& RowFont,
-		const FButtonStyle& RowButtonStyle,
-		bool bStartsSection);
+		const FButtonStyle& RowButtonStyle);
+	void AddSectionDivider(const FText& Header);
 	FVector2D ClampPositionToViewport(const FVector2D& ScreenPosition) const;
 	FSlateFontInfo ResolveRowFont() const;
+	FSlateFontInfo ResolveSectionHeaderFont() const;
 	float GetEstimatedMenuHeight() const;
+	float GetSectionDividerHeight(const FText& Header) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UCanvasPanel> RootCanvas;
@@ -87,7 +95,7 @@ protected:
 
 	friend class UDIVEContextMenuActionButton;
 
-	void HandleEntryClicked(FName ActionId);
+	void HandleEntryClicked(UDIVEDeviceAction* Action, FName TargetKey);
 
 	UFUNCTION()
 	void HandleDismissCaptureClicked();

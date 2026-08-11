@@ -2,8 +2,8 @@
 
 #include "DIVEInspectableComponent.h"
 
+#include "Actions/DIVEBuiltInActions.h"
 #include "DIVEAnchorComponent.h"
-#include "DIVEDeviceActionHandler.h"
 #include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
@@ -12,176 +12,67 @@
 #include "Materials/MaterialInterface.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/ShapeComponent.h"
-#include "Engine/GameInstance.h"
-#include "Utils/DIVEContextMenu.h"
-#include "UObject/UnrealType.h"
 
 #if WITH_EDITOR
+#include "DIVEActionBindingValidation.h"
 #include "Misc/DataValidation.h"
 #endif
-
-namespace
-{
-const FBoolProperty* FindActorBoolProperty(const AActor* Owner, const FName PropertyName)
-{
-	if (!Owner || PropertyName.IsNone())
-	{
-		return nullptr;
-	}
-
-	if (const FBoolProperty* Direct = FindFProperty<FBoolProperty>(Owner->GetClass(), PropertyName))
-	{
-		return Direct;
-	}
-
-	// Blueprint variables sometimes only match via authored/display name walk.
-	const FString Wanted = PropertyName.ToString();
-	for (TFieldIterator<FBoolProperty> It(Owner->GetClass()); It; ++It)
-	{
-		const FBoolProperty* BoolProperty = *It;
-		if (!BoolProperty)
-		{
-			continue;
-		}
-
-		if (BoolProperty->GetFName() == PropertyName
-			|| BoolProperty->GetName() == Wanted
-			|| BoolProperty->GetAuthoredName() == Wanted)
-		{
-			return BoolProperty;
-		}
-	}
-
-	return nullptr;
-}
-
-bool QueryActorBoolFunction(const AActor* Owner, const FName FunctionName, bool& OutValue)
-{
-	if (!Owner || FunctionName.IsNone())
-	{
-		return false;
-	}
-
-	UFunction* Function = Owner->FindFunction(FunctionName);
-	if (!Function)
-	{
-		return false;
-	}
-
-	const FBoolProperty* ReturnProperty = CastField<FBoolProperty>(Function->GetReturnProperty());
-	if (!ReturnProperty)
-	{
-		return false;
-	}
-
-	TArray<uint8> Params;
-	Params.SetNumZeroed(FMath::Max(static_cast<int32>(Function->ParmsSize), 1));
-	const_cast<AActor*>(Owner)->ProcessEvent(Function, Params.GetData());
-	OutValue = ReturnProperty->GetPropertyValue_InContainer(Params.GetData());
-	return true;
-}
-
-bool QueryActorBoolState(const AActor* Owner, const FName StateName, bool& OutValue)
-{
-	// Prefer bool property over a same-named pure function (menu "*" must match the variable).
-	if (const FBoolProperty* BoolProperty = FindActorBoolProperty(Owner, StateName))
-	{
-		OutValue = BoolProperty->GetPropertyValue_InContainer(Owner);
-		return true;
-	}
-
-	return QueryActorBoolFunction(Owner, StateName, OutValue);
-}
-
-bool TryToggleActorBoolProperty(AActor* Owner, const FName PropertyName, bool& OutNewValue)
-{
-	OutNewValue = false;
-	const FBoolProperty* BoolProperty = FindActorBoolProperty(Owner, PropertyName);
-	if (!BoolProperty || !Owner)
-	{
-		return false;
-	}
-
-	const bool bCurrent = BoolProperty->GetPropertyValue_InContainer(Owner);
-	const bool bNew = !bCurrent;
-	BoolProperty->SetPropertyValue_InContainer(Owner, bNew);
-
-	// Prefer Blueprint setter if present (keeps BP graphs / accessors in sync).
-	const FName SetterName(*FString::Printf(TEXT("set_%s"), *PropertyName.ToString()));
-	if (UFunction* Setter = Owner->FindFunction(SetterName))
-	{
-		TArray<uint8> Params;
-		Params.SetNumZeroed(FMath::Max(static_cast<int32>(Setter->ParmsSize), 1));
-		for (TFieldIterator<FProperty> ParamIt(Setter); ParamIt; ++ParamIt)
-		{
-			FProperty* Param = *ParamIt;
-			if (!Param || (Param->PropertyFlags & CPF_Parm) == 0 || (Param->PropertyFlags & CPF_ReturnParm) != 0)
-			{
-				continue;
-			}
-
-			if (FBoolProperty* BoolParam = CastField<FBoolProperty>(Param))
-			{
-				BoolParam->SetPropertyValue(Params.GetData() + BoolParam->GetOffset_ForUFunction(), bNew);
-				break;
-			}
-		}
-		Owner->ProcessEvent(Setter, Params.GetData());
-	}
-
-	OutNewValue = BoolProperty->GetPropertyValue_InContainer(Owner);
-	return true;
-}
-
-bool TryInvokePickContextMenuHandler(
-	AActor* Owner,
-	const FName ComponentName,
-	const FName LocalActionId,
-	UPrimitiveComponent* TargetComponent,
-	const bool* OptionalActiveState)
-{
-	if (!Owner || !Owner->Implements<UDIVEDeviceActionHandler>())
-	{
-		return false;
-	}
-
-	const bool bActiveBefore = OptionalActiveState ? *OptionalActiveState : false;
-	return IDIVEDeviceActionHandler::Execute_HandleDeviceAction(
-		Owner,
-		ComponentName,
-		LocalActionId,
-		TargetComponent,
-		bActiveBefore);
-}
-
-bool TryQueryPickContextMenuActiveState(
-	const AActor* Owner,
-	const FName ComponentName,
-	const FName LocalActionId,
-	bool& OutActive)
-{
-	return QueryActorBoolState(
-		Owner,
-		DIVE::MakePickContextMenuActiveStateName(ComponentName, LocalActionId),
-		OutActive);
-}
-
-bool TryTogglePickContextMenuActiveState(
-	AActor* Owner,
-	const FName ComponentName,
-	const FName LocalActionId,
-	bool& OutNewValue)
-{
-	return TryToggleActorBoolProperty(
-		Owner,
-		DIVE::MakePickContextMenuActiveStateName(ComponentName, LocalActionId),
-		OutNewValue);
-}
-} // namespace
 
 UDIVEInspectableComponent::UDIVEInspectableComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UDIVEInspectableComponent::PostInitProperties()
+{
+	Super::PostInitProperties();
+	SeedDefaultBindingsIfNeeded();
+}
+
+void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
+{
+	if (!Bindings.IsEmpty())
+	{
+		return;
+	}
+
+	// Create defaults only when seeding. Cleared Bindings stay empty across reload (delta vs CDO).
+	UDIVEFocusAction* FocusAction = NewObject<UDIVEFocusAction>(this, TEXT("DefaultFocusAction"), RF_Transactional);
+	UDIVEIsolateAction* IsolateAction = NewObject<UDIVEIsolateAction>(this, TEXT("DefaultIsolateAction"), RF_Transactional);
+	UDIVESimulatePhysicsAction* SimulatePhysicsAction =
+		NewObject<UDIVESimulatePhysicsAction>(this, TEXT("DefaultSimulatePhysicsAction"), RF_Transactional);
+	UDIVEDeleteMeshAction* DeleteMeshAction =
+		NewObject<UDIVEDeleteMeshAction>(this, TEXT("DefaultDeleteMeshAction"), RF_Transactional);
+
+	if (Sections.IsEmpty())
+	{
+		FDIVEMenuSection StandardSection;
+		StandardSection.SectionId = DIVE::kSectionStandard;
+		StandardSection.SortOrder = 0;
+		Sections.Add(StandardSection);
+
+		FDIVEMenuSection AdminSection;
+		AdminSection.SectionId = DIVE::kSectionAdmin;
+		AdminSection.Header = NSLOCTEXT("DIVE", "SectionAdminHeader", "Admin");
+		AdminSection.SortOrder = 1000;
+		Sections.Add(AdminSection);
+	}
+
+	FDIVEActionBinding StandardBinding;
+	StandardBinding.BindingId = TEXT("BuiltIn.Standard");
+	StandardBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
+	StandardBinding.SectionId = DIVE::kSectionStandard;
+	StandardBinding.Actions.Add(FocusAction);
+	StandardBinding.Actions.Add(IsolateAction);
+	Bindings.Add(StandardBinding);
+
+	FDIVEActionBinding AdminBinding;
+	AdminBinding.BindingId = TEXT("BuiltIn.Admin");
+	AdminBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
+	AdminBinding.SectionId = DIVE::kSectionAdmin;
+	AdminBinding.Actions.Add(SimulatePhysicsAction);
+	AdminBinding.Actions.Add(DeleteMeshAction);
+	Bindings.Add(AdminBinding);
 }
 
 bool UDIVEInspectableComponent::RequestSession()
@@ -193,18 +84,13 @@ bool UDIVEInspectableComponent::RequestSession()
 
 bool UDIVEInspectableComponent::RequestSessionWithParams(const FDIVESessionParams& Params)
 {
-	if (!GetOwner() || !GetWorld())
+	UWorld* World = GetWorld();
+	if (!GetOwner() || !World)
 	{
 		return false;
 	}
 
-	UGameInstance* GameInstance = GetWorld()->GetGameInstance();
-	if (!GameInstance)
-	{
-		return false;
-	}
-
-	UDIVESessionSubsystem* Subsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>();
+	UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>();
 	return Subsystem ? Subsystem->TryBeginSession(GetOwner(), this, Params) : false;
 }
 
@@ -212,28 +98,50 @@ void UDIVEInspectableComponent::BuildSemanticRegistry()
 {
 	SemanticRegistry.Nodes.Reset();
 
-	TArray<UDIVEAnchorComponent*> Anchors;
-	if (GetOwner())
+	// Walk the full device hierarchy (owner + all attached child actors) so that anchors placed on
+	// child actors of modular devices are registered, matching the coverage of PickAtScreenPosition
+	// and TryResolveStartFocusTarget.
+	DIVE::ForEachDeviceActor(GetOwner(), [this](AActor* Actor)
 	{
-		GetOwner()->GetComponents<UDIVEAnchorComponent>(Anchors);
-	}
-
-	for (UDIVEAnchorComponent* Anchor : Anchors)
-	{
-		if (!Anchor)
+		if (!Actor)
 		{
-			continue;
+			return;
 		}
 
-		const FName ResolvedPartId = Anchor->GetResolvedPartId();
-		FDIVEPartNode Node;
-		Node.PartId = ResolvedPartId;
-		Node.DisplayName = Anchor->DisplayName.IsEmpty()
-			? FText::FromName(ResolvedPartId)
-			: Anchor->DisplayName;
-		Node.SceneComponent = Anchor;
-		SemanticRegistry.Nodes.Add(Node);
+		TArray<UDIVEAnchorComponent*> Anchors;
+		Actor->GetComponents<UDIVEAnchorComponent>(Anchors);
+		for (UDIVEAnchorComponent* Anchor : Anchors)
+		{
+			if (!Anchor)
+			{
+				continue;
+			}
+
+			const FName ResolvedPartId = Anchor->GetResolvedPartId();
+			FDIVEPartNode Node;
+			Node.PartId = ResolvedPartId;
+			Node.DisplayName = Anchor->DisplayName.IsEmpty()
+				? FText::FromName(ResolvedPartId)
+				: Anchor->DisplayName;
+			Node.SceneComponent = Anchor;
+			SemanticRegistry.Nodes.Add(Node);
+		}
+	});
+}
+
+TArray<FName> UDIVEInspectableComponent::GetAvailableSectionIds() const
+{
+	TArray<FName> Result = {DIVE::kSectionStandard, DIVE::kSectionAdmin};
+	TArray<FDIVEMenuSection> AllSections;
+	GatherAuthoredSections(AllSections);
+	for (const FDIVEMenuSection& Section : AllSections)
+	{
+		if (!Section.SectionId.IsNone())
+		{
+			Result.AddUnique(Section.SectionId);
+		}
 	}
+	return Result;
 }
 
 FName UDIVEInspectableComponent::ResolveSemanticPartId(const UPrimitiveComponent* Primitive) const
@@ -273,7 +181,9 @@ bool UDIVEInspectableComponent::IsPrimitivePickable(const UPrimitiveComponent* P
 		return false;
 	}
 
-	const bool bVisible = Primitive->IsVisible();
+	// A primitive hidden via SetHiddenInGame (e.g. by isolation) is logically invisible even when
+	// IsVisible() still returns true (IsVisible reflects the render-thread flag, not bHiddenInGame).
+	const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
 	const bool bPickProxy = IsPickProxyPrimitive(Primitive);
 
 	if (!bVisible && !bPickProxy)
@@ -508,7 +418,6 @@ bool UDIVEInspectableComponent::FindAnchorNode(FName PartId, FDIVEPartNode& OutN
 		return true;
 	}
 
-	// Validation / early resolve can run before BuildSemanticRegistry — scan live anchors.
 	AActor* Owner = GetOwner();
 	if (!Owner)
 	{
@@ -543,6 +452,617 @@ void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
 {
 	bSessionActive = bActive;
 	OnSessionLifecycle.Broadcast(bActive);
+}
+
+void UDIVEInspectableComponent::NotifyActionExecuted(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context)
+{
+	if (!Action)
+	{
+		return;
+	}
+
+	OnActionExecuted.Broadcast(Action, Context);
+}
+
+void UDIVEInspectableComponent::GatherAuthoredBindings(TArray<const FDIVEActionBinding*>& OutBindings) const
+{
+	OutBindings.Reset();
+	for (const FDIVEActionBinding& Binding : Bindings)
+	{
+		OutBindings.Add(&Binding);
+	}
+
+	if (ActionCatalog)
+	{
+		for (const FDIVEActionBinding& Binding : ActionCatalog->Bindings)
+		{
+			OutBindings.Add(&Binding);
+		}
+	}
+}
+
+void UDIVEInspectableComponent::GatherAuthoredSections(TArray<FDIVEMenuSection>& OutSections) const
+{
+	OutSections.Reset();
+	TSet<FName> SeenIds;
+
+	auto AddSection = [&OutSections, &SeenIds](const FDIVEMenuSection& Section)
+	{
+		if (Section.SectionId.IsNone())
+		{
+			return;
+		}
+
+		if (SeenIds.Contains(Section.SectionId))
+		{
+			for (FDIVEMenuSection& Existing : OutSections)
+			{
+				if (Existing.SectionId == Section.SectionId && Existing.Header.IsEmpty() && !Section.Header.IsEmpty())
+				{
+					Existing.Header = Section.Header;
+					break;
+				}
+			}
+			return;
+		}
+
+		SeenIds.Add(Section.SectionId);
+		OutSections.Add(Section);
+	};
+
+	for (const FDIVEMenuSection& Section : Sections)
+	{
+		AddSection(Section);
+	}
+
+	if (ActionCatalog)
+	{
+		for (const FDIVEMenuSection& Section : ActionCatalog->Sections)
+		{
+			AddSection(Section);
+		}
+	}
+}
+
+bool UDIVEInspectableComponent::MatchesComponentNameValue(
+	const UPrimitiveComponent* Primitive,
+	const FName MatchValue) const
+{
+	if (!Primitive || MatchValue.IsNone())
+	{
+		return false;
+	}
+
+	if (Primitive->GetFName() == MatchValue)
+	{
+		return true;
+	}
+
+	const FString PrimitiveToken = DIVE::NormalizeComponentToken(Primitive->GetName());
+	const FString MatchToken = DIVE::NormalizeComponentToken(MatchValue.ToString());
+	if (!PrimitiveToken.IsEmpty()
+		&& !MatchToken.IsEmpty()
+		&& PrimitiveToken.Equals(MatchToken, ESearchCase::IgnoreCase))
+	{
+		return true;
+	}
+
+	FDIVEFocusTarget Resolved;
+	if (TryResolveStartFocusTarget(MatchValue, Resolved)
+		&& Resolved.Kind == EDIVEFocusKind::Primitive
+		&& Resolved.Primitive.Get() == Primitive)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool UDIVEInspectableComponent::DoesTargetQueryMatchPick(
+	const FDIVETargetQuery& Query,
+	const FDIVEFocusTarget& PickTarget) const
+{
+	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return false;
+	}
+
+	const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
+	if (!Primitive)
+	{
+		return false;
+	}
+
+	if (Query.MatchMode == EDIVETargetMatchMode::AnyPrimitive)
+	{
+		return true;
+	}
+
+	if (Query.MatchValues.IsEmpty())
+	{
+		return false;
+	}
+
+	switch (Query.MatchMode)
+	{
+	case EDIVETargetMatchMode::ComponentTag:
+		for (const FName MatchTag : Query.MatchValues)
+		{
+			if (!MatchTag.IsNone() && Primitive->ComponentHasTag(MatchTag))
+			{
+				return true;
+			}
+		}
+		return false;
+
+	case EDIVETargetMatchMode::ComponentName:
+		for (const FName MatchValue : Query.MatchValues)
+		{
+			if (MatchesComponentNameValue(Primitive, MatchValue))
+			{
+				return true;
+			}
+		}
+		return false;
+
+	case EDIVETargetMatchMode::PartId:
+		if (PickTarget.SemanticPartId.IsNone())
+		{
+			return false;
+		}
+		for (const FName MatchValue : Query.MatchValues)
+		{
+			if (!MatchValue.IsNone() && MatchValue == PickTarget.SemanticPartId)
+			{
+				return true;
+			}
+		}
+		return false;
+
+	default:
+		return false;
+	}
+}
+
+FName UDIVEInspectableComponent::ResolveTargetKeyForQuery(
+	const FDIVETargetQuery& Query,
+	const FDIVEFocusTarget& PickTarget) const
+{
+	const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
+
+	switch (Query.MatchMode)
+	{
+	case EDIVETargetMatchMode::ComponentName:
+		if (Primitive)
+		{
+			for (const FName MatchValue : Query.MatchValues)
+			{
+				if (MatchesComponentNameValue(Primitive, MatchValue))
+				{
+					return MatchValue;
+				}
+			}
+		}
+		break;
+
+	case EDIVETargetMatchMode::PartId:
+		if (!PickTarget.SemanticPartId.IsNone())
+		{
+			return PickTarget.SemanticPartId;
+		}
+		break;
+
+	case EDIVETargetMatchMode::ComponentTag:
+	default:
+		break;
+	}
+
+	return Primitive ? Primitive->GetFName() : PickTarget.SemanticPartId;
+}
+
+void UDIVEInspectableComponent::GatherMatchingBindings(
+	const FDIVEFocusTarget& PickTarget,
+	TArray<const FDIVEActionBinding*>& OutBindings) const
+{
+	OutBindings.Reset();
+	TArray<const FDIVEActionBinding*> AllBindings;
+	GatherAuthoredBindings(AllBindings);
+
+	struct FScoredBinding
+	{
+		const FDIVEActionBinding* Binding = nullptr;
+		int32 SourceIndex = 0;
+	};
+
+	TArray<FScoredBinding> Matched;
+	for (int32 Index = 0; Index < AllBindings.Num(); ++Index)
+	{
+		const FDIVEActionBinding* Binding = AllBindings[Index];
+		if (!Binding || !DoesTargetQueryMatchPick(Binding->Targets, PickTarget))
+		{
+			continue;
+		}
+
+		FScoredBinding Scored;
+		Scored.Binding = Binding;
+		Scored.SourceIndex = Index;
+		Matched.Add(Scored);
+	}
+
+	Matched.Sort([](const FScoredBinding& A, const FScoredBinding& B)
+	{
+		if (A.Binding->Targets.Priority != B.Binding->Targets.Priority)
+		{
+			return A.Binding->Targets.Priority > B.Binding->Targets.Priority;
+		}
+		return A.SourceIndex < B.SourceIndex;
+	});
+
+	OutBindings.Reserve(Matched.Num());
+	for (const FScoredBinding& Scored : Matched)
+	{
+		OutBindings.Add(Scored.Binding);
+	}
+}
+
+TArray<UDIVEDeviceAction*> UDIVEInspectableComponent::GetActionInstances(FName BindingId) const
+{
+	TArray<UDIVEDeviceAction*> Result;
+	if (BindingId.IsNone())
+	{
+		return Result;
+	}
+
+	TArray<const FDIVEActionBinding*> AuthoredBindings;
+	GatherAuthoredBindings(AuthoredBindings);
+	for (const FDIVEActionBinding* Binding : AuthoredBindings)
+	{
+		if (!Binding || Binding->BindingId != BindingId)
+		{
+			continue;
+		}
+
+		for (UDIVEDeviceAction* Action : Binding->Actions)
+		{
+			if (Action)
+			{
+				Result.Add(Action);
+			}
+		}
+	}
+
+	return Result;
+}
+
+UDIVEDeviceAction* UDIVEInspectableComponent::FindActionInstance(
+	TSubclassOf<UDIVEDeviceAction> ActionClass,
+	FName BindingId) const
+{
+	if (!ActionClass)
+	{
+		return nullptr;
+	}
+
+	TArray<const FDIVEActionBinding*> AuthoredBindings;
+	GatherAuthoredBindings(AuthoredBindings);
+	for (const FDIVEActionBinding* Binding : AuthoredBindings)
+	{
+		if (!Binding)
+		{
+			continue;
+		}
+
+		if (!BindingId.IsNone() && Binding->BindingId != BindingId)
+		{
+			continue;
+		}
+
+		for (UDIVEDeviceAction* Action : Binding->Actions)
+		{
+			if (Action && Action->IsA(ActionClass))
+			{
+				return Action;
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+bool UDIVEInspectableComponent::TryResolvePrimaryAction(
+	const FDIVEFocusTarget& PickTarget,
+	UDIVEDeviceAction*& OutAction,
+	FName& OutTargetKey) const
+{
+	OutAction = nullptr;
+	OutTargetKey = NAME_None;
+
+	TArray<const FDIVEActionBinding*> Matched;
+	GatherMatchingBindings(PickTarget, Matched);
+	for (const FDIVEActionBinding* Binding : Matched)
+	{
+		if (!Binding)
+		{
+			continue;
+		}
+
+		if (UDIVEDeviceAction* Primary = Binding->GetPrimaryAction())
+		{
+			OutAction = Primary;
+			OutTargetKey = ResolveTargetKeyForQuery(Binding->Targets, PickTarget);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
+	const FDIVEFocusTarget& PickTarget,
+	FName TargetKey,
+	const FVector2D& ScreenPosition,
+	const FHitResult& PickHit) const
+{
+	FDIVEActionContext Context;
+	Context.DeviceHost = GetOwner();
+	Context.SourceComponent = const_cast<UDIVEInspectableComponent*>(this);
+	Context.Target = PickTarget.Primitive.Get();
+	Context.TargetKey = TargetKey.IsNone()
+		? (Context.Target ? Context.Target->GetFName() : PickTarget.SemanticPartId)
+		: TargetKey;
+	Context.PickTarget = PickTarget;
+	Context.ScreenPosition = ScreenPosition;
+	Context.PickHit = PickHit;
+	return Context;
+}
+
+void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
+	const FDIVEFocusTarget& PickTarget,
+	TArray<FDIVEContextMenuEntry>& InOutEntries) const
+{
+	TArray<const FDIVEActionBinding*> Matched;
+	GatherMatchingBindings(PickTarget, Matched);
+	if (Matched.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<FDIVEMenuSection> AuthoredSections;
+	GatherAuthoredSections(AuthoredSections);
+	AuthoredSections.Sort([](const FDIVEMenuSection& A, const FDIVEMenuSection& B)
+	{
+		if (A.SortOrder != B.SortOrder)
+		{
+			return A.SortOrder < B.SortOrder;
+		}
+		return A.SectionId.LexicalLess(B.SectionId);
+	});
+
+	struct FPendingRow
+	{
+		UDIVEDeviceAction* Action = nullptr;
+		FText DisplayName;
+		bool bEnabled = true;
+		bool bChecked = false;
+		FName TargetKey = NAME_None;
+		int32 BindingPriority = 0;
+		int32 BindingOrder = 0;
+		int32 ActionOrder = 0;
+	};
+
+	TMap<FName, TArray<FPendingRow>> RowsBySection;
+	TSet<FName> UsedSections;
+
+	for (int32 BindingOrder = 0; BindingOrder < Matched.Num(); ++BindingOrder)
+	{
+		const FDIVEActionBinding* Binding = Matched[BindingOrder];
+		if (!Binding)
+		{
+			continue;
+		}
+
+		const FName SectionId = Binding->SectionId.IsNone() ? DIVE::kSectionStandard : Binding->SectionId;
+		UsedSections.Add(SectionId);
+		const FName TargetKey = ResolveTargetKeyForQuery(Binding->Targets, PickTarget);
+		const FDIVEActionContext Context = MakeActionContext(PickTarget, TargetKey);
+		UWorld* ContextWorld = GetOwner() ? GetOwner()->GetWorld() : nullptr;
+
+		for (int32 ActionOrder = 0; ActionOrder < Binding->Actions.Num(); ++ActionOrder)
+		{
+			UDIVEDeviceAction* Action = Binding->Actions[ActionOrder];
+			if (!Action)
+			{
+				continue;
+			}
+
+			FDIVEActionWorldScope WorldScope(Action, ContextWorld);
+			const FDIVEActionDisplayState Display = Action->GetDisplayState(Context);
+			if (!Display.bVisible)
+			{
+				continue;
+			}
+
+			FPendingRow Row;
+			Row.Action = Action;
+			Row.DisplayName = Display.DisplayName;
+			Row.bEnabled = Display.bEnabled;
+			Row.bChecked = Display.bChecked;
+			Row.TargetKey = TargetKey;
+			Row.BindingPriority = Binding->Targets.Priority;
+			Row.BindingOrder = BindingOrder;
+			Row.ActionOrder = ActionOrder;
+			RowsBySection.FindOrAdd(SectionId).Add(Row);
+		}
+	}
+
+	auto AppendSectionRows = [&](FName SectionId)
+	{
+		TArray<FPendingRow>* Rows = RowsBySection.Find(SectionId);
+		if (!Rows || Rows->IsEmpty())
+		{
+			return;
+		}
+
+		Rows->Sort([](const FPendingRow& A, const FPendingRow& B)
+		{
+			if (A.BindingPriority != B.BindingPriority)
+			{
+				return A.BindingPriority > B.BindingPriority;
+			}
+			if (A.BindingOrder != B.BindingOrder)
+			{
+				return A.BindingOrder < B.BindingOrder;
+			}
+			return A.ActionOrder < B.ActionOrder;
+		});
+
+		TSet<FString> SeenLabels;
+		for (const FPendingRow& Row : *Rows)
+		{
+			const FString LabelKey = Row.DisplayName.ToString();
+			if (SeenLabels.Contains(LabelKey))
+			{
+				UE_LOG(LogDIVE, Warning,
+					TEXT("Duplicate context-menu DisplayName '%s' in section '%s' on '%s'."),
+					*LabelKey,
+					*SectionId.ToString(),
+					*GetNameSafe(GetOwner()));
+			}
+			else
+			{
+				SeenLabels.Add(LabelKey);
+			}
+
+			FDIVEContextMenuEntry Entry;
+			Entry.Action = Row.Action;
+			Entry.DisplayName = Row.DisplayName;
+			Entry.bEnabled = Row.bEnabled;
+			Entry.bChecked = Row.bChecked;
+			Entry.TargetKey = Row.TargetKey;
+			Entry.bIsSeparator = false;
+			InOutEntries.Add(Entry);
+		}
+
+		RowsBySection.Remove(SectionId);
+	};
+
+	TArray<FName> SectionOrder;
+	TMap<FName, FText> HeaderBySection;
+	for (const FDIVEMenuSection& Section : AuthoredSections)
+	{
+		SectionOrder.Add(Section.SectionId);
+		if (!Section.Header.IsEmpty())
+		{
+			HeaderBySection.Add(Section.SectionId, Section.Header);
+		}
+	}
+	for (const FName& Used : UsedSections)
+	{
+		SectionOrder.AddUnique(Used);
+	}
+
+	for (const FName SectionId : SectionOrder)
+	{
+		if (!RowsBySection.Contains(SectionId) || RowsBySection[SectionId].IsEmpty())
+		{
+			continue;
+		}
+
+		const FText* Header = HeaderBySection.Find(SectionId);
+		const bool bHasHeader = Header && !Header->IsEmpty();
+		const bool bNeedDividerBefore = !InOutEntries.IsEmpty() && !InOutEntries.Last().bIsSeparator;
+		if (bNeedDividerBefore || (InOutEntries.IsEmpty() && bHasHeader))
+		{
+			FDIVEContextMenuEntry Separator;
+			Separator.bIsSeparator = true;
+			if (bHasHeader)
+			{
+				Separator.DisplayName = *Header;
+			}
+			InOutEntries.Add(Separator);
+		}
+
+		AppendSectionRows(SectionId);
+	}
+}
+
+bool UDIVEInspectableComponent::FindPickHoverOverlaySoftMaterial(
+	const FDIVEFocusTarget& PickTarget,
+	TSoftObjectPtr<UMaterialInterface>& OutSoftMaterial) const
+{
+	OutSoftMaterial.Reset();
+
+	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return false;
+	}
+
+	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
+	{
+		if (const TSoftObjectPtr<UMaterialInterface>* Found = PickHoverOverlayByComponent.Find(Primitive->GetFName()))
+		{
+			OutSoftMaterial = *Found;
+			return true;
+		}
+	}
+
+	if (!PickTarget.SemanticPartId.IsNone())
+	{
+		if (const TSoftObjectPtr<UMaterialInterface>* Found = PickHoverOverlayByComponent.Find(PickTarget.SemanticPartId))
+		{
+			OutSoftMaterial = *Found;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+namespace
+{
+UMaterialInterface* ResolveSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& SoftMaterial)
+{
+	if (!SoftMaterial.ToSoftObjectPath().IsValid())
+	{
+		return nullptr;
+	}
+
+	if (UMaterialInterface* Loaded = SoftMaterial.Get())
+	{
+		return Loaded;
+	}
+
+	return SoftMaterial.LoadSynchronous();
+}
+} // namespace
+
+UMaterialInterface* UDIVEInspectableComponent::ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const
+{
+	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
+	{
+		return nullptr;
+	}
+
+	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
+	{
+		if (!IsPrimitiveInteractive(Primitive))
+		{
+			return nullptr;
+		}
+	}
+
+	TSoftObjectPtr<UMaterialInterface> SoftMaterial;
+	if (FindPickHoverOverlaySoftMaterial(PickTarget, SoftMaterial) && SoftMaterial.ToSoftObjectPath().IsValid())
+	{
+		if (UMaterialInterface* Material = ResolveSoftMaterial(SoftMaterial))
+		{
+			return Material;
+		}
+	}
+
+	return ResolveSoftMaterial(DefaultPickHoverOverlayMaterial);
 }
 
 #if WITH_EDITOR
@@ -641,101 +1161,64 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		}
 	}
 
-	if (!PickContextMenuByComponent.IsEmpty() && !Owner->Implements<UDIVEDeviceActionHandler>())
+	// Sections + bindings: use the shared validator for consistent contract across Catalog/Inspectable/Scan.
+	TArray<FDIVEMenuSection> AllSections;
+	GatherAuthoredSections(AllSections);
+	TSet<FName> KnownSectionIds;
+	if (!DIVEActionBindingValidation::ValidateSections(AllSections, KnownSectionIds, Context))
 	{
-		Context.AddWarning(FText::FromString(
-			TEXT("PickContextMenuByComponent is non-empty but the owner does not implement IDIVEDeviceActionHandler.")));
+		Result = EDataValidationResult::Invalid;
 	}
 
-	for (const TPair<FName, FDIVEPickContextMenuActionList>& ComponentEntry : PickContextMenuByComponent)
-	{
-		const FName ComponentName = ComponentEntry.Key;
-		const TArray<FDIVEPickContextMenuAction>& Actions = ComponentEntry.Value.Actions;
+	// Collect device primitives once outside the per-binding loop (avoid quadratic work).
+	TArray<UPrimitiveComponent*> DevicePrimitives;
+	DIVE::CollectDevicePrimitives(Owner, DevicePrimitives);
 
-		if (ComponentName.IsNone())
+	TArray<const FDIVEActionBinding*> AllBindings;
+	GatherAuthoredBindings(AllBindings);
+	if (!DIVEActionBindingValidation::ValidateBindings(AllBindings, KnownSectionIds, Context))
+	{
+		Result = EDataValidationResult::Invalid;
+	}
+
+	// Device-specific: verify that ComponentTag MatchValues actually match something on this actor.
+	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
+	{
+		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
+		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::ComponentTag)
 		{
-			Context.AddWarning(FText::FromString(
-				TEXT("PickContextMenuByComponent has an entry with an empty component name key and will never match a pick.")));
 			continue;
 		}
 
-		if (PickInteractionExclusions.Contains(ComponentName))
-		{
-			Context.AddWarning(FText::FromString(FString::Printf(
-				TEXT("PickContextMenuByComponent key '%s' is listed in PickInteractionExclusions and will never receive pick interaction."),
-				*ComponentName.ToString())));
-		}
+		const FString BindingLabel = Binding->BindingId.IsNone()
+			? FString::FromInt(BindingIndex)
+			: Binding->BindingId.ToString();
 
-		FDIVEFocusTarget ResolvedTarget;
-		if (!TryResolveStartFocusTarget(ComponentName, ResolvedTarget))
+		bool bAnyTagged = false;
+		for (const FName MatchTag : Binding->Targets.MatchValues)
 		{
-			Context.AddWarning(FText::FromString(FString::Printf(
-				TEXT("PickContextMenuByComponent key '%s' does not match any anchor PartId or pickable mesh component on this actor."),
-				*ComponentName.ToString())));
-		}
-
-		if (Actions.IsEmpty())
-		{
-			Context.AddWarning(FText::FromString(FString::Printf(
-				TEXT("PickContextMenuByComponent '%s' has no actions."),
-				*ComponentName.ToString())));
-		}
-
-		if (!ComponentEntry.Value.PrimaryActionId.IsNone())
-		{
-			bool bFoundPrimary = false;
-			for (const FDIVEPickContextMenuAction& Action : Actions)
+			if (MatchTag.IsNone())
 			{
-				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
+				continue;
+			}
+			for (const UPrimitiveComponent* Primitive : DevicePrimitives)
+			{
+				if (Primitive && Primitive->ComponentHasTag(MatchTag))
 				{
-					bFoundPrimary = true;
-					if (!Action.bEnabled)
-					{
-						Context.AddWarning(FText::FromString(FString::Printf(
-							TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' points to a disabled action."),
-							*ComponentName.ToString(),
-							*ComponentEntry.Value.PrimaryActionId.ToString())));
-					}
+					bAnyTagged = true;
 					break;
 				}
 			}
-
-			if (!bFoundPrimary)
+			if (bAnyTagged)
 			{
-				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any resolved ActionId in Actions."),
-					*ComponentName.ToString(),
-					*ComponentEntry.Value.PrimaryActionId.ToString())));
-				Result = EDataValidationResult::Invalid;
+				break;
 			}
 		}
-
-		for (const FDIVEPickContextMenuAction& Action : Actions)
+		if (!bAnyTagged && !Binding->Targets.MatchValues.IsEmpty())
 		{
-			if (Action.ActionId.IsNone())
-			{
-				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with empty ActionId."),
-					*ComponentName.ToString())));
-				Result = EDataValidationResult::Invalid;
-				continue;
-			}
-
-			if (DIVE::IsReservedContextMenuActionId(Action.ActionId))
-			{
-				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent ActionId '%s' is reserved by DIVE built-in menu rows."),
-					*Action.ActionId.ToString())));
-				Result = EDataValidationResult::Invalid;
-			}
-
-			if (Action.GetResolvedDisplayName().IsEmpty())
-			{
-				Context.AddWarning(FText::FromString(FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' action '%s' has an empty resolved DisplayName."),
-					*ComponentName.ToString(),
-					*Action.ActionId.ToString())));
-			}
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("Binding '%s' ComponentTag MatchValues match no device component tags."),
+				*BindingLabel)));
 		}
 	}
 
@@ -753,20 +1236,6 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		{
 			Context.AddWarning(FText::FromString(FString::Printf(
 				TEXT("PickInteractionExclusions key '%s' does not match any anchor PartId or pickable mesh component on this actor."),
-				*ExcludedKey.ToString())));
-		}
-
-		if (PickContextMenuByComponent.Contains(ExcludedKey))
-		{
-			Context.AddWarning(FText::FromString(FString::Printf(
-				TEXT("PickInteractionExclusions key '%s' also has a PickContextMenuByComponent entry; pick interaction will never reach it."),
-				*ExcludedKey.ToString())));
-		}
-
-		if (PickHoverOverlayByComponent.Contains(ExcludedKey))
-		{
-			Context.AddWarning(FText::FromString(FString::Printf(
-				TEXT("PickInteractionExclusions key '%s' also has a PickHoverOverlayByComponent entry; hover will never apply."),
 				*ExcludedKey.ToString())));
 		}
 	}
@@ -790,428 +1259,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		}
 	}
 
-	TSet<FName> QualifiedActionIds;
-	for (const TPair<FName, FDIVEPickContextMenuActionList>& ComponentEntry : PickContextMenuByComponent)
-	{
-		const FName ComponentName = ComponentEntry.Key;
-		if (ComponentName.IsNone())
-		{
-			continue;
-		}
-
-		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
-		{
-			if (Action.ActionId.IsNone())
-			{
-				continue;
-			}
-
-			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
-			if (QualifiedActionIds.Contains(QualifiedActionId))
-			{
-				Context.AddError(FText::FromString(FString::Printf(
-					TEXT("Duplicate qualified ActionId '%s' in PickContextMenuByComponent."),
-					*QualifiedActionId.ToString())));
-				Result = EDataValidationResult::Invalid;
-			}
-			else
-			{
-				QualifiedActionIds.Add(QualifiedActionId);
-			}
-		}
-	}
-
 	return Result;
 }
 
 #endif // WITH_EDITOR
-
-bool UDIVEInspectableComponent::NotifyPickContextMenuAction(
-	const FName QualifiedActionId,
-	const FDIVEFocusTarget& PickTarget)
-{
-	FName ComponentName = NAME_None;
-	FName LocalActionId = NAME_None;
-	if (!ResolvePickContextMenuAction(QualifiedActionId, PickTarget, ComponentName, LocalActionId))
-	{
-		return false;
-	}
-
-	AActor* Owner = GetOwner();
-	if (!Owner)
-	{
-		return false;
-	}
-
-	bool bActiveBefore = false;
-	const bool bHadActiveBefore = TryQueryPickContextMenuActiveState(
-		Owner,
-		ComponentName,
-		LocalActionId,
-		bActiveBefore);
-
-	const bool bHandlerInvoked = TryInvokePickContextMenuHandler(
-		Owner,
-		ComponentName,
-		LocalActionId,
-		PickTarget.Primitive.Get(),
-		bHadActiveBefore ? &bActiveBefore : nullptr);
-
-	bool bStateToggled = false;
-	FName CatalogComponentName = NAME_None;
-	const FDIVEPickContextMenuActionList* Catalog = nullptr;
-	if (FindPickContextMenuCatalog(PickTarget, CatalogComponentName, Catalog) && Catalog)
-	{
-		for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
-		{
-			if (Action.ActionId != LocalActionId || !Action.bToggleActiveSuffix)
-			{
-				continue;
-			}
-
-			bool bActiveAfter = false;
-			bStateToggled = TryTogglePickContextMenuActiveState(
-				Owner,
-				ComponentName,
-				LocalActionId,
-				bActiveAfter);
-			(void)bActiveAfter;
-			break;
-		}
-	}
-
-	return bHandlerInvoked || bStateToggled;
-}
-
-bool UDIVEInspectableComponent::FindPickContextMenuCatalog(
-	const FDIVEFocusTarget& PickTarget,
-	FName& OutComponentName,
-	const FDIVEPickContextMenuActionList*& OutCatalog) const
-{
-	OutComponentName = NAME_None;
-	OutCatalog = nullptr;
-
-	if (PickTarget.Kind != EDIVEFocusKind::Primitive || PickContextMenuByComponent.IsEmpty())
-	{
-		return false;
-	}
-
-	auto TryKey = [this, &OutComponentName, &OutCatalog](const FName Key) -> bool
-	{
-		if (Key.IsNone())
-		{
-			return false;
-		}
-
-		if (const FDIVEPickContextMenuActionList* Found = PickContextMenuByComponent.Find(Key))
-		{
-			OutComponentName = Key;
-			OutCatalog = Found;
-			return true;
-		}
-
-		return false;
-	};
-
-	const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
-	if (Primitive)
-	{
-		// 1) Exact Components-panel / instance FName.
-		if (TryKey(Primitive->GetFName()))
-		{
-			return true;
-		}
-
-		// 2) Normalized name (Switch2_1 / Switch2_GEN_VARIABLE → Switch2).
-		{
-			const FString Normalized = DIVE::NormalizeComponentToken(Primitive->GetName());
-			if (!Normalized.IsEmpty() && TryKey(FName(*Normalized)))
-			{
-				return true;
-			}
-		}
-
-		// 3) Compare normalized tokens both ways (authored key may also carry a suffix).
-		{
-			const FString PrimitiveToken = DIVE::NormalizeComponentToken(Primitive->GetName());
-			for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : PickContextMenuByComponent)
-			{
-				if (Entry.Key.IsNone())
-				{
-					continue;
-				}
-
-				if (DIVE::NormalizeComponentToken(Entry.Key.ToString()).Equals(PrimitiveToken, ESearchCase::IgnoreCase))
-				{
-					return TryKey(Entry.Key);
-				}
-			}
-		}
-
-		// 4) Key resolves to this same pick primitive.
-		for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : PickContextMenuByComponent)
-		{
-			if (Entry.Key.IsNone())
-			{
-				continue;
-			}
-
-			FDIVEFocusTarget Resolved;
-			if (!TryResolveStartFocusTarget(Entry.Key, Resolved)
-				|| Resolved.Kind != EDIVEFocusKind::Primitive
-				|| Resolved.Primitive.Get() != Primitive)
-			{
-				continue;
-			}
-
-			return TryKey(Entry.Key);
-		}
-	}
-
-	// 5) Catalog key authored as anchor PartId — only when it does not resolve to a *different* mesh.
-	if (!PickTarget.SemanticPartId.IsNone())
-	{
-		FDIVEFocusTarget ResolvedPart;
-		const bool bResolved = TryResolveStartFocusTarget(PickTarget.SemanticPartId, ResolvedPart);
-		if (bResolved && ResolvedPart.Kind == EDIVEFocusKind::Anchor)
-		{
-			if (TryKey(PickTarget.SemanticPartId))
-			{
-				return true;
-			}
-		}
-		else if (bResolved
-			&& ResolvedPart.Kind == EDIVEFocusKind::Primitive
-			&& Primitive
-			&& ResolvedPart.Primitive.Get() == Primitive)
-		{
-			if (TryKey(PickTarget.SemanticPartId))
-			{
-				return true;
-			}
-		}
-		else if (!bResolved)
-		{
-			// PartId-only key with no live resolve still allowed (same as before for empty registry timing).
-			if (TryKey(PickTarget.SemanticPartId))
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-bool UDIVEInspectableComponent::ResolvePickContextMenuAction(
-	const FName QualifiedActionId,
-	const FDIVEFocusTarget& PickTarget,
-	FName& OutComponentName,
-	FName& OutLocalActionId) const
-{
-	OutComponentName = NAME_None;
-	OutLocalActionId = NAME_None;
-
-	if (QualifiedActionId.IsNone())
-	{
-		return false;
-	}
-
-	FName MatchedComponentName = NAME_None;
-	const FDIVEPickContextMenuActionList* Catalog = nullptr;
-	if (!FindPickContextMenuCatalog(PickTarget, MatchedComponentName, Catalog) || !Catalog)
-	{
-		return false;
-	}
-
-	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
-	{
-		if (Action.ActionId.IsNone())
-		{
-			continue;
-		}
-
-		if (DIVE::MakeQualifiedPickContextMenuActionId(MatchedComponentName, Action.ActionId) == QualifiedActionId)
-		{
-			OutComponentName = MatchedComponentName;
-			OutLocalActionId = Action.ActionId;
-			return true;
-		}
-	}
-
-	return false;
-}
-
-void UDIVEInspectableComponent::AppendConfiguredPickContextMenuEntries(
-	const FDIVEFocusTarget& PickTarget,
-	TArray<FDIVEContextMenuEntry>& InOutEntries) const
-{
-	FName ComponentName = NAME_None;
-	const FDIVEPickContextMenuActionList* Catalog = nullptr;
-	if (!FindPickContextMenuCatalog(PickTarget, ComponentName, Catalog) || !Catalog || Catalog->Actions.IsEmpty())
-	{
-		return;
-	}
-
-	AActor* Owner = GetOwner();
-	InOutEntries.Reserve(InOutEntries.Num() + Catalog->Actions.Num());
-
-	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
-	{
-		if (Action.ActionId.IsNone())
-		{
-			continue;
-		}
-
-		FDIVEContextMenuEntry Entry;
-		Entry.ActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
-		Entry.DisplayName = Action.GetResolvedDisplayName();
-		if (Action.bToggleActiveSuffix && Owner)
-		{
-			bool bActive = false;
-			if (TryQueryPickContextMenuActiveState(Owner, ComponentName, Action.ActionId, bActive))
-			{
-				Entry.DisplayName = DIVEContextMenu::FormatActiveLabelSuffix(Entry.DisplayName, bActive);
-			}
-		}
-		Entry.bEnabled = Action.bEnabled;
-		InOutEntries.Add(Entry);
-	}
-}
-
-bool UDIVEInspectableComponent::TryResolvePrimaryPickAction(
-	const FDIVEFocusTarget& PickTarget,
-	FName& OutQualifiedActionId) const
-{
-	OutQualifiedActionId = NAME_None;
-
-	FName ComponentName = NAME_None;
-	const FDIVEPickContextMenuActionList* Catalog = nullptr;
-	if (!FindPickContextMenuCatalog(PickTarget, ComponentName, Catalog) || !Catalog || Catalog->PrimaryActionId.IsNone())
-	{
-		return false;
-	}
-
-	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
-	{
-		if (Action.ActionId == Catalog->PrimaryActionId && Action.bEnabled)
-		{
-			OutQualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool UDIVEInspectableComponent::TryGetResolvedActionRow(
-	const FName CatalogKey,
-	const FName ActionId,
-	FDIVEResolvedPickAction& OutResolved) const
-{
-	OutResolved = FDIVEResolvedPickAction();
-	if (CatalogKey.IsNone() || ActionId.IsNone())
-	{
-		return false;
-	}
-
-	const FDIVEPickContextMenuActionList* Catalog = PickContextMenuByComponent.Find(CatalogKey);
-	if (!Catalog)
-	{
-		return false;
-	}
-
-	for (const FDIVEPickContextMenuAction& Action : Catalog->Actions)
-	{
-		if (Action.ActionId != ActionId)
-		{
-			continue;
-		}
-
-		OutResolved.CatalogKey = CatalogKey;
-		OutResolved.ActionId = ActionId;
-		OutResolved.DisplayName = Action.GetResolvedDisplayName();
-		OutResolved.bEnabled = Action.bEnabled;
-		OutResolved.bToggleActiveSuffix = Action.bToggleActiveSuffix;
-		return true;
-	}
-
-	return false;
-}
-
-bool UDIVEInspectableComponent::FindPickHoverOverlaySoftMaterial(
-	const FDIVEFocusTarget& PickTarget,
-	TSoftObjectPtr<UMaterialInterface>& OutSoftMaterial) const
-{
-	OutSoftMaterial.Reset();
-
-	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
-	{
-		return false;
-	}
-
-	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
-	{
-		if (const TSoftObjectPtr<UMaterialInterface>* Found = PickHoverOverlayByComponent.Find(Primitive->GetFName()))
-		{
-			OutSoftMaterial = *Found;
-			return true;
-		}
-	}
-
-	if (!PickTarget.SemanticPartId.IsNone())
-	{
-		if (const TSoftObjectPtr<UMaterialInterface>* Found = PickHoverOverlayByComponent.Find(PickTarget.SemanticPartId))
-		{
-			OutSoftMaterial = *Found;
-			return true;
-		}
-	}
-
-	return false;
-}
-
-namespace
-{
-UMaterialInterface* ResolveSoftMaterial(const TSoftObjectPtr<UMaterialInterface>& SoftMaterial)
-{
-	if (!SoftMaterial.ToSoftObjectPath().IsValid())
-	{
-		return nullptr;
-	}
-
-	if (UMaterialInterface* Loaded = SoftMaterial.Get())
-	{
-		return Loaded;
-	}
-
-	return SoftMaterial.LoadSynchronous();
-}
-} // namespace
-
-UMaterialInterface* UDIVEInspectableComponent::ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const
-{
-	if (PickTarget.Kind != EDIVEFocusKind::Primitive)
-	{
-		return nullptr;
-	}
-
-	if (const UPrimitiveComponent* Primitive = PickTarget.Primitive.Get())
-	{
-		if (!IsPrimitiveInteractive(Primitive))
-		{
-			return nullptr;
-		}
-	}
-
-	TSoftObjectPtr<UMaterialInterface> SoftMaterial;
-	if (FindPickHoverOverlaySoftMaterial(PickTarget, SoftMaterial) && SoftMaterial.ToSoftObjectPath().IsValid())
-	{
-		if (UMaterialInterface* Material = ResolveSoftMaterial(SoftMaterial))
-		{
-			return Material;
-		}
-	}
-
-	return ResolveSoftMaterial(DefaultPickHoverOverlayMaterial);
-}

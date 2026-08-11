@@ -1,9 +1,9 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.7-dev",
+	"VersionName": "0.8-dev",
 	"FriendlyName": "DIVE - Device Interactive View Explorer",
-	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, authored viewpoints, in-session context menu, and physical proxy controls. DIVERuntime is self-contained (no ACTS or MESS). Physical-mode GRIP grab lives in the sibling plugin DIVEGRIPBridge (enable separately).",
+	"Description": "Modal detailed inspection and maintenance sessions for complex devices. Orbit camera, authored viewpoints, object-based context menu actions (UDIVEDeviceAction), and physical proxy controls. DIVERuntime is self-contained (no ACTS or MESS). Physical-mode GRIP grab lives in the sibling plugin DIVEGRIPBridge (enable separately).",
 	"Category": "Gameplay",
 	"CreatedBy": "",
 	"CreatedByURL": "",

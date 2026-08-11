@@ -1,7 +1,7 @@
-﻿# DIVE and physical device controls
+# DIVE and physical device controls
 
 > **Audience:** device authors, game integration (ATSEP), VR planning.  
-> **Status:** architecture contract (v0.7).  
+> **Status:** architecture contract (v0.8).  
 > **Related:** `ARCHITECTURE.md`, `QUICKSTART.md`, GRIP `Docs/ARCHITECTURE.md`, `../../../Docs/Plugin_Architecture_Principles.md`.
 
 ---
@@ -89,14 +89,14 @@ IDIVEProxyDrive (DIVECore) — backend for Physical mode only
 | Ray pick from DIVE camera | GRIP hand physics |
 | `IDIVEProxyDrive` hook (routing in session subsystem) | Implementations on devices (game module) |
 | `Handle*` input API for Enhanced Input | MESS / electrical solver |
-| Context menu + `PickContextMenuByComponent` | Defining per-mesh menu rows (not physical knobs) |
+| Context menu + Action Catalog / Bindings | Defining menu operations and which parts get them (not physical knobs) |
 
 ### Direct manipulation vs physical controls
 
 | Interaction | Mechanism |
 |-------------|-----------|
 | Door, slider, knob, switch | **Physical** mode → proxy drive or GRIP (same device state) |
-| Read label, use button, demount module | **Context menu** on pick → catalog **`ActionId`** + **`IDIVEDeviceActionHandler`** |
+| Read label, use button, demount module | **Context menu** on pick → **Action Catalog / Bindings** + `UDIVEDeviceAction` |
 | Cable, grab | GRIP + MESS in host project |
 
 ---
@@ -127,17 +127,17 @@ Available regardless of `EDIVESessionInteractionMode`:
 
 ```text
 EDIVESessionInteractionMode  (DIVECore)
-  Default   — inspect: primary action → catalog Primary Action Id or anchor focus; hover overlay; explicit focus via HandleFocusUnderCursor / context menu
+  Default   — inspect: primary action → binding PrimaryActionIndex; hover overlay; explicit focus via HandleFocusUnderCursor / context menu
   Physical  — primary action → continuous DOF (door, slider, knob)
-  Logical   — deferred (v1: use registry hit-type or context menu)
+  Logical   — planned; not yet in the enum (v1 roadmap)
 ```
 
 Mode is **not** tied to a single mouse button. It is **policy** for routing **multiple** semantic actions, for example:
 
 | Policy area | Example behaviour per mode |
 |-------------|----------------------------|
-| `HandlePrimaryAction*` | Physical → grab/drive; Logical → click; Default → catalog action / anchor focus / hover |
-| Context menu contents | Built-in Focus/Isolate + **`PickContextMenuByComponent`** catalog |
+| `HandlePrimaryAction*` | Physical → grab/drive; Default → catalog action / hover |
+| Context menu contents | Component Bindings + Action Catalog |
 | Hit highlight / filter | Physical may prefer grabbable primitives |
 | HUD / cursor | Show active mode label |
 
@@ -153,10 +153,11 @@ Switch mode via `SetInteractionMode` from ATSEP (`IA_DIVE_SetMode_*` or cycle ac
 Flow:
 
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
-2. **Built-in entries** (plugin): **Focus**, **Isolate**; administrator section: **Enable/Disable Physics**, **Delete Mesh** (picked primitive only).
-3. **Device extensions** (host): **`PickContextMenuByComponent`** on inspectable (component name → short `ActionId` per row).
-4. Custom row click → **`IDIVEDeviceActionHandler::HandleDeviceAction`** (catalog row **`ActionId`** is the source of truth). See **`QUICKSTART.md`** §1.
-5. Optional toggle: row `bToggleActiveSuffix` + `Is_{Key}_{ActionId}` — handler runs on current value, then DIVE flips `Is_*`.
+2. **Default entries**: component **Bindings** (Focus, Isolate; Admin unless removed / Shipping).
+3. **Device extensions**: **Action Catalog** (and/or extra Bindings) — `UDIVEDeviceAction` instances.
+4. Custom row click → **`UDIVEDeviceAction::Execute`** / continuous **`BeginInteraction`**. See **`QUICKSTART.md`** §1.
+5. Display state (enabled / checked / visible / label) comes from **`GetDisplayState`** on the action — no `Is_*` reflection.
+6. Section **Header** (optional) is drawn above the separator between menu sections.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**.
 
@@ -166,9 +167,9 @@ Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_P
 
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
-| **Default** | `Primary Action Id` handler when configured, else anchor focus; hover overlay on pickable mesh |
-| **Physical** | Begin/update/end drive on hit control (registry, `IDIVEProxyDrive`, or virtual GRIP via ATSEP) |
-| **Logical** | Single fire on press (button mesh) |
+| **Default** | Binding `PrimaryActionIndex` when configured; hover overlay on pickable mesh |
+| **Physical** | Begin/update/end drive on hit control (`IDIVEProxyDrive` via `InternalProxyDriveAction`, or pawn bridge via ATSEP) |
+| **Logical** | Planned (v1 roadmap); not yet in the enum |
 
 Drag delta while held is driven by the same action lifecycle + tick/Triggered axis if needed — still **semantic**, not «mouse moved».
 
@@ -192,16 +193,16 @@ Drag delta while held is driven by the same action lifecycle + tick/Triggered ax
 
 ---
 
-## 5. Implementation status (v0.7)
+## 5. Implementation status (v0.8)
 
-v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **operations** stack (F-key, OperationIds, Operations UI).
+v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **operations** stack (F-key, OperationIds, Operations UI). v0.8 replaced ActionSets/Roles/`IDIVEDeviceActionHandler` with object actions.
 
 | Current behaviour | Notes |
 |-------------------|-------|
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Default / Physical |
-| `HandlePrimaryAction*` | Default → catalog `Primary Action Id` or anchor focus; hover overlay; Physical → proxy drive |
-| Context menu + widget | Focus, Isolate on primitive pick; anchor → primary action focus in Default when no `Primary Action Id` |
-| `PickContextMenuByComponent` + `IDIVEDeviceActionHandler` | Catalog on inspectable (`ActionId` per row); `Primary Action Id`; interface on device |
+| `HandlePrimaryAction*` | Default → binding `PrimaryActionIndex` (when set); hover overlay; Physical → proxy drive |
+| Context menu + widget | Focus, Isolate (Bindings); Admin unless removed (hidden in Shipping); custom from Catalog |
+| Action Catalog / Bindings + `UDIVEDeviceAction` | Object actions; continuous via shared interaction slot |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
 | `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices |
 | Anchor | Viewpoint + PartId only |
@@ -212,7 +213,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 |------|--------|
 | `IA_DIVE_*` Content + `IMC_DIVE` | Host Content |
 | Registry / proxy drive on prefabs | Host / devices |
-| Context menu rows per pick | `PickContextMenuByComponent` (`ActionId`) + `IDIVEDeviceActionHandler` |
+| Context menu rows per pick | Action Catalog / Bindings + `UDIVEDeviceAction` |
 | GRIP / MESS for cables | Host project |
 
 ---
@@ -343,12 +344,12 @@ Exact VR policy (DIVE session in HMD or not) is a **game** decision; DIVE expose
 
 | Item | Owner |
 |------|--------|
-| Interaction mode + context menu API | DIVE plugin (v0.5) |
-| `HandlePrimaryAction*` rename; mode-gated proxy routing | DIVE plugin |
-| `IA_DIVE_*` + IMC for DIVE session | ATSEP Content |
-| Control registry + drive backends | ATSEP / devices |
-| Optional virtual GRIP hand | Sibling plugin `DIVEGRIPBridge` (`UDIVEGRIPBridgeComponent` on pawn) |
+| `IA_DIVE_*` + IMC for DIVE session | Host Content |
+| Control registry + drive backends on device prefabs | Host / devices |
+| Optional virtual GRIP hand | Sibling plugin `DIVEGRIPBridge` |
 | VR two-hand + OpenXR | GRIPVR / game |
+
+DIVE object-action model (v0.8): `UDIVEDeviceAction`, Catalog + component Bindings, continuous slot — done. Sample Unscrew module removed; author BP via Content Browser → DIVE factories. See `Audit_DeviceActions_Architecture.md` §12.
 
 ---
 

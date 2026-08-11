@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "DIVEActionCatalogAsset.h"
 #include "DIVEConvention.h"
 #include "DIVETypes.h"
 #include "Engine/EngineTypes.h"
@@ -17,7 +18,7 @@
 class UDIVEDeviceDefinitionAsset;
 class UDIVEAnchorComponent;
 class UPrimitiveComponent;
-struct FDIVESessionPickOps;
+class UMaterialInterface;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVESessionLifecycle, bool, bSessionActive);
 
@@ -35,13 +36,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick")
 	FName SkipComponentTag = TEXT("DIVE.Skip");
 
-	/**
-	 * Hidden mesh / custom primitives with this tag remain pickable (Box/Sphere/Capsule
-	 * shapes are pickable without the tag when they have query collision).
-	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (
 		DisplayName = "Pick Proxy Component Tag",
-		ToolTip = "Tag for Hidden-in-Game meshes used as DIVE hit volumes. Shape components need no tag."))
+		ToolTip = "Tag for Hidden-in-Game meshes used as hit volumes. Shape components need no tag."))
 	FName PickProxyComponentTag = DIVE::kPickProxyTag;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (ClampMin = "0.0"))
@@ -49,24 +46,22 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (
 		DisplayName = "Pick Trace Channel",
-		ToolTip = "Channel used by DIVE screen picks. Default Visibility — set that response to Block on Box/Sphere volumes. Not a separate project channel named Pick."))
+		ToolTip = "Screen-pick channel (default Visibility). Block that response on Box/Sphere volumes."))
 	TEnumAsByte<ECollisionChannel> PickTraceChannel = ECC_Visibility;
 
-	/** Component names (Components tab) or anchor PartIds with no pick interaction: no menu, handlers, primary action, or hover. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick", meta = (
 		DisplayName = "Pick Interaction Exclusions",
-		ToolTip = "Meshes matching these keys are ignored by DIVE pick (same key rules as context menu catalog: component name, then semantic PartId)."))
+		ToolTip = "Component name or PartId — no menu, primary action, or hover."))
 	TArray<FName> PickInteractionExclusions;
 
-	/** Device-wide hover overlay in Default mode. Per-component overrides: Pick Hover Overlay By Component. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick|Hover", meta = (
 		DisplayName = "Hover Overlay Material",
-		ToolTip = "Default overlay material for interactive pickable meshes under the cursor. Overridden per mesh in Pick Hover Overlay By Component."))
+		ToolTip = "Default overlay for interactive meshes under the cursor."))
 	TSoftObjectPtr<UMaterialInterface> DefaultPickHoverOverlayMaterial;
 
-	/** Component name or PartId → hover overlay material override. Empty map value uses Hover Overlay Material above. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Pick|Hover", meta = (
-		DisplayName = "Pick Hover Overlay By Component"))
+		DisplayName = "Pick Hover Overlay By Component",
+		ToolTip = "Component name or PartId → overlay override."))
 	TMap<FName, TSoftObjectPtr<UMaterialInterface>> PickHoverOverlayByComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|View", meta = (
@@ -83,14 +78,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.01", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float ZoomSensitivity = 40.f;
 
-	/** When true, zoom step scales with current orbit distance (finer near, coarser far). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (EditCondition = "!bUseDeviceDefinitionSettings"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		EditCondition = "!bUseDeviceDefinitionSettings",
+		ToolTip = "Scale zoom step with orbit distance (finer near, coarser far)."))
 	bool bScaleZoomWithOrbitDistance = true;
 
-	/** Orbit distance (cm) at which ZoomSensitivity maps 1:1 to one zoom step. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
 		ClampMin = "1.0",
-		EditCondition = "!bUseDeviceDefinitionSettings && bScaleZoomWithOrbitDistance"))
+		EditCondition = "!bUseDeviceDefinitionSettings && bScaleZoomWithOrbitDistance",
+		ToolTip = "Orbit distance (cm) where Zoom Sensitivity maps 1:1."))
 	float ZoomDistanceReferenceCm = DIVE::kDefaultZoomDistanceReference;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
@@ -99,12 +95,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float MaxOrbitDistanceCm = DIVE::kDefaultMaxOrbitDistance;
 
-	/** Focused primitive: OrbitDistance ≈ SphereRadius × this (clamped to min/max). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ClampMin = "1.0",
+		EditCondition = "!bUseDeviceDefinitionSettings",
+		ToolTip = "Focus orbit distance ≈ SphereRadius × this."))
 	float FocusOrbitFitMultiplier = DIVE::kDefaultFocusOrbitFitMultiplier;
 
-	/** Focused primitive: near zoom floor ≈ SphereRadius × this. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ClampMin = "0.0",
+		EditCondition = "!bUseDeviceDefinitionSettings",
+		ToolTip = "Near zoom floor ≈ SphereRadius × this while focused."))
 	float FocusNearPaddingFactor = DIVE::kDefaultFocusNearPaddingFactor;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|View", meta = (ClampMin = "1.0", EditCondition = "!bUseDeviceDefinitionSettings"))
@@ -113,22 +113,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0", EditCondition = "!bUseDeviceDefinitionSettings"))
 	float FocusBlendDuration = 0.35f;
 
-	/** Map key must equal the component object name from the Components panel (or anchor PartId). Built-in Focus/Isolate ignore this map. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|ContextMenu", meta = (
-		ToolTip = "Key = exact component name (not a label). Duplicate often yields Switch1_1 — rename before adding a catalog key. Matching also strips _GEN_VARIABLE and trailing _N. Runtime: DIVE.DumpDevice."))
-	TMap<FName, FDIVEPickContextMenuActionList> PickContextMenuByComponent;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
+		DisplayName = "Action Catalog",
+		ToolTip = "Shared Data Asset bindings/sections; merged with component Bindings."))
+	TObjectPtr<UDIVEActionCatalogAsset> ActionCatalog;
 
-	/**
-	 * When true (and not a Shipping build), context menu includes Simulate Physics / Delete Mesh.
-	 * Off by default — these are administrator/dev operations, not end-user actions.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu", meta = (
-		DisplayName = "Enable Admin Context Menu Entries",
-		ToolTip = "Adds Simulate Physics and Delete Mesh for mesh picks. Ignored in Shipping builds."))
-	bool bEnableAdminContextMenuEntries = false;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
+		DisplayName = "Bindings",
+		ToolTip = "Local bindings (defaults: Focus/Isolate/Admin). Clear for none."))
+	TArray<FDIVEActionBinding> Bindings;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
+		DisplayName = "Sections",
+		ToolTip = "Menu sections for local Bindings (Standard / Admin by default)."))
+	TArray<FDIVEMenuSection> Sections;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
 	FOnDIVESessionLifecycle OnSessionLifecycle;
+
+	/**
+	 * Fired by the session after a successful instant Execute, or after a successful continuous Begin.
+	 * Bind from the device actor (Details +). Branch with Cast To your action BP class (no Switch-on-class in BP).
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
+	FOnDIVEActionExecuted OnActionExecuted;
+
+	/** Runtime fan-out used by the session after a successful action start. */
+	void NotifyActionExecuted(UDIVEDeviceAction* Action, const FDIVEActionContext& Context);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DisplayName = "Request Session"))
 	bool RequestSession();
@@ -138,6 +149,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void BuildSemanticRegistry();
+
+	/**
+	 * Returns available SectionId values for the GetOptions dropdown on Binding.SectionId.
+	 * Includes built-in IDs (Standard, Admin) and all authored section IDs from this component and
+	 * the linked Action Catalog.
+	 */
+	UFUNCTION()
+	TArray<FName> GetAvailableSectionIds() const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	const FDIVEPartTree& GetSemanticRegistry() const { return SemanticRegistry; }
@@ -200,21 +219,52 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|View")
 	bool TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const;
 
-	void AppendConfiguredPickContextMenuEntries(const FDIVEFocusTarget& PickTarget, TArray<FDIVEContextMenuEntry>& InOutEntries) const;
-
-	bool TryResolvePrimaryPickAction(const FDIVEFocusTarget& PickTarget, FName& OutQualifiedActionId) const;
-	UMaterialInterface* ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const;
-
-	/** Look up a catalog row by CatalogKey + Definition.ActionId. */
-	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
-	bool TryGetResolvedActionRow(FName CatalogKey, FName ActionId, FDIVEResolvedPickAction& OutResolved) const;
-
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool FindAnchorNode(FName PartId, FDIVEPartNode& OutNode) const;
+
+	void GatherAuthoredBindings(TArray<const FDIVEActionBinding*>& OutBindings) const;
+
+	void GatherAuthoredSections(TArray<FDIVEMenuSection>& OutSections) const;
+
+	bool DoesTargetQueryMatchPick(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
+
+	FName ResolveTargetKeyForQuery(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
+
+	void GatherMatchingBindings(
+		const FDIVEFocusTarget& PickTarget,
+		TArray<const FDIVEActionBinding*>& OutBindings) const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Actions")
+	TArray<UDIVEDeviceAction*> GetActionInstances(FName BindingId) const;
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Actions", meta = (
+		DeterminesOutputType = "ActionClass"))
+	UDIVEDeviceAction* FindActionInstance(
+		TSubclassOf<UDIVEDeviceAction> ActionClass,
+		FName BindingId = NAME_None) const;
+
+	bool TryResolvePrimaryAction(
+		const FDIVEFocusTarget& PickTarget,
+		UDIVEDeviceAction*& OutAction,
+		FName& OutTargetKey) const;
+
+	void AppendConfiguredContextMenuEntries(
+		const FDIVEFocusTarget& PickTarget,
+		TArray<FDIVEContextMenuEntry>& InOutEntries) const;
+
+	UMaterialInterface* ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const;
+
+	FDIVEActionContext MakeActionContext(
+		const FDIVEFocusTarget& PickTarget,
+		FName TargetKey,
+		const FVector2D& ScreenPosition = FVector2D::ZeroVector,
+		const FHitResult& PickHit = FHitResult()) const;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
+
+	virtual void PostInitProperties() override;
 
 private:
 	UPROPERTY(Transient)
@@ -224,22 +274,11 @@ private:
 	bool bSessionActive = false;
 
 	friend class UDIVESessionSubsystem;
-	friend struct FDIVESessionPickOps;
 
 	void NotifySessionLifecycle(bool bActive);
-	bool NotifyPickContextMenuAction(FName QualifiedActionId, const FDIVEFocusTarget& PickTarget);
+	void SeedDefaultBindingsIfNeeded();
 
-	bool FindPickContextMenuCatalog(
-		const FDIVEFocusTarget& PickTarget,
-		FName& OutComponentName,
-		const FDIVEPickContextMenuActionList*& OutCatalog) const;
-
-	bool ResolvePickContextMenuAction(
-		FName QualifiedActionId,
-		const FDIVEFocusTarget& PickTarget,
-		FName& OutComponentName,
-		FName& OutLocalActionId) const;
-
+	bool MatchesComponentNameValue(const UPrimitiveComponent* Primitive, FName MatchValue) const;
 	bool IsPrimitiveExcludedFromPickInteraction(const UPrimitiveComponent* Primitive) const;
 	bool FindPickHoverOverlaySoftMaterial(const FDIVEFocusTarget& PickTarget, TSoftObjectPtr<UMaterialInterface>& OutSoftMaterial) const;
 };

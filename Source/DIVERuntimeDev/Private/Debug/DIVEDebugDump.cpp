@@ -2,8 +2,10 @@
 
 #include "Debug/DIVEDebugDump.h"
 
+#include "DIVEActionBinding.h"
+#include "DIVEActionCatalogAsset.h"
 #include "DIVEConvention.h"
-#include "DIVEDeviceActionHandler.h"
+#include "DIVEDeviceAction.h"
 #include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
@@ -13,7 +15,6 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/ShapeComponent.h"
 #include "Engine/Engine.h"
-#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -21,7 +22,6 @@
 #include "HAL/IConsoleManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
-#include "UObject/UnrealType.h"
 
 namespace
 {
@@ -37,45 +37,6 @@ void AppendLine(FString& Out, const FString& Line)
 FString YesNo(const bool bValue)
 {
 	return bValue ? TEXT("yes") : TEXT("no");
-}
-
-bool HasBoolProperty(const AActor* Owner, const FName PropertyName)
-{
-	if (!Owner || PropertyName.IsNone())
-	{
-		return false;
-	}
-
-	if (FindFProperty<FBoolProperty>(Owner->GetClass(), PropertyName))
-	{
-		return true;
-	}
-
-	const FString Wanted = PropertyName.ToString();
-	for (TFieldIterator<FBoolProperty> It(Owner->GetClass()); It; ++It)
-	{
-		const FBoolProperty* BoolProperty = *It;
-		if (BoolProperty
-			&& (BoolProperty->GetFName() == PropertyName
-				|| BoolProperty->GetName() == Wanted
-				|| BoolProperty->GetAuthoredName() == Wanted))
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-bool HasBoolFunction(const AActor* Owner, const FName FunctionName)
-{
-	if (!Owner || FunctionName.IsNone())
-	{
-		return false;
-	}
-
-	const UFunction* Function = Owner->FindFunction(FunctionName);
-	return Function && CastField<FBoolProperty>(Function->GetReturnProperty()) != nullptr;
 }
 
 FString WriteDumpFile(const FString& Tag, const FString& Body)
@@ -118,91 +79,50 @@ FString WriteDumpFile(const FString& Tag, const FString& Body)
 	return FString();
 }
 
-void DumpCatalogEntry(
-	FString& Out,
-	AActor* Owner,
-	UDIVEInspectableComponent* Inspectable,
-	const FName CatalogKey,
-	const FDIVEPickContextMenuActionList& ActionList)
+void DumpBinding(FString& Out, const FDIVEActionBinding& Binding, const TCHAR* SourceTag)
 {
-	AppendLine(Out, FString::Printf(TEXT("  CatalogKey='%s' Actions=%d Primary='%s'"),
-		*CatalogKey.ToString(),
-		ActionList.Actions.Num(),
-		*ActionList.PrimaryActionId.ToString()));
-
-	if (ActionList.Actions.IsEmpty())
+	const TCHAR* MatchModeName = TEXT("?");
+	switch (Binding.Targets.MatchMode)
 	{
-		AppendLine(Out, TEXT("    WARNING: Actions array is EMPTY — no custom menu rows for this key."));
+	case EDIVETargetMatchMode::ComponentTag: MatchModeName = TEXT("ComponentTag"); break;
+	case EDIVETargetMatchMode::ComponentName: MatchModeName = TEXT("ComponentName"); break;
+	case EDIVETargetMatchMode::PartId: MatchModeName = TEXT("PartId"); break;
+	case EDIVETargetMatchMode::AnyPrimitive: MatchModeName = TEXT("AnyPrimitive"); break;
+	default: break;
 	}
 
-	FDIVEFocusTarget Resolved;
-	const bool bResolved = Inspectable->TryResolveStartFocusTarget(CatalogKey, Resolved);
-	if (!bResolved)
+	TArray<FString> ValueStrings;
+	for (const FName Value : Binding.Targets.MatchValues)
 	{
-		AppendLine(Out, TEXT("    Resolve: FAIL (no anchor PartId / pickable primitive with this FName)"));
-	}
-	else if (Resolved.Kind == EDIVEFocusKind::Primitive)
-	{
-		const UPrimitiveComponent* Primitive = Resolved.Primitive.Get();
-		AppendLine(Out, FString::Printf(
-			TEXT("    Resolve: Primitive FName='%s' GetName='%s' Normalized='%s' Class=%s PartId='%s'"),
-			Primitive ? *Primitive->GetFName().ToString() : TEXT("<null>"),
-			Primitive ? *Primitive->GetName() : TEXT("<null>"),
-			Primitive ? *DIVE::NormalizeComponentToken(Primitive->GetName()) : TEXT("<null>"),
-			Primitive ? *Primitive->GetClass()->GetName() : TEXT("<null>"),
-			*Resolved.SemanticPartId.ToString()));
-	}
-	else if (Resolved.Kind == EDIVEFocusKind::Anchor)
-	{
-		const USceneComponent* Anchor = Resolved.Anchor.Get();
-		AppendLine(Out, FString::Printf(
-			TEXT("    Resolve: Anchor FName='%s' PartId='%s'"),
-			Anchor ? *Anchor->GetFName().ToString() : TEXT("<null>"),
-			*Resolved.SemanticPartId.ToString()));
+		ValueStrings.Add(Value.ToString());
 	}
 
-	for (const FDIVEPickContextMenuAction& Action : ActionList.Actions)
+	AppendLine(Out, FString::Printf(
+		TEXT("  [%s] BindingId='%s' Priority=%d Match=%s Values=[%s] Section='%s' PrimaryIndex=%d Actions=%d"),
+		SourceTag,
+		*Binding.BindingId.ToString(),
+		Binding.Targets.Priority,
+		MatchModeName,
+		*FString::Join(ValueStrings, TEXT(", ")),
+		*Binding.SectionId.ToString(),
+		Binding.PrimaryActionIndex,
+		Binding.Actions.Num()));
+
+	for (int32 ActionIndex = 0; ActionIndex < Binding.Actions.Num(); ++ActionIndex)
 	{
-		const FName IsName = DIVE::MakePickContextMenuActiveStateName(CatalogKey, Action.ActionId);
-		const FText ResolvedDisplay = Action.GetResolvedDisplayName();
-
-		AppendLine(Out, FString::Printf(
-			TEXT("    ActionId='%s' Display='%s' Enabled=%s ToggleSuffix=%s"),
-			*Action.ActionId.ToString(),
-			ResolvedDisplay.IsEmpty() ? TEXT("<empty>") : *ResolvedDisplay.ToString(),
-			*YesNo(Action.bEnabled),
-			*YesNo(Action.bToggleActiveSuffix)));
-		AppendLine(Out, FString::Printf(
-			TEXT("      IsState %s -> property=%s function=%s"),
-			*IsName.ToString(),
-			*YesNo(HasBoolProperty(Owner, IsName)),
-			*YesNo(HasBoolFunction(Owner, IsName))));
-
-		if (HasBoolProperty(Owner, IsName))
+		UDIVEDeviceAction* Action = Binding.Actions[ActionIndex];
+		if (!Action)
 		{
-			bool bInstance = false;
-			bool bCdo = false;
-			if (const FBoolProperty* BoolProperty = FindFProperty<FBoolProperty>(Owner->GetClass(), IsName))
-			{
-				bInstance = BoolProperty->GetPropertyValue_InContainer(Owner);
-				if (const AActor* CDO = Cast<AActor>(Owner->GetClass()->GetDefaultObject()))
-				{
-					bCdo = BoolProperty->GetPropertyValue_InContainer(CDO);
-				}
-			}
-			AppendLine(Out, FString::Printf(
-				TEXT("      IsState values: instance=%s CDO_default=%s%s"),
-				*YesNo(bInstance),
-				*YesNo(bCdo),
-				(bInstance != bCdo) ? TEXT("  <-- instance differs from BP default") : TEXT("")));
+			AppendLine(Out, FString::Printf(TEXT("    [%d] <null>"), ActionIndex));
+			continue;
 		}
 
-		if (Action.bToggleActiveSuffix
-			&& !HasBoolProperty(Owner, IsName)
-			&& !HasBoolFunction(Owner, IsName))
-		{
-			AppendLine(Out, TEXT("      WARNING: Toggle Active Suffix on, but no Is_* property/function on device actor."));
-		}
+		AppendLine(Out, FString::Printf(
+			TEXT("    [%d] Class=%s Display='%s'%s"),
+			ActionIndex,
+			*Action->GetClass()->GetName(),
+			*Action->GetResolvedDisplayName().ToString(),
+			Binding.PrimaryActionIndex == ActionIndex ? TEXT(" [PRIMARY]") : TEXT("")));
 	}
 }
 
@@ -219,20 +139,38 @@ void DumpPrimitiveRow(
 	const FName SemanticPartId = Inspectable->ResolveSemanticPartId(Primitive);
 	const FDIVEFocusTarget PickTarget = FDIVEFocusTarget::FromPrimitive(Primitive, SemanticPartId);
 
-	TArray<FDIVEContextMenuEntry> CustomEntries;
-	Inspectable->AppendConfiguredPickContextMenuEntries(PickTarget, CustomEntries);
+	TArray<FDIVEContextMenuEntry> MenuEntries;
+	Inspectable->AppendConfiguredContextMenuEntries(PickTarget, MenuEntries);
 
-	FString CustomSummary = TEXT("(none)");
-	if (!CustomEntries.IsEmpty())
+	FString MenuSummary = TEXT("(none)");
+	if (!MenuEntries.IsEmpty())
 	{
 		TArray<FString> Parts;
-		for (const FDIVEContextMenuEntry& Entry : CustomEntries)
+		for (const FDIVEContextMenuEntry& Entry : MenuEntries)
 		{
-			Parts.Add(FString::Printf(TEXT("%s['%s']"),
-				*Entry.ActionId.ToString(),
-				*Entry.DisplayName.ToString()));
+			if (Entry.bIsSeparator)
+			{
+				Parts.Add(Entry.DisplayName.IsEmpty()
+					? TEXT("---")
+					: FString::Printf(TEXT("---[%s]"), *Entry.DisplayName.ToString()));
+				continue;
+			}
+
+			Parts.Add(FString::Printf(
+				TEXT("%s['%s'%s]"),
+				Entry.Action ? *Entry.Action->GetClass()->GetName() : TEXT("<null>"),
+				*Entry.DisplayName.ToString(),
+				Entry.TargetKey.IsNone()
+					? TEXT("")
+					: *FString::Printf(TEXT(" key=%s"), *Entry.TargetKey.ToString())));
 		}
-		CustomSummary = FString::Join(Parts, TEXT(", "));
+		MenuSummary = FString::Join(Parts, TEXT(", "));
+	}
+
+	TArray<FString> TagStrings;
+	for (const FName Tag : Primitive->ComponentTags)
+	{
+		TagStrings.Add(Tag.ToString());
 	}
 
 	AppendLine(Out, FString::Printf(
@@ -243,27 +181,58 @@ void DumpPrimitiveRow(
 		*Primitive->GetClass()->GetName(),
 		Primitive->GetOwner() ? *Primitive->GetOwner()->GetName() : TEXT("<none>")));
 	AppendLine(Out, FString::Printf(
-		TEXT("    HiddenInGame=%s Visible=%s Collision=%d Shape=%s TagPickProxy=%s"),
+		TEXT("    HiddenInGame=%s Visible=%s Collision=%d Shape=%s TagPickProxy=%s Tags=[%s]"),
 		*YesNo(Primitive->bHiddenInGame),
 		*YesNo(Primitive->IsVisible()),
 		static_cast<int32>(Primitive->GetCollisionEnabled()),
 		*YesNo(Primitive->IsA(UShapeComponent::StaticClass())),
 		*YesNo(!Inspectable->PickProxyComponentTag.IsNone()
-			&& Primitive->ComponentHasTag(Inspectable->PickProxyComponentTag))));
+			&& Primitive->ComponentHasTag(Inspectable->PickProxyComponentTag)),
+		*FString::Join(TagStrings, TEXT(", "))));
 	AppendLine(Out, FString::Printf(
 		TEXT("    Pickable=%s PickProxy=%s Interactive=%s PartId='%s'"),
 		*YesNo(Inspectable->IsPrimitivePickable(Primitive)),
 		*YesNo(Inspectable->IsPickProxyPrimitive(Primitive)),
 		*YesNo(Inspectable->IsPrimitiveInteractive(Primitive)),
 		*SemanticPartId.ToString()));
-	AppendLine(Out, FString::Printf(TEXT("    CatalogMatch custom rows: %s"), *CustomSummary));
+	AppendLine(Out, FString::Printf(TEXT("    Menu rows (Bindings+Catalog): %s"), *MenuSummary));
 
+	TArray<const FDIVEActionBinding*> Matched;
+	Inspectable->GatherMatchingBindings(PickTarget, Matched);
+
+	// Default AnyPrimitive bindings always match; warn when a pick-proxy has catalog
+	// authored but no catalog binding matched (only component Bindings did).
+	bool bHasCatalogMatch = false;
+	for (const FDIVEActionBinding* Binding : Matched)
+	{
+		if (!Binding || !Inspectable->ActionCatalog)
+		{
+			continue;
+		}
+
+		for (const FDIVEActionBinding& Candidate : Inspectable->ActionCatalog->Bindings)
+		{
+			if (&Candidate == Binding)
+			{
+				bHasCatalogMatch = true;
+				break;
+			}
+		}
+		if (bHasCatalogMatch)
+		{
+			break;
+		}
+	}
+
+	const bool bHasCatalogAuthored =
+		Inspectable->ActionCatalog != nullptr
+		&& Inspectable->ActionCatalog->Bindings.Num() > 0;
 	if (Inspectable->IsPickProxyPrimitive(Primitive)
 		&& Inspectable->IsPrimitiveInteractive(Primitive)
-		&& CustomEntries.IsEmpty()
-		&& !Inspectable->PickContextMenuByComponent.IsEmpty())
+		&& bHasCatalogAuthored
+		&& !bHasCatalogMatch)
 	{
-		AppendLine(Out, TEXT("    WARNING: interactive pick-proxy with NO catalog match — custom Toggle will not appear."));
+		AppendLine(Out, TEXT("    WARNING: interactive pick-proxy matches no Catalog binding — check MatchMode / MatchValues."));
 	}
 }
 } // namespace
@@ -294,97 +263,103 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 
 	Inspectable->BuildSemanticRegistry();
 
+	TArray<FDIVEMenuSection> Sections;
+	Inspectable->GatherAuthoredSections(Sections);
+
+	TArray<const FDIVEActionBinding*> AuthoredBindings;
+	Inspectable->GatherAuthoredBindings(AuthoredBindings);
+
 	AppendLine(Out, FString::Printf(
-		TEXT("Inspectable SessionActive=%s CatalogEntries=%d Exclusions=%d"),
+		TEXT("Inspectable SessionActive=%s Catalog=%s ComponentBindings=%d AuthoredBindings=%d Sections=%d Exclusions=%d"),
 		*YesNo(Inspectable->IsSessionActive()),
-		Inspectable->PickContextMenuByComponent.Num(),
+		Inspectable->ActionCatalog ? *GetNameSafe(Inspectable->ActionCatalog) : TEXT("<none>"),
+		Inspectable->Bindings.Num(),
+		AuthoredBindings.Num(),
+		Sections.Num(),
 		Inspectable->PickInteractionExclusions.Num()));
 
-	AppendLine(Out, TEXT("-- Device action dispatch --"));
-	AppendLine(Out, FString::Printf(
-		TEXT("  IDIVEDeviceActionHandler: %s"),
-		*YesNo(DeviceActor->Implements<UDIVEDeviceActionHandler>())));
-	if (!DeviceActor->Implements<UDIVEDeviceActionHandler>())
-	{
-		AppendLine(Out, TEXT("  WARNING: device must implement IDIVEDeviceActionHandler for custom catalog actions."));
-	}
-
-	AppendLine(Out, TEXT("-- Catalog (PickContextMenuByComponent) --"));
-	if (Inspectable->PickContextMenuByComponent.IsEmpty())
+	AppendLine(Out, TEXT("-- Sections --"));
+	if (Sections.IsEmpty())
 	{
 		AppendLine(Out, TEXT("  (empty)"));
 	}
 	else
 	{
-		for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : Inspectable->PickContextMenuByComponent)
+		for (const FDIVEMenuSection& Section : Sections)
 		{
-			DumpCatalogEntry(Out, DeviceActor, Inspectable, Entry.Key, Entry.Value);
+			AppendLine(Out, FString::Printf(
+				TEXT("  SectionId='%s' Sort=%d Header='%s'"),
+				*Section.SectionId.ToString(),
+				Section.SortOrder,
+				*Section.Header.ToString()));
 		}
 	}
 
-	AppendLine(Out, TEXT("-- Cross-check: CatalogKey vs shape / Switch* FNames --"));
+	AppendLine(Out, TEXT("-- Bindings --"));
+	const bool bNoBindings = Inspectable->Bindings.IsEmpty()
+		&& (!Inspectable->ActionCatalog || Inspectable->ActionCatalog->Bindings.IsEmpty());
+	if (bNoBindings)
 	{
-		TArray<UPrimitiveComponent*> Primitives;
-		DIVE::CollectDevicePrimitives(DeviceActor, Primitives);
-
-		TMap<FString, TArray<FString>> NormalizedToFNames;
-		for (UPrimitiveComponent* Primitive : Primitives)
+		AppendLine(Out, TEXT("  (empty)"));
+	}
+	else
+	{
+		for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
 		{
-			if (!Primitive)
+			DumpBinding(Out, Binding, TEXT("Component"));
+		}
+		if (Inspectable->ActionCatalog)
+		{
+			for (const FDIVEActionBinding& Binding : Inspectable->ActionCatalog->Bindings)
+			{
+				DumpBinding(Out, Binding, TEXT("Catalog"));
+			}
+		}
+	}
+
+	AppendLine(Out, TEXT("-- Resolved bindings (interactive primitives) --"));
+	{
+		TArray<UPrimitiveComponent*> AllPrimitives;
+		DIVE::CollectDevicePrimitives(DeviceActor, AllPrimitives);
+		AllPrimitives.Sort([](const UPrimitiveComponent& A, const UPrimitiveComponent& B)
+		{
+			return A.GetName() < B.GetName();
+		});
+
+		int32 ResolvedCount = 0;
+		for (UPrimitiveComponent* Primitive : AllPrimitives)
+		{
+			if (!Primitive || !Inspectable->IsPrimitiveInteractive(Primitive))
 			{
 				continue;
 			}
 
-			if (!Primitive->IsA(UShapeComponent::StaticClass())
-				&& !Primitive->GetName().Contains(TEXT("Switch"), ESearchCase::IgnoreCase))
+			const FName SemanticPartId = Inspectable->ResolveSemanticPartId(Primitive);
+			const FDIVEFocusTarget PickTarget = FDIVEFocusTarget::FromPrimitive(Primitive, SemanticPartId);
+			TArray<const FDIVEActionBinding*> Matched;
+			Inspectable->GatherMatchingBindings(PickTarget, Matched);
+			if (Matched.IsEmpty())
 			{
 				continue;
 			}
 
-			NormalizedToFNames.FindOrAdd(DIVE::NormalizeComponentToken(Primitive->GetName())).Add(Primitive->GetFName().ToString());
+			++ResolvedCount;
+			TArray<FString> BindingLabels;
+			for (const FDIVEActionBinding* Binding : Matched)
+			{
+				BindingLabels.Add(Binding && !Binding->BindingId.IsNone()
+					? Binding->BindingId.ToString()
+					: TEXT("<unnamed>"));
+			}
+			AppendLine(Out, FString::Printf(
+				TEXT("  Prim='%s' Bindings=[%s]"),
+				*Primitive->GetName(),
+				*FString::Join(BindingLabels, TEXT(", "))));
 		}
 
-		for (const TPair<FName, FDIVEPickContextMenuActionList>& Entry : Inspectable->PickContextMenuByComponent)
+		if (ResolvedCount == 0)
 		{
-			const FString KeyNorm = DIVE::NormalizeComponentToken(Entry.Key.ToString());
-			if (const TArray<FString>* Names = NormalizedToFNames.Find(KeyNorm))
-			{
-				AppendLine(Out, FString::Printf(
-					TEXT("  OK  CatalogKey='%s' (norm='%s') -> FName(s): %s | Actions=%d"),
-					*Entry.Key.ToString(),
-					*KeyNorm,
-					*FString::Join(*Names, TEXT(", ")),
-					Entry.Value.Actions.Num()));
-			}
-			else
-			{
-				AppendLine(Out, FString::Printf(
-					TEXT("  FAIL CatalogKey='%s' (norm='%s') — no shape/Switch* primitive with this normalized name | Actions=%d"),
-					*Entry.Key.ToString(),
-					*KeyNorm,
-					Entry.Value.Actions.Num()));
-			}
-		}
-
-		for (const TPair<FString, TArray<FString>>& NormEntry : NormalizedToFNames)
-		{
-			bool bHasCatalog = false;
-			for (const TPair<FName, FDIVEPickContextMenuActionList>& CatalogEntry : Inspectable->PickContextMenuByComponent)
-			{
-				if (DIVE::NormalizeComponentToken(CatalogEntry.Key.ToString()).Equals(NormEntry.Key, ESearchCase::IgnoreCase))
-				{
-					bHasCatalog = true;
-					break;
-				}
-			}
-
-			if (!bHasCatalog)
-			{
-				AppendLine(Out, FString::Printf(
-					TEXT("  FAIL Prim norm='%s' FName(s): %s — no catalog key"),
-					*NormEntry.Key,
-					*FString::Join(NormEntry.Value, TEXT(", "))));
-			}
+			AppendLine(Out, TEXT("  (none)"));
 		}
 	}
 
@@ -422,7 +397,8 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 	}
 
 	AppendLine(Out, FString::Printf(TEXT("Shape/PickProxy count (listed interesting): %d"), ShapeOrProxyCount));
-	AppendLine(Out, TEXT("Hint: CatalogKey must match Prim FName or Normalized (strip _GEN_VARIABLE / _1)."));
+	AppendLine(Out, TEXT("Hint: Match modes = ComponentTag / ComponentName / PartId / AnyPrimitive. Matching bindings are unioned by section."));
+	AppendLine(Out, TEXT("Hint: Menu rows include component Bindings + Action Catalog. Device-specific ops usually live in the Catalog."));
 	AppendLine(Out, TEXT("==== end ===="));
 	return Out;
 }
@@ -560,14 +536,11 @@ FString DIVEDebugDump::DumpFromConsole(UWorld* World, const TArray<FString>& Arg
 			*Filter));
 	}
 
-	if (UGameInstance* GameInstance = World->GetGameInstance())
+	if (UDIVESessionSubsystem* Session = World->GetSubsystem<UDIVESessionSubsystem>())
 	{
-		if (UDIVESessionSubsystem* Session = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+		if (AActor* Active = Session->GetActiveDeviceHost())
 		{
-			if (AActor* Active = Session->GetActiveDeviceHost())
-			{
-				return DumpDevice(Active);
-			}
+			return DumpDevice(Active);
 		}
 	}
 
@@ -624,7 +597,7 @@ void DIVEDebugDump::RegisterConsoleCommands()
 
 	Bind(
 		TEXT("DIVE.DumpDevice"),
-		TEXT("Dump DIVE inspectable catalog vs component FNames. Optional arg: actor name substring. Prefers active session device."),
+		TEXT("Dump DIVE Bindings + Catalog and resolved menu rows per primitive. Optional actor name substring. Prefers active session device."),
 		false);
 	Bind(
 		TEXT("DIVE_DumpDevice"),

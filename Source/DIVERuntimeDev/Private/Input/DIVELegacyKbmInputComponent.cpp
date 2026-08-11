@@ -8,12 +8,12 @@
 #include "DIVETypes.h"
 #include "DIVEInspectableComponent.h"
 #include "Input/DIVEInputComponent.h"
-#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
-#include "Utils/DIVEComponentResolve.h"
+#include "Utils/SharedComponentResolve.h"
 #include "Utils/DIVEGripLegacyDevQuery.h"
 
 UDIVELegacyKbmInputComponent::UDIVELegacyKbmInputComponent()
@@ -56,48 +56,36 @@ void UDIVELegacyKbmInputComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 
 bool UDIVELegacyKbmInputComponent::IsDiveSessionActive() const
 {
-	const UWorld* World = GetWorld();
+	UWorld* World = GetWorld();
 	if (!World)
 	{
 		return false;
 	}
 
-	const UGameInstance* GameInstance = World->GetGameInstance();
-	if (!GameInstance)
-	{
-		return false;
-	}
-
-	const UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>();
+	const UDIVESessionSubsystem* DiveSubsystem = World->GetSubsystem<UDIVESessionSubsystem>();
 	return DiveSubsystem && DiveSubsystem->IsSessionActive();
 }
 
 void UDIVELegacyKbmInputComponent::BindSessionDelegates()
 {
-	if (const UWorld* World = GetWorld())
+	if (UWorld* World = GetWorld())
 	{
-		if (UGameInstance* GameInstance = World->GetGameInstance())
+		if (UDIVESessionSubsystem* DiveSubsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
-			if (UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
-			{
-				DiveSubsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
-				DiveSubsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
-			}
+			DiveSubsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
+			DiveSubsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
 		}
 	}
 }
 
 void UDIVELegacyKbmInputComponent::UnbindSessionDelegates()
 {
-	if (const UWorld* World = GetWorld())
+	if (UWorld* World = GetWorld())
 	{
-		if (UGameInstance* GameInstance = World->GetGameInstance())
+		if (UDIVESessionSubsystem* DiveSubsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
-			if (UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
-			{
-				DiveSubsystem->OnSessionStarted.RemoveDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
-				DiveSubsystem->OnSessionEnded.RemoveDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
-			}
+			DiveSubsystem->OnSessionStarted.RemoveDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionStarted);
+			DiveSubsystem->OnSessionEnded.RemoveDynamic(this, &UDIVELegacyKbmInputComponent::HandleDiveSessionEnded);
 		}
 	}
 }
@@ -135,7 +123,7 @@ void UDIVELegacyKbmInputComponent::HandleDiveSessionEnded(
 
 void UDIVELegacyKbmInputComponent::ResolveComponentReferences()
 {
-	InputComponent = DIVEComponentResolve::FindComponentByNameOrClass<UDIVEInputComponent>(
+	InputComponent = SharedComponentResolve::FindComponentByNameOrClass<UDIVEInputComponent>(
 		GetOwner(),
 		InputComponentName);
 }
@@ -199,19 +187,13 @@ bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
 	(void)WheelDelta;
 #endif
 
-	const UWorld* World = GetWorld();
+	UWorld* World = GetWorld();
 	if (!World)
 	{
 		return false;
 	}
 
-	const UGameInstance* GameInstance = World->GetGameInstance();
-	if (!GameInstance)
-	{
-		return false;
-	}
-
-	const UDIVESessionSubsystem* DiveSubsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>();
+	const UDIVESessionSubsystem* DiveSubsystem = World->GetSubsystem<UDIVESessionSubsystem>();
 	// Suppress orbit zoom while physical drive is active (wheel routes to grab depth instead).
 	return DiveSubsystem && DiveSubsystem->IsProxyDriving();
 }

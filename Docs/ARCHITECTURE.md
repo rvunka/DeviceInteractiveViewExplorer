@@ -1,4 +1,4 @@
-﻿# DIVE Architecture (v0.7-dev)
+# DIVE Architecture (v0.8-dev)
 
 ## Layers
 
@@ -26,17 +26,15 @@
 │  ADIVECameraRig                         │
 │  UDIVEDeviceDefinitionAsset             │
 ├─────────────────────────────────────────┤
-│ DIVECore — FDIVEFocusTarget, IDIVEProxyDrive, types │
+│ DIVECore — FDIVEFocusTarget, IDIVEProxyDrive, UDIVEDeviceAction, types │
 └─────────────────────────────────────────┘
 ```
 
 ## Subsystem scope
 
-**Current:** `UGameInstanceSubsystem` (`UDIVESessionSubsystem`).
+**Current:** `UWorldSubsystem` (`UDIVESessionSubsystem`) — one active DIVE session per game/PIE world (`DoesSupportWorldType` filters out Editor preview worlds).
 
-One active DIVE session per game instance. Input components guard with `IsLocallyControlled()`.
-
-**Lifecycle note:** `UDIVEInputComponent::EndPlay` ends an active session (`EndSession(Forced)`) for the locally controlled pawn. This is intentional for single-player / one local pawn; multi-pawn or listen-server setups may need a different session owner policy.
+Input components guard with `IsLocallyControlled()`. Session ends on world tear-down (`OnWorldBeginTearDown` + `Deinitialize`) and on `UDIVEInputComponent::EndPlay` for the locally controlled pawn.
 
 **Input restore note:** session end approximates prior mode via `EDIVEPreservedInputMode` (GameAndUI only if both cursor and click events were on). PlayerController does not expose the previous `FInputMode` directly.
 
@@ -67,7 +65,7 @@ hidden meshes need tag `DIVE.PickProxy`.
 `EDIVESessionInteractionMode` in **DIVECore**: **Default** | **Physical**.
 
 - Resets to **Default** on session start/end
-- **Physical:** `TryBeginProxyDrive*` via `HandlePrimaryAction*`; **Default:** catalog `Primary Action Id` or anchor focus; hover overlay on pick
+- **Physical:** `TryBeginProxyDrive*` via `HandlePrimaryAction*`; **Default:** binding `PrimaryActionIndex` (when set); hover overlay on pick; explicit focus via `HandleFocusUnderCursor` / context menu
 
 ### Enhanced Input (host Content)
 
@@ -85,14 +83,14 @@ Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = foc
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Built-in: **Focus**, **Isolate**; administrator **Simulate Physics / Delete Mesh** only when `UDIVEInspectableComponent::bEnableAdminContextMenuEntries` is true (default **false**) and **not** in Shipping builds. Custom rows from **`PickContextMenuByComponent`** use row **`ActionId`** + **`IDIVEDeviceActionHandler`**. **`Primary Action Id`** matches a row `ActionId` via **`HandlePrimaryActionPressed`**. Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. **No menu on anchor pick** — primary focuses anchor in Default mode when no `Primary Action Id`.
+In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`**. Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
 
 ## Device interaction (direct manipulation)
 
 | Intent | Mechanism |
 |--------|-----------|
 | Focus / isolate / back | Context menu or `HandleFocusUnderCursor` |
-| Custom device action | Context menu / primary → catalog **`ActionId`** + **`IDIVEDeviceActionHandler`** |
+| Custom device action | Context menu / primary → **Action Catalog / Bindings** + **`UDIVEDeviceAction`** |
 | Default-mode hover | **DIVE \| Pick \| Hover** — `Hover Overlay Material` + optional `Pick Hover Overlay By Component` |
 | Non-interactive meshes | `Pick Interaction Exclusions` or `Skip Component Tag` |
 | Door, slider, knob | **Physical** mode + `IDIVEProxyDrive` / registry |
@@ -123,9 +121,11 @@ _Future:_ world-level focus dim via custom depth / post-process (not actor hidin
 
 ## Editor
 
-**DIVE Scan Device** — logs anchors and focus warnings.
+**DIVE Scan Device** — validates anchors + Catalog / Bindings (SectionId, PrimaryActionIndex, MatchValues / AnyPrimitive), exclusions.
 
-Automation smoke tests: `DIVE.ContextMenu.BuiltInEntries`, `DIVE.PawnPhysicalDrive.Resolve` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
+**DIVE Dump Device** / `DIVE.DumpDevice` / `DIVE.DumpAll` — component + Catalog bindings, sections, per-primitive menu resolution (`DIVERuntimeDev`; not in Shipping).
+
+Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.BindingResolve`, `DIVE.PawnPhysicalDrive.Resolve` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
 
 ## Dependencies
 

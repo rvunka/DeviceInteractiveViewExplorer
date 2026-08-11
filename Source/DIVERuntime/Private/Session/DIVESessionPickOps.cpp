@@ -5,9 +5,11 @@
 #include "Components/MeshComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "DIVECameraRig.h"
+#include "DIVEDeviceAction.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVESessionSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "Materials/MaterialInterface.h"
 #include "Utils/DIVEPick.h"
 
 namespace
@@ -66,8 +68,8 @@ bool FDIVESessionPickOps::ExecutePrimaryActionAtScreenPosition(
 	}
 
 	FDIVEFocusTarget PickTarget;
-	FHitResult UnusedHit;
-	if (!ResolvePickAtScreenPositionWithHit(Session, ScreenPosition, PlayerController, PickTarget, UnusedHit)
+	FHitResult PickHit;
+	if (!ResolvePickAtScreenPositionWithHit(Session, ScreenPosition, PlayerController, PickTarget, PickHit)
 		|| PickTarget.Kind != EDIVEFocusKind::Primitive)
 	{
 		return false;
@@ -79,13 +81,35 @@ bool FDIVESessionPickOps::ExecutePrimaryActionAtScreenPosition(
 		return false;
 	}
 
-	FName QualifiedActionId = NAME_None;
-	if (!Inspectable->TryResolvePrimaryPickAction(PickTarget, QualifiedActionId))
+	UDIVEDeviceAction* PrimaryAction = nullptr;
+	FName TargetKey = NAME_None;
+	if (!Inspectable->TryResolvePrimaryAction(PickTarget, PrimaryAction, TargetKey) || !PrimaryAction)
 	{
 		return false;
 	}
 
-	return Inspectable->NotifyPickContextMenuAction(QualifiedActionId, PickTarget);
+	const FDIVEActionContext Context = Inspectable->MakeActionContext(PickTarget, TargetKey, ScreenPosition, PickHit);
+
+	{
+		FDIVEActionWorldScope WorldScope(PrimaryAction, Session.GetWorld());
+		if (!PrimaryAction->CanExecute(Context))
+		{
+			return false;
+		}
+
+		if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(PrimaryAction))
+		{
+			return Session.TryBeginContinuousAction(Continuous, Context);
+		}
+
+		if (!PrimaryAction->Execute(Context))
+		{
+			return false;
+		}
+
+		Inspectable->NotifyActionExecuted(PrimaryAction, Context);
+		return true;
+	}
 }
 
 void FDIVESessionPickOps::UpdatePickHover(
@@ -123,7 +147,7 @@ void FDIVESessionPickOps::UpdatePickHover(
 
 	UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
 	UDIVEInspectableComponent* Inspectable = Session.ActiveInspectable.Get();
-	if (!Primitive || !Inspectable || Primitive->bHiddenInGame || !Inspectable->IsPrimitiveInteractive(Primitive))
+	if (!Primitive || !Inspectable || !Inspectable->IsPrimitiveInteractive(Primitive))
 	{
 		ClearPickHover(Session);
 		return;
@@ -142,17 +166,28 @@ void FDIVESessionPickOps::UpdatePickHover(
 	}
 
 	ClearPickHover(Session);
+
+	UMaterialInterface* PreviousOverlay = nullptr;
+	if (UMeshComponent* Mesh = Cast<UMeshComponent>(Primitive))
+	{
+		PreviousOverlay = Mesh->GetOverlayMaterial();
+	}
 	SetMeshOverlayMaterial(Primitive, OverlayMaterial);
 	Session.PickHoverPrimitive = Primitive;
+	Session.PickHoverPreviousOverlay = PreviousOverlay;
 }
 
 void FDIVESessionPickOps::ClearPickHover(UDIVESessionSubsystem& Session)
 {
 	if (UPrimitiveComponent* Primitive = Session.PickHoverPrimitive.Get())
 	{
-		SetMeshOverlayMaterial(Primitive, nullptr);
+		// Restore whatever overlay material the primitive had before DIVE applied the hover
+		// highlight, so we don't destroy visual states owned by the device or other systems.
+		UMaterialInterface* Restore = Session.PickHoverPreviousOverlay.Get();
+		SetMeshOverlayMaterial(Primitive, Restore);
 	}
 
 	Session.PickHoverPrimitive.Reset();
+	Session.PickHoverPreviousOverlay.Reset();
 	Session.bHasLastPickHoverScreenPosition = false;
 }

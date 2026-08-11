@@ -3,15 +3,18 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Subsystems/GameInstanceSubsystem.h"
-#include "DIVEConvention.h"
+#include "Subsystems/WorldSubsystem.h"
+#include "DIVEDeviceAction.h"
 #include "DIVEPawnPhysicalDrive.h"
 #include "DIVEProxyDrive.h"
 #include "DIVETypes.h"
+#include "Engine/HitResult.h"
 #include "DIVESessionSubsystem.generated.h"
 
 class ADIVECameraRig;
 class UDIVEInspectableComponent;
+class UDIVEProxyDriveForwardAction;
+class UMaterialInterface;
 class UPrimitiveComponent;
 class AActor;
 class APlayerController;
@@ -21,6 +24,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDIVESessionEnded, EDIVESessionEn
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEFocusChanged, const FDIVEFocusTarget&, FocusTarget);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEContextMenuVisibilityChanged, bool, bIsOpen);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVEInteractionModeChanged, EDIVESessionInteractionMode, NewMode);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FOnDIVEInteractionValueChanged,
+	UDIVEDeviceAction*,
+	Action,
+	const FDIVEActionContext&,
+	Context,
+	float,
+	NormalizedValue);
 
 struct FDIVESessionFocusOps;
 struct FDIVESessionIsolationOps;
@@ -28,12 +39,14 @@ struct FDIVESessionPhysicalDriveOps;
 struct FDIVESessionPickOps;
 
 UCLASS()
-class DIVERUNTIME_API UDIVESessionSubsystem : public UGameInstanceSubsystem
+class DIVERUNTIME_API UDIVESessionSubsystem : public UWorldSubsystem
 {
 	GENERATED_BODY()
 
 public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsSessionActive() const { return SessionState == EDIVESessionState::Active; }
@@ -56,8 +69,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsIsolationActiveForTarget(const FDIVEFocusTarget& Target) const;
 
+	/** True while proxy drive, pawn bridge, or continuous device action is active. */
 	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
 	bool IsProxyDriving() const { return bProxyDriving; }
+
+	/** Call from PrimaryActionReleased after menu-started continuous Begin. */
+	bool ConsumeIgnoreNextPrimaryActionRelease();
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
 	bool IsPawnPhysicalDriveActive() const;
@@ -88,6 +105,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Session")
 	FOnDIVEInteractionModeChanged OnInteractionModeChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Action")
+	FOnDIVEInteractionValueChanged OnInteractionValueChanged;
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ApplyOrbitInput(const FVector2D& Delta);
@@ -136,7 +156,7 @@ public:
 	bool OpenContextMenuAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
-	bool ExecuteContextMenuAction(FName ActionId);
+	bool ExecuteContextMenuAction(UDIVEDeviceAction* Action, FName TargetKey = NAME_None);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
 	void CloseContextMenu();
@@ -157,8 +177,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu|Admin")
 	bool DeleteMeshForTarget(const FDIVEFocusTarget& Target);
 
-	/** True when admin mesh rows may appear/run (flag on inspectable + non-Shipping). */
-	bool AreAdminContextMenuEntriesAllowed() const;
+	/** Non-Shipping only. */
+	static bool AreAdminContextMenuEntriesAllowed();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void ClearIsolation();
@@ -166,8 +186,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	bool TryBeginProxyDriveAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
+	/** Updates active proxy drive or continuous device action. */
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
-	void UpdateProxyDrive(const FVector2D& ScreenDelta);
+	void UpdateActiveInteraction(const FVector2D& ScreenDelta);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void EndProxyDrive(bool bCommit);
@@ -178,6 +199,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void HandleActivePawnPhysicalManualRotateReleased();
 
+	bool TryBeginContinuousAction(UDIVEContinuousDeviceAction* Action, const FDIVEActionContext& Context);
+
+	void NotifyInteractionValueChanged(UDIVEDeviceAction* Action, const FDIVEActionContext& Context, float NormalizedValue);
+	void HandleWorldBeginTearDown(UWorld* InWorld);
+
+	UFUNCTION()
+	void HandleContinuousActionValueChanged(
+		UDIVEDeviceAction* Action,
+		const FDIVEActionContext& Context,
+		float NormalizedValue);
+
 	friend struct FDIVESessionFocusOps;
 	friend struct FDIVESessionIsolationOps;
 	friend struct FDIVESessionPhysicalDriveOps;
@@ -187,8 +219,8 @@ private:
 	enum class EDIVEActivePhysicalDriveKind : uint8
 	{
 		None,
-		DeviceProxy,
-		PawnBridge
+		PawnBridge,
+		ContinuousAction
 	};
 
 	EDIVESessionState SessionState = EDIVESessionState::Inactive;
@@ -213,8 +245,16 @@ private:
 
 	bool bProxyDriving = false;
 	EDIVEActivePhysicalDriveKind ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::None;
-	TWeakInterfacePtr<IDIVEProxyDrive> ActiveProxyDrive;
 	TWeakInterfacePtr<IDIVEPawnPhysicalDrive> ActivePawnPhysicalDrive;
+	TWeakObjectPtr<UDIVEContinuousDeviceAction> ActiveContinuousAction;
+
+	/**
+	 * Internal action instance used to route Physical-mode device proxy drive through the standard
+	 * continuous-action slot. Created once per session in TryBeginSession and reused for every
+	 * subsequent Physical-mode pick on an IDIVEProxyDrive primitive.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UDIVEProxyDriveForwardAction> InternalProxyDriveAction;
 
 	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Default;
 
@@ -224,8 +264,12 @@ private:
 	FDIVEFocusTarget ContextMenuPickTarget;
 	TArray<FDIVEContextMenuEntry> ContextMenuEntries;
 	FVector2D ContextMenuScreenPosition = FVector2D::ZeroVector;
+	FHitResult ContextMenuPickHit;
+	bool bIgnoreNextPrimaryActionRelease = false;
 
 	TWeakObjectPtr<UPrimitiveComponent> PickHoverPrimitive;
+	/** The overlay material that was on PickHoverPrimitive before DIVE applied the hover highlight. */
+	TWeakObjectPtr<UMaterialInterface> PickHoverPreviousOverlay;
 
 	FVector2D LastPickHoverScreenPosition = FVector2D::ZeroVector;
 	bool bHasLastPickHoverScreenPosition = false;
@@ -240,5 +284,6 @@ private:
 		const FVector2D& ScreenPosition,
 		APlayerController* PlayerController,
 		TArray<FDIVEContextMenuEntry>& OutEntries,
-		FDIVEFocusTarget& OutPickTarget) const;
+		FDIVEFocusTarget& OutPickTarget,
+		FHitResult& OutPickHit) const;
 };

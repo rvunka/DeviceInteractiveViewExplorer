@@ -13,6 +13,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "DIVEDeviceAction.h"
 #include "Engine/GameViewportClient.h"
 #include "InputCoreTypes.h"
 #include "UI/SharedUmgStyle.h"
@@ -80,6 +81,18 @@ FName ResolveDiveMenuTypefaceName(EDIVEContextMenuTypeface Typeface)
 	}
 }
 
+FText FormatRowLabel(const FText& DisplayName, const bool bChecked)
+{
+	if (!bChecked)
+	{
+		return DisplayName;
+	}
+
+	return FText::Format(
+		NSLOCTEXT("DIVE", "ContextMenuCheckedRow", "✓ {0}"),
+		DisplayName);
+}
+
 } // namespace
 
 UDIVEContextMenuWidget::UDIVEContextMenuWidget(const FObjectInitializer& ObjectInitializer)
@@ -92,7 +105,7 @@ void UDIVEContextMenuActionButton::HandleClicked()
 {
 	if (UDIVEContextMenuWidget* Menu = OwnerWidget.Get())
 	{
-		Menu->HandleEntryClicked(ActionId);
+		Menu->HandleEntryClicked(Action, TargetKey);
 	}
 }
 
@@ -217,30 +230,34 @@ void UDIVEContextMenuWidget::SetScreenPosition(const FVector2D& InScreenPosition
 	}
 }
 
+float UDIVEContextMenuWidget::GetSectionDividerHeight(const FText& Header) const
+{
+	const float ViewportScale = GetViewportScaleSafe(this);
+	const float SectionSpacing = SnapSlateUnitsToPhysicalPixel(CachedStyle.SectionSpacing, ViewportScale);
+	const float SeparatorHeight = OnePhysicalPixelInSlateUnits(ViewportScale);
+	float Height = SectionSpacing * 2.f + SeparatorHeight;
+	if (!Header.IsEmpty())
+	{
+		Height += SnapSlateUnitsToPhysicalPixel(CachedStyle.SectionHeaderHeight, ViewportScale);
+	}
+	return Height;
+}
+
 float UDIVEContextMenuWidget::GetEstimatedMenuHeight() const
 {
 	const float ViewportScale = GetViewportScaleSafe(this);
 	const float RowHeight = SnapSlateUnitsToPhysicalPixel(CachedStyle.RowHeight, ViewportScale);
-	const float SectionSpacing = SnapSlateUnitsToPhysicalPixel(CachedStyle.SectionSpacing, ViewportScale);
-	const float SeparatorHeight = OnePhysicalPixelInSlateUnits(ViewportScale);
 
 	float Height = SnapSlateUnitsToPhysicalPixel(CachedStyle.PanelPadding * 2.f + 2.f, ViewportScale);
-	bool bNextRowStartsSection = false;
 
 	for (const FDIVEContextMenuEntry& Entry : CachedEntries)
 	{
 		if (Entry.bIsSeparator)
 		{
-			bNextRowStartsSection = true;
+			Height += GetSectionDividerHeight(Entry.DisplayName);
 		}
 		else
 		{
-			if (bNextRowStartsSection)
-			{
-				Height += SectionSpacing * 2.f + SeparatorHeight;
-				bNextRowStartsSection = false;
-			}
-
 			Height += RowHeight;
 		}
 	}
@@ -286,19 +303,103 @@ FSlateFontInfo UDIVEContextMenuWidget::ResolveRowFont() const
 		24);
 }
 
-void UDIVEContextMenuWidget::HandleEntryClicked(FName ActionId)
+FSlateFontInfo UDIVEContextMenuWidget::ResolveSectionHeaderFont() const
 {
-	if (!ActionId.IsNone())
+	return SharedUmgStyle::ResolveMenuFont(
+		CachedStyle.RowFont,
+		ResolveDiveMenuTypefaceName(CachedStyle.RowTypeface),
+		CachedStyle.SectionHeaderFontSize,
+		24);
+}
+
+void UDIVEContextMenuWidget::HandleEntryClicked(UDIVEDeviceAction* Action, FName TargetKey)
+{
+	if (Action)
 	{
-		OnEntrySelected.Broadcast(ActionId);
+		OnEntrySelected.Broadcast(Action, TargetKey);
+	}
+}
+
+void UDIVEContextMenuWidget::AddSectionDivider(const FText& Header)
+{
+	if (!EntryList || !WidgetTree)
+	{
+		return;
+	}
+
+	const float ViewportScale = GetViewportScaleSafe(this);
+	const float SectionSpacing = SnapSlateUnitsToPhysicalPixel(CachedStyle.SectionSpacing, ViewportScale);
+	const float SeparatorHeight = OnePhysicalPixelInSlateUnits(ViewportScale);
+	const float HeaderHeight = Header.IsEmpty()
+		? 0.f
+		: SnapSlateUnitsToPhysicalPixel(CachedStyle.SectionHeaderHeight, ViewportScale);
+	const float TotalHeight = GetSectionDividerHeight(Header);
+
+	USizeBox* DividerSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	DividerSize->SetHeightOverride(TotalHeight);
+	DividerSize->SetMinDesiredHeight(TotalHeight);
+	DividerSize->SetWidthOverride(CachedStyle.MenuWidth);
+
+	UVerticalBox* Column = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+
+	USizeBox* SpacerTop = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	SpacerTop->SetHeightOverride(SectionSpacing);
+	SpacerTop->SetMinDesiredHeight(SectionSpacing);
+	Column->AddChildToVerticalBox(SpacerTop);
+
+	if (!Header.IsEmpty())
+	{
+		USizeBox* HeaderSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		HeaderSize->SetHeightOverride(HeaderHeight);
+		HeaderSize->SetMinDesiredHeight(HeaderHeight);
+
+		UTextBlock* HeaderLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		HeaderLabel->SetText(Header);
+		HeaderLabel->SetFont(ResolveSectionHeaderFont());
+		HeaderLabel->SetJustification(ETextJustify::Left);
+		HeaderLabel->SetColorAndOpacity(FSlateColor(CachedStyle.SectionHeaderText));
+		HeaderSize->SetContent(HeaderLabel);
+
+		if (UVerticalBoxSlot* HeaderSlot = Column->AddChildToVerticalBox(HeaderSize))
+		{
+			HeaderSlot->SetHorizontalAlignment(HAlign_Fill);
+			HeaderSlot->SetPadding(FMargin(CachedStyle.RowHorizontalPadding, 0.f));
+		}
+	}
+
+	USizeBox* LineSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	LineSize->SetHeightOverride(SeparatorHeight);
+	LineSize->SetMinDesiredHeight(SeparatorHeight);
+
+	UImage* Line = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+	Line->SetBrush(MakeDiveFlatColorBrush(CachedStyle.SectionSeparator));
+	LineSize->SetContent(Line);
+
+	if (UVerticalBoxSlot* LineSlot = Column->AddChildToVerticalBox(LineSize))
+	{
+		LineSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		LineSlot->SetHorizontalAlignment(HAlign_Fill);
+		LineSlot->SetPadding(FMargin(CachedStyle.RowHorizontalPadding, 0.f));
+	}
+
+	USizeBox* SpacerBottom = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	SpacerBottom->SetHeightOverride(SectionSpacing);
+	SpacerBottom->SetMinDesiredHeight(SectionSpacing);
+	Column->AddChildToVerticalBox(SpacerBottom);
+
+	DividerSize->SetContent(Column);
+
+	if (UVerticalBoxSlot* RowSlot = EntryList->AddChildToVerticalBox(DividerSize))
+	{
+		RowSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		RowSlot->SetHorizontalAlignment(HAlign_Fill);
 	}
 }
 
 void UDIVEContextMenuWidget::AddActionRow(
 	const FDIVEContextMenuEntry& Entry,
 	const FSlateFontInfo& RowFont,
-	const FButtonStyle& RowButtonStyle,
-	bool bStartsSection)
+	const FButtonStyle& RowButtonStyle)
 {
 	if (!EntryList || !WidgetTree)
 	{
@@ -308,72 +409,26 @@ void UDIVEContextMenuWidget::AddActionRow(
 	USizeBox* RowSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 	const float ViewportScale = GetViewportScaleSafe(this);
 	const float RowHeight = SnapSlateUnitsToPhysicalPixel(CachedStyle.RowHeight, ViewportScale);
-	const float SectionSpacing = SnapSlateUnitsToPhysicalPixel(CachedStyle.SectionSpacing, ViewportScale);
-	const float SeparatorHeight = OnePhysicalPixelInSlateUnits(ViewportScale);
-	const float SectionHeaderHeight = bStartsSection
-		? SectionSpacing * 2.f + SeparatorHeight
-		: 0.f;
-	const float TotalRowHeight = RowHeight + SectionHeaderHeight;
-	RowSize->SetHeightOverride(TotalRowHeight);
-	RowSize->SetMinDesiredHeight(TotalRowHeight);
+	RowSize->SetHeightOverride(RowHeight);
+	RowSize->SetMinDesiredHeight(RowHeight);
 	RowSize->SetWidthOverride(CachedStyle.MenuWidth);
 
 	UDIVEContextMenuActionButton* RowButton =
 		WidgetTree->ConstructWidget<UDIVEContextMenuActionButton>(UDIVEContextMenuActionButton::StaticClass());
 	RowButton->SetStyle(RowButtonStyle);
 	RowButton->SetIsEnabled(Entry.bEnabled);
-	RowButton->ActionId = Entry.ActionId;
+	RowButton->Action = Entry.Action;
+	RowButton->TargetKey = Entry.TargetKey;
 	RowButton->OwnerWidget = this;
 
 	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-	Label->SetText(Entry.DisplayName);
+	Label->SetText(FormatRowLabel(Entry.DisplayName, Entry.bChecked));
 	Label->SetFont(RowFont);
 	Label->SetJustification(ETextJustify::Left);
 	Label->SetColorAndOpacity(FSlateColor(
 		Entry.bEnabled ? CachedStyle.RowText : CachedStyle.RowDisabledText));
 	RowButton->SetContent(Label);
-
-	if (bStartsSection)
-	{
-		UVerticalBox* SectionColumn = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-
-		USizeBox* SpacerTop = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		SpacerTop->SetHeightOverride(SectionSpacing);
-		SpacerTop->SetMinDesiredHeight(SectionSpacing);
-		SectionColumn->AddChildToVerticalBox(SpacerTop);
-
-		USizeBox* LineSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		LineSize->SetHeightOverride(SeparatorHeight);
-		LineSize->SetMinDesiredHeight(SeparatorHeight);
-
-		UImage* Line = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
-		Line->SetBrush(MakeDiveFlatColorBrush(CachedStyle.SectionSeparator));
-		LineSize->SetContent(Line);
-
-		if (UVerticalBoxSlot* LineSlot = SectionColumn->AddChildToVerticalBox(LineSize))
-		{
-			LineSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			LineSlot->SetHorizontalAlignment(HAlign_Fill);
-			LineSlot->SetPadding(FMargin(CachedStyle.RowHorizontalPadding, 0.f));
-		}
-
-		USizeBox* SpacerBottom = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		SpacerBottom->SetHeightOverride(SectionSpacing);
-		SpacerBottom->SetMinDesiredHeight(SectionSpacing);
-		SectionColumn->AddChildToVerticalBox(SpacerBottom);
-
-		USizeBox* ActionSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		ActionSize->SetHeightOverride(RowHeight);
-		ActionSize->SetMinDesiredHeight(RowHeight);
-		ActionSize->SetContent(RowButton);
-		SectionColumn->AddChildToVerticalBox(ActionSize);
-
-		RowSize->SetContent(SectionColumn);
-	}
-	else
-	{
-		RowSize->SetContent(RowButton);
-	}
+	RowSize->SetContent(RowButton);
 
 	if (Entry.bEnabled)
 	{
@@ -404,18 +459,16 @@ void UDIVEContextMenuWidget::RebuildList()
 
 	const FSlateFontInfo RowFont = ResolveRowFont();
 	const FButtonStyle RowButtonStyle = MakeRowButtonStyle(CachedStyle);
-	bool bNextRowStartsSection = false;
 
 	for (const FDIVEContextMenuEntry& Entry : CachedEntries)
 	{
 		if (Entry.bIsSeparator)
 		{
-			bNextRowStartsSection = true;
+			AddSectionDivider(Entry.DisplayName);
 		}
 		else
 		{
-			AddActionRow(Entry, RowFont, RowButtonStyle, bNextRowStartsSection);
-			bNextRowStartsSection = false;
+			AddActionRow(Entry, RowFont, RowButtonStyle);
 		}
 	}
 

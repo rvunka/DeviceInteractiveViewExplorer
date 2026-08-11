@@ -59,6 +59,15 @@ struct DIVERUNTIME_API FDIVEContextMenuStyle
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu|Sections")
 	FLinearColor SectionSeparator = FLinearColor(0.45f, 0.56f, 0.68f, 1.f);
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu|Sections")
+	FLinearColor SectionHeaderText = FLinearColor(0.55f, 0.62f, 0.70f, 1.f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu|Sections", meta = (ClampMin = "0", ClampMax = "12"))
 	float SectionSpacing = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu|Sections", meta = (ClampMin = "0", ClampMax = "32"))
+	float SectionHeaderHeight = 16.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|ContextMenu|Sections", meta = (ClampMin = "6", ClampMax = "20"))
+	int32 SectionHeaderFontSize = 11;
 };

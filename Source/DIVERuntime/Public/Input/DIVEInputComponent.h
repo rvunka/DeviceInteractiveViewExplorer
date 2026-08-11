@@ -98,6 +98,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = "DIVE|Session Chrome")
 	bool bShowSessionChrome = true;
 
+	/** Optional Blueprint subclass for the session chrome HUD. Empty = UDIVESessionChromeWidget. */
+	UPROPERTY(EditAnywhere, Category = "DIVE|Session Chrome", meta = (
+		EditCondition = "bShowSessionChrome",
+		DisplayName = "Session Chrome Widget Class"))
+	TSubclassOf<UDIVESessionChromeWidget> SessionChromeWidgetClass;
+
 	UPROPERTY(EditAnywhere, Category = "DIVE|Session Chrome", meta = (EditCondition = "bShowSessionChrome"))
 	int32 ChromeViewportZOrder = 10;
 

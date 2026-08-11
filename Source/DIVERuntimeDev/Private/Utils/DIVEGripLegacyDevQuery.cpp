@@ -3,7 +3,7 @@
 #include "Utils/DIVEGripLegacyDevQuery.h"
 
 #include "DIVESessionSubsystem.h"
-#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
 #if DIVE_WITH_GRIP
@@ -48,14 +48,8 @@ namespace DIVEGripLegacyDevQueryPrivate
 			return nullptr;
 		}
 
-		const UWorld* World = Owner->GetWorld();
-		if (!World)
-		{
-			return nullptr;
-		}
-
-		const UGameInstance* GameInstance = World->GetGameInstance();
-		return GameInstance ? GameInstance->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
+		UWorld* World = Owner->GetWorld();
+		return World ? World->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
 	}
 
 	bool IsPawnBridgePhysicalDriveActive(const AActor* Owner)

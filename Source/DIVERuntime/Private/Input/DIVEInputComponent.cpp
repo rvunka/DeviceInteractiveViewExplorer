@@ -4,13 +4,12 @@
 
 #include "DIVESessionSubsystem.h"
 #include "DIVELog.h"
-#include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/DIVEContextMenuUIComponent.h"
 #include "UI/DIVESessionChromeWidget.h"
-#include "Utils/DIVEComponentResolve.h"
+#include "Utils/SharedComponentResolve.h"
 
 UDIVEInputComponent::UDIVEInputComponent()
 {
@@ -176,12 +175,9 @@ void UDIVEInputComponent::BeginSessionPresentation()
 
 UDIVESessionSubsystem* UDIVEInputComponent::GetSessionSubsystem() const
 {
-	if (const UWorld* World = GetWorld())
+	if (UWorld* World = GetWorld())
 	{
-		if (UGameInstance* GameInstance = World->GetGameInstance())
-		{
-			return GameInstance->GetSubsystem<UDIVESessionSubsystem>();
-		}
+		return World->GetSubsystem<UDIVESessionSubsystem>();
 	}
 
 	return nullptr;
@@ -201,7 +197,7 @@ bool UDIVEInputComponent::IsLocallyControlledOwner() const
 
 void UDIVEInputComponent::ResolveComponentReferences()
 {
-	ContextMenuUIComponent = DIVEComponentResolve::FindComponentByNameOrClass<UDIVEContextMenuUIComponent>(
+	ContextMenuUIComponent = SharedComponentResolve::FindComponentByNameOrClass<UDIVEContextMenuUIComponent>(
 		GetOwner(),
 		ContextMenuUIComponentName);
 }
@@ -240,7 +236,7 @@ void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
 	PlayerController->GetInputMouseDelta(MouseDeltaX, MouseDeltaY);
 	if (!FMath::IsNearlyZero(MouseDeltaX) || !FMath::IsNearlyZero(MouseDeltaY))
 	{
-		Subsystem->UpdateProxyDrive(FVector2D(MouseDeltaX, MouseDeltaY));
+		Subsystem->UpdateActiveInteraction(FVector2D(MouseDeltaX, MouseDeltaY));
 		return;
 	}
 
@@ -255,7 +251,7 @@ void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
 
 	if (!Delta.IsNearlyZero())
 	{
-		Subsystem->UpdateProxyDrive(Delta);
+		Subsystem->UpdateActiveInteraction(Delta);
 	}
 }
 
@@ -304,6 +300,18 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 
 	PrimaryActionLastPosition = ScreenPosition;
 
+	// Continuous / proxy already active (e.g. started from context menu): click commits/ends.
+	if (Subsystem->IsProxyDriving())
+	{
+		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
+		Subsystem->EndProxyDrive(true);
+		if (bSessionPresentationActive)
+		{
+			ApplySessionInputMode(PlayerController);
+		}
+		return;
+	}
+
 	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Physical)
 	{
 		if (Subsystem->TryBeginProxyDriveAtScreenPosition(ScreenPosition, PlayerController))
@@ -321,19 +329,7 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 
 	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Default)
 	{
-		if (Subsystem->ExecutePrimaryActionAtScreenPosition(ScreenPosition, PlayerController))
-		{
-			return;
-		}
-
-		FDIVEFocusTarget PickTarget;
-		if (Subsystem->ResolvePickAtScreenPosition(ScreenPosition, PlayerController, PickTarget)
-			&& PickTarget.Kind == EDIVEFocusKind::Anchor
-			&& PickTarget.IsValidFocus())
-		{
-			Subsystem->FocusTarget(PickTarget, true);
-		}
-
+		Subsystem->ExecutePrimaryActionAtScreenPosition(ScreenPosition, PlayerController);
 		return;
 	}
 }
@@ -342,6 +338,12 @@ void UDIVEInputComponent::RoutePrimaryActionReleased()
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
+		if (Subsystem->ConsumeIgnoreNextPrimaryActionRelease())
+		{
+			TryGetCursorScreenPosition(PrimaryActionLastPosition);
+			return;
+		}
+
 		const bool bWasProxyDriving = Subsystem->IsProxyDriving();
 		if (bWasProxyDriving)
 		{
@@ -608,7 +610,7 @@ void UDIVEInputComponent::HandleOrbitDelta(FVector2D Delta)
 
 void UDIVEInputComponent::HandleZoomIn()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -624,7 +626,7 @@ void UDIVEInputComponent::HandleZoomIn()
 
 void UDIVEInputComponent::HandleZoomOut()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -676,6 +678,7 @@ void UDIVEInputComponent::HandlePrimaryActionReleased()
 	{
 		if (Subsystem->IsContextMenuOpen())
 		{
+			Subsystem->ConsumeIgnoreNextPrimaryActionRelease();
 			return;
 		}
 	}
@@ -798,7 +801,12 @@ void UDIVEInputComponent::ShowSessionChrome()
 
 	if (!SessionChromeWidget)
 	{
-		SessionChromeWidget = CreateWidget<UDIVESessionChromeWidget>(PlayerController, UDIVESessionChromeWidget::StaticClass());
+		TSubclassOf<UDIVESessionChromeWidget> WidgetClass = SessionChromeWidgetClass;
+		if (!*WidgetClass)
+		{
+			WidgetClass = UDIVESessionChromeWidget::StaticClass();
+		}
+		SessionChromeWidget = CreateWidget<UDIVESessionChromeWidget>(PlayerController, WidgetClass);
 	}
 
 	if (!SessionChromeWidget)
@@ -860,7 +868,7 @@ void UDIVEInputComponent::HandleCycleInteractionMode()
 
 void UDIVEInputComponent::HandleNavigateBack()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}

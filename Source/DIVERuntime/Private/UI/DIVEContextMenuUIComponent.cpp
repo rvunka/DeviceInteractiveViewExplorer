@@ -3,14 +3,16 @@
 #include "UI/DIVEContextMenuUIComponent.h"
 
 #include "DIVESessionSubsystem.h"
-#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/DIVEContextMenuWidget.h"
+#include "UI/DIVEValueReadoutWidget.h"
 
 UDIVEContextMenuUIComponent::UDIVEContextMenuUIComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	ValueReadoutWidgetClass = UDIVEValueReadoutWidget::StaticClass();
 }
 
 void UDIVEContextMenuUIComponent::BeginPlay()
@@ -23,17 +25,19 @@ void UDIVEContextMenuUIComponent::EndPlay(const EEndPlayReason::Type EndPlayReas
 {
 	UnbindSessionDelegates();
 	HideContextMenu();
+	HideValueReadout();
 	Super::EndPlay(EndPlayReason);
 }
 
 void UDIVEContextMenuUIComponent::BindSessionDelegates()
 {
-	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	if (UWorld* World = GetWorld())
 	{
-		if (UDIVESessionSubsystem* Subsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+		if (UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
 			Subsystem->OnContextMenuVisibilityChanged.AddUniqueDynamic(this, &UDIVEContextMenuUIComponent::HandleContextMenuVisibilityChanged);
 			Subsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVEContextMenuUIComponent::HandleSessionEnded);
+			Subsystem->OnInteractionValueChanged.AddUniqueDynamic(this, &UDIVEContextMenuUIComponent::HandleInteractionValueChanged);
 
 			if (Subsystem->IsContextMenuOpen())
 			{
@@ -45,12 +49,13 @@ void UDIVEContextMenuUIComponent::BindSessionDelegates()
 
 void UDIVEContextMenuUIComponent::UnbindSessionDelegates()
 {
-	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	if (UWorld* World = GetWorld())
 	{
-		if (UDIVESessionSubsystem* Subsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+		if (UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
 			Subsystem->OnContextMenuVisibilityChanged.RemoveDynamic(this, &UDIVEContextMenuUIComponent::HandleContextMenuVisibilityChanged);
 			Subsystem->OnSessionEnded.RemoveDynamic(this, &UDIVEContextMenuUIComponent::HandleSessionEnded);
+			Subsystem->OnInteractionValueChanged.RemoveDynamic(this, &UDIVEContextMenuUIComponent::HandleInteractionValueChanged);
 		}
 	}
 }
@@ -80,27 +85,91 @@ void UDIVEContextMenuUIComponent::HandleSessionEnded(EDIVESessionEndReason /*Rea
 	}
 
 	HideContextMenu();
+	HideValueReadout();
 }
 
-void UDIVEContextMenuUIComponent::HandleContextMenuEntrySelected(FName ActionId)
+void UDIVEContextMenuUIComponent::HandleContextMenuEntrySelected(UDIVEDeviceAction* Action, FName TargetKey)
 {
-	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	if (UWorld* World = GetWorld())
 	{
-		if (UDIVESessionSubsystem* Subsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+		if (UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
-			Subsystem->ExecuteContextMenuAction(ActionId);
+			Subsystem->ExecuteContextMenuAction(Action, TargetKey);
 		}
 	}
 }
 
 void UDIVEContextMenuUIComponent::HandleContextMenuDismissed()
 {
-	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	if (UWorld* World = GetWorld())
 	{
-		if (UDIVESessionSubsystem* Subsystem = GameInstance->GetSubsystem<UDIVESessionSubsystem>())
+		if (UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
 			Subsystem->CloseContextMenu();
 		}
+	}
+}
+
+void UDIVEContextMenuUIComponent::HandleInteractionValueChanged(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	float NormalizedValue)
+{
+	(void)Context;
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (!Action)
+	{
+		if (ValueReadoutWidget)
+		{
+			ValueReadoutWidget->ClearReadout();
+		}
+		return;
+	}
+
+	EnsureValueReadoutWidget();
+	if (ValueReadoutWidget)
+	{
+		ValueReadoutWidget->SetReadout(Action->GetResolvedDisplayName(), NormalizedValue);
+	}
+}
+
+void UDIVEContextMenuUIComponent::EnsureValueReadoutWidget()
+{
+	if (ValueReadoutWidget)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(Cast<APawn>(GetOwner()) ? Cast<APawn>(GetOwner())->GetController() : nullptr);
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	TSubclassOf<UDIVEValueReadoutWidget> WidgetClass = ValueReadoutWidgetClass;
+	if (!*WidgetClass)
+	{
+		WidgetClass = UDIVEValueReadoutWidget::StaticClass();
+	}
+
+	ValueReadoutWidget = CreateWidget<UDIVEValueReadoutWidget>(PlayerController, WidgetClass);
+	if (ValueReadoutWidget && !ValueReadoutWidget->IsInViewport())
+	{
+		ValueReadoutWidget->AddToViewport(ValueReadoutZOrder);
+	}
+}
+
+void UDIVEContextMenuUIComponent::HideValueReadout()
+{
+	if (ValueReadoutWidget)
+	{
+		ValueReadoutWidget->ClearReadout();
+		ValueReadoutWidget->RemoveFromParent();
+		ValueReadoutWidget = nullptr;
 	}
 }
 
@@ -112,8 +181,8 @@ void UDIVEContextMenuUIComponent::ShowContextMenu()
 		return;
 	}
 
-	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-	UDIVESessionSubsystem* Subsystem = GameInstance ? GameInstance->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
+	UWorld* World = GetWorld();
+	UDIVESessionSubsystem* Subsystem = World ? World->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
 	if (!Subsystem)
 	{
 		return;
@@ -121,7 +190,12 @@ void UDIVEContextMenuUIComponent::ShowContextMenu()
 
 	if (!ContextMenuWidget)
 	{
-		ContextMenuWidget = CreateWidget<UDIVEContextMenuWidget>(PlayerController, UDIVEContextMenuWidget::StaticClass());
+		TSubclassOf<UDIVEContextMenuWidget> WidgetClass = ContextMenuWidgetClass;
+		if (!*WidgetClass)
+		{
+			WidgetClass = UDIVEContextMenuWidget::StaticClass();
+		}
+		ContextMenuWidget = CreateWidget<UDIVEContextMenuWidget>(PlayerController, WidgetClass);
 		if (ContextMenuWidget)
 		{
 			ContextMenuWidget->OnEntrySelected.AddDynamic(this, &UDIVEContextMenuUIComponent::HandleContextMenuEntrySelected);

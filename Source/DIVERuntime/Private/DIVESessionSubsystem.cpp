@@ -2,9 +2,11 @@
 
 #include "DIVESessionSubsystem.h"
 
+#include "Actions/DIVEBuiltInActions.h"
 #include "DIVECameraRig.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/DIVESessionFocusOps.h"
 #include "Session/DIVESessionIsolationOps.h"
@@ -13,10 +15,34 @@
 #include "Utils/DIVEContextMenu.h"
 #include "Utils/DIVEPlayerQuery.h"
 
+void UDIVESessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	// Ensure the session is terminated if the world tears down while a session is active (e.g.
+	// during seamless level travel or PIE teardown started before EndPlay propagates).
+	FWorldDelegates::OnWorldBeginTearDown.AddUObject(this, &UDIVESessionSubsystem::HandleWorldBeginTearDown);
+}
+
 void UDIVESessionSubsystem::Deinitialize()
 {
+	FWorldDelegates::OnWorldBeginTearDown.RemoveAll(this);
 	EndSession(EDIVESessionEndReason::Forced);
 	Super::Deinitialize();
+}
+
+bool UDIVESessionSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
+{
+	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
+}
+
+void UDIVESessionSubsystem::HandleWorldBeginTearDown(UWorld* InWorld)
+{
+	// Only end if the tearing-down world is the one that hosts the current session.
+	if (IsSessionActive() && InWorld && InWorld == GetWorld())
+	{
+		EndSession(EDIVESessionEndReason::Forced);
+	}
 }
 
 bool UDIVESessionSubsystem::TryBeginSession(
@@ -42,6 +68,13 @@ bool UDIVESessionSubsystem::TryBeginSession(
 	}
 
 	Inspectable->BuildSemanticRegistry();
+
+	// Create the internal proxy-drive action that routes Physical-mode IDIVEProxyDrive hits through
+	// the standard continuous-action slot, avoiding a parallel code path.
+	if (!InternalProxyDriveAction)
+	{
+		InternalProxyDriveAction = NewObject<UDIVEProxyDriveForwardAction>(this, TEXT("InternalProxyDriveAction"));
+	}
 
 	ActiveDeviceHost = DeviceHost;
 	ActiveInspectable = Inspectable;
@@ -265,27 +298,34 @@ bool UDIVESessionSubsystem::BuildContextMenuEntries(
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController,
 	TArray<FDIVEContextMenuEntry>& OutEntries,
-	FDIVEFocusTarget& OutPickTarget) const
+	FDIVEFocusTarget& OutPickTarget,
+	FHitResult& OutPickHit) const
 {
 	OutEntries.Reset();
 	OutPickTarget = FDIVEFocusTarget::MakeDeviceRoot();
+	OutPickHit = FHitResult();
 
 	if (!IsSessionActive() || !PlayerController)
 	{
 		return false;
 	}
 
-	const bool bHasValidPick = ResolvePickAtScreenPosition(ScreenPosition, PlayerController, OutPickTarget);
-	if (!bHasValidPick || OutPickTarget.Kind == EDIVEFocusKind::Anchor)
+	const bool bHasValidPick = ResolvePickAtScreenPositionWithHit(
+		ScreenPosition,
+		PlayerController,
+		OutPickTarget,
+		OutPickHit);
+	if (!bHasValidPick)
 	{
 		return false;
 	}
 
-	const UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
-	const bool bIncludeAdminMeshEntries = Inspectable && Inspectable->bEnableAdminContextMenuEntries;
-
-	DIVEContextMenu::BuildStandardEntries(this, OutPickTarget, bHasValidPick, bIncludeAdminMeshEntries, OutEntries);
-	DIVEContextMenu::AppendCustomEntries(ActiveDeviceHost.Get(), this, OutPickTarget, OutEntries);
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	DIVEContextMenu::BuildEntries(
+		Inspectable,
+		OutPickTarget,
+		bHasValidPick,
+		OutEntries);
 
 	return !OutEntries.IsEmpty();
 }
@@ -306,60 +346,72 @@ bool UDIVESessionSubsystem::OpenContextMenuAtScreenPosition(
 	}
 
 	FDIVEFocusTarget PickTarget;
-	if (!BuildContextMenuEntries(ScreenPosition, PlayerController, ContextMenuEntries, PickTarget))
+	FHitResult PickHit;
+	if (!BuildContextMenuEntries(ScreenPosition, PlayerController, ContextMenuEntries, PickTarget, PickHit))
 	{
 		return false;
 	}
 
 	ContextMenuPickTarget = PickTarget;
+	ContextMenuPickHit = PickHit;
 	ContextMenuScreenPosition = ScreenPosition;
+	bIgnoreNextPrimaryActionRelease = false;
 	bContextMenuOpen = true;
 	FDIVESessionPickOps::ClearPickHover(*this);
 	OnContextMenuVisibilityChanged.Broadcast(true);
 	return true;
 }
 
-bool UDIVESessionSubsystem::ExecuteContextMenuAction(FName ActionId)
+bool UDIVESessionSubsystem::ExecuteContextMenuAction(UDIVEDeviceAction* Action, FName TargetKey)
 {
-	if (!IsSessionActive() || !bContextMenuOpen || ActionId.IsNone())
+	if (!IsSessionActive() || !bContextMenuOpen || !Action)
 	{
 		return false;
 	}
 
 	const FDIVEFocusTarget PickTarget = ContextMenuPickTarget;
+	const FVector2D ScreenPosition = ContextMenuScreenPosition;
+	const FHitResult PickHit = ContextMenuPickHit;
 	CloseContextMenu();
 
-	if (ActionId == DIVE::kContextFocus)
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	if (!Inspectable)
 	{
-		if (!PickTarget.IsValidFocus())
+		return false;
+	}
+
+	const FDIVEActionContext Context = Inspectable->MakeActionContext(
+		PickTarget,
+		TargetKey,
+		ScreenPosition,
+		PickHit);
+
+	{
+		FDIVEActionWorldScope WorldScope(Action, GetWorld());
+		if (!Action->CanExecute(Context))
 		{
 			return false;
 		}
 
-		return FocusTarget(PickTarget, true);
-	}
+		if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(Action))
+		{
+			if (!TryBeginContinuousAction(Continuous, Context))
+			{
+				return false;
+			}
 
-	if (ActionId == DIVE::kContextIsolate)
-	{
-		return ToggleIsolationForTarget(PickTarget);
-	}
+			bIgnoreNextPrimaryActionRelease = true;
+			return true;
+		}
 
-	if (ActionId == DIVE::kContextToggleMeshPhysics)
-	{
-		return AreAdminContextMenuEntriesAllowed() && ToggleMeshPhysicsForTarget(PickTarget);
-	}
+		if (!Action->Execute(Context))
+		{
+			return false;
+		}
 
-	if (ActionId == DIVE::kContextDeleteMesh)
-	{
-		return AreAdminContextMenuEntriesAllowed() && DeleteMeshForTarget(PickTarget);
+		Inspectable->NotifyActionExecuted(Action, Context);
+		return true;
 	}
-
-	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
-	{
-		return Inspectable->NotifyPickContextMenuAction(ActionId, PickTarget);
-	}
-
-	return false;
 }
 
 void UDIVESessionSubsystem::CloseContextMenu()
@@ -373,7 +425,19 @@ void UDIVESessionSubsystem::CloseContextMenu()
 	ContextMenuEntries.Reset();
 	ContextMenuPickTarget = FDIVEFocusTarget::MakeDeviceRoot();
 	ContextMenuScreenPosition = FVector2D::ZeroVector;
+	ContextMenuPickHit = FHitResult();
 	OnContextMenuVisibilityChanged.Broadcast(false);
+}
+
+bool UDIVESessionSubsystem::ConsumeIgnoreNextPrimaryActionRelease()
+{
+	if (!bIgnoreNextPrimaryActionRelease)
+	{
+		return false;
+	}
+
+	bIgnoreNextPrimaryActionRelease = false;
+	return true;
 }
 
 bool UDIVESessionSubsystem::IsIsolationActiveForTarget(const FDIVEFocusTarget& Target) const
@@ -404,7 +468,7 @@ bool UDIVESessionSubsystem::ToggleIsolationForTarget(const FDIVEFocusTarget& Tar
 
 bool UDIVESessionSubsystem::ToggleMeshPhysicsForTarget(const FDIVEFocusTarget& Target)
 {
-	if (!AreAdminContextMenuEntriesAllowed() || !IsSessionActive() || Target.Kind != EDIVEFocusKind::Primitive)
+	if (!IsSessionActive() || Target.Kind != EDIVEFocusKind::Primitive)
 	{
 		return false;
 	}
@@ -427,7 +491,7 @@ bool UDIVESessionSubsystem::ToggleMeshPhysicsForTarget(const FDIVEFocusTarget& T
 
 bool UDIVESessionSubsystem::DeleteMeshForTarget(const FDIVEFocusTarget& Target)
 {
-	if (!AreAdminContextMenuEntriesAllowed() || !IsSessionActive() || Target.Kind != EDIVEFocusKind::Primitive)
+	if (!IsSessionActive() || Target.Kind != EDIVEFocusKind::Primitive)
 	{
 		return false;
 	}
@@ -452,13 +516,12 @@ bool UDIVESessionSubsystem::DeleteMeshForTarget(const FDIVEFocusTarget& Target)
 	return true;
 }
 
-bool UDIVESessionSubsystem::AreAdminContextMenuEntriesAllowed() const
+bool UDIVESessionSubsystem::AreAdminContextMenuEntriesAllowed()
 {
 #if UE_BUILD_SHIPPING
 	return false;
 #else
-	const UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
-	return Inspectable && Inspectable->bEnableAdminContextMenuEntries;
+	return true;
 #endif
 }
 
@@ -479,14 +542,62 @@ bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
 	return FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(*this, ScreenPosition, PlayerController);
 }
 
-void UDIVESessionSubsystem::UpdateProxyDrive(const FVector2D& ScreenDelta)
+void UDIVESessionSubsystem::UpdateActiveInteraction(const FVector2D& ScreenDelta)
 {
-	FDIVESessionPhysicalDriveOps::UpdateProxyDrive(*this, ScreenDelta);
+	FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(*this, ScreenDelta);
 }
 
 void UDIVESessionSubsystem::EndProxyDrive(bool bCommit)
 {
 	FDIVESessionPhysicalDriveOps::EndProxyDrive(*this, bCommit);
+}
+
+bool UDIVESessionSubsystem::TryBeginContinuousAction(
+	UDIVEContinuousDeviceAction* Action,
+	const FDIVEActionContext& Context)
+{
+	if (!IsSessionActive() || bProxyDriving || !Action)
+	{
+		return false;
+	}
+
+	FDIVEActionWorldScope WorldScope(Action, GetWorld());
+	if (!Action->CanExecute(Context) || !Action->BeginInteraction(Context))
+	{
+		return false;
+	}
+
+	Action->MarkInteractionActive();
+
+	ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::ContinuousAction;
+	ActiveContinuousAction = Action;
+	ActivePawnPhysicalDrive.Reset();
+	bProxyDriving = true;
+
+	Action->OnValueChanged.AddUniqueDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
+
+	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
+	{
+		Inspectable->NotifyActionExecuted(Action, Context);
+	}
+
+	return true;
+}
+
+void UDIVESessionSubsystem::HandleContinuousActionValueChanged(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	float NormalizedValue)
+{
+	NotifyInteractionValueChanged(Action, Context, NormalizedValue);
+}
+
+void UDIVESessionSubsystem::NotifyInteractionValueChanged(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	float NormalizedValue)
+{
+	OnInteractionValueChanged.Broadcast(Action, Context, NormalizedValue);
 }
 
 void UDIVESessionSubsystem::HandleActivePawnPhysicalManualRotatePressed()

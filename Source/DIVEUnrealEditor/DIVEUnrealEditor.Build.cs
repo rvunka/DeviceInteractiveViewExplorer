@@ -22,11 +22,17 @@ public class DIVEUnrealEditor : ModuleRules
 		{
 			"UnrealEd",
 			"AssetTools",
+			"AssetRegistry",
 			"Slate",
 			"SlateCore",
 			"ToolMenus",
 			"EditorFramework",
-			"DataValidation"
+			"DataValidation",
+			"Kismet",
+			"KismetCompiler",
+			"BlueprintGraph",
+			"PropertyEditor",
+			"InputCore"
 		});
 	}
 }

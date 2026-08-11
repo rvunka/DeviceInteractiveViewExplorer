@@ -7,15 +7,7 @@
 class AActor;
 class UWorld;
 
-/**
- * Dev / editor diagnostic dump for DIVE inspectable devices (DIVERuntimeDev).
- *
- * Console (PIE / non-Shipping with Dev module):
- *   DIVE.DumpDevice [optional name substring]  — active session device, or first/name match
- *   DIVE.DumpAll                              — every actor with UDIVEInspectableComponent
- *
- * Writes Output Log (LogDIVE) and Saved/DIVE/Dumps/
- */
+/** Device dump: DIVE.DumpDevice / DIVE.DumpAll → LogDIVE + Saved/DIVE/Dumps/. */
 namespace DIVEDebugDump
 {
 DIVERUNTIMEDEV_API FString BuildDeviceDump(AActor* DeviceActor);

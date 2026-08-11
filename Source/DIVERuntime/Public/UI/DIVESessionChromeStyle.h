@@ -30,10 +30,9 @@ struct DIVERUNTIME_API FDIVESessionChromeStyle
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|SessionChrome|Text")
 	FLinearColor HintText = FLinearColor(0.55f, 0.58f, 0.62f, 1.f);
 
-	/** Hint under the mode label (project owns the real mode-switch binding). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|SessionChrome|Text", meta = (
 		DisplayName = "Mode Switch Hint",
-		ToolTip = "e.g. Tab — switch mode. Empty hides the hint text content but not the chrome."))
+		ToolTip = "e.g. Tab — switch mode. Empty hides the hint."))
 	FText ModeSwitchHint;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|SessionChrome|Text", meta = (ClampMin = "8", ClampMax = "24"))

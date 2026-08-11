@@ -2,10 +2,13 @@
 
 #include "DIVEDeviceScan.h"
 
+#include "DIVEActionBinding.h"
+#include "DIVEActionBindingValidation.h"
 #include "DIVEAnchorComponent.h"
 #include "DIVEConvention.h"
-#include "DIVEDeviceActionHandler.h"
+#include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
+#include "Misc/DataValidation.h"
 
 namespace
 {
@@ -69,22 +72,11 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 
 	Inspectable->BuildSemanticRegistry();
 
-	if (!Inspectable->PickContextMenuByComponent.IsEmpty()
-		&& !DeviceActor->Implements<UDIVEDeviceActionHandler>())
-	{
-		AddWarning(Report, TEXT("PickContextMenuByComponent is non-empty but the actor does not implement IDIVEDeviceActionHandler."));
-	}
-
 	TArray<UDIVEAnchorComponent*> Anchors;
 	DeviceActor->GetComponents<UDIVEAnchorComponent>(Anchors);
 	Report.AnchorCount = Anchors.Num();
 
-	if (Anchors.IsEmpty())
-	{
-		AddWarning(Report, TEXT("No UDIVEAnchorComponent instances found."));
-	}
-
-	TSet<FName> SeenPartIds;
+	TMap<FName, UDIVEAnchorComponent*> PartIdOwners;
 	for (UDIVEAnchorComponent* Anchor : Anchors)
 	{
 		if (!Anchor)
@@ -92,122 +84,101 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 			continue;
 		}
 
-		const FName PartId = Anchor->GetResolvedPartId();
-		if (PartId.IsNone())
+		const FName ResolvedPartId = Anchor->GetResolvedPartId();
+		if (ResolvedPartId.IsNone())
 		{
-			AddError(Report, FString::Printf(TEXT("Anchor '%s' has empty PartId."), *Anchor->GetName()));
+			AddError(Report, FString::Printf(TEXT("Anchor '%s' resolves to an empty PartId."), *GetNameSafe(Anchor)));
 			continue;
 		}
 
-		if (SeenPartIds.Contains(PartId))
+		if (UDIVEAnchorComponent** Existing = PartIdOwners.Find(ResolvedPartId))
 		{
-			AddError(Report, FString::Printf(TEXT("Duplicate PartId '%s'."), *PartId.ToString()));
+			AddError(Report, FString::Printf(
+				TEXT("Duplicate PartId '%s' on anchors '%s' and '%s'."),
+				*ResolvedPartId.ToString(),
+				*GetNameSafe(*Existing),
+				*GetNameSafe(Anchor)));
 		}
 		else
 		{
-			SeenPartIds.Add(PartId);
+			PartIdOwners.Add(ResolvedPartId, Anchor);
 		}
 	}
 
 	if (!Inspectable->DefaultStartFocusId.IsNone())
 	{
-		FDIVEFocusTarget ResolvedTarget;
-		if (!Inspectable->TryResolveStartFocusTarget(Inspectable->DefaultStartFocusId, ResolvedTarget))
+		FDIVEFocusTarget Resolved;
+		if (!Inspectable->TryResolveStartFocusTarget(Inspectable->DefaultStartFocusId, Resolved))
 		{
 			AddWarning(Report, FString::Printf(
-				TEXT("DefaultStartFocusId '%s' does not match any anchor PartId or pickable mesh component."),
+				TEXT("DefaultStartFocusId '%s' does not match any anchor PartId or pickable mesh."),
 				*Inspectable->DefaultStartFocusId.ToString()));
 		}
 	}
 
-	TSet<FName> QualifiedActionIds;
-	for (const TPair<FName, FDIVEPickContextMenuActionList>& ComponentEntry : Inspectable->PickContextMenuByComponent)
+	TArray<FDIVEMenuSection> Sections;
+	Inspectable->GatherAuthoredSections(Sections);
+	TArray<const FDIVEActionBinding*> Bindings;
+	Inspectable->GatherAuthoredBindings(Bindings);
+
+	// Use the shared validator so Scan, CatalogAsset::IsDataValid and Inspectable::IsDataValid
+	// all apply the same rules.
 	{
-		const FName ComponentName = ComponentEntry.Key;
-		if (ComponentName.IsNone())
+		FDataValidationContext ValidationCtx;
+		TSet<FName> KnownSectionIds;
+		DIVEActionBindingValidation::ValidateSections(Sections, KnownSectionIds, ValidationCtx);
+		DIVEActionBindingValidation::ValidateBindings(Bindings, KnownSectionIds, ValidationCtx);
+
+		for (const FDataValidationContext::FIssue& Issue : ValidationCtx.GetIssues())
 		{
-			AddWarning(Report, TEXT("PickContextMenuByComponent has an entry with an empty component name key."));
+			if (Issue.Severity == EMessageSeverity::Error)
+			{
+				AddError(Report, Issue.Message.ToString());
+			}
+			else if (Issue.Severity == EMessageSeverity::Warning)
+			{
+				AddWarning(Report, Issue.Message.ToString());
+			}
+		}
+	}
+
+	// Device-specific: ComponentTag match check — requires device primitives.
+	TArray<UPrimitiveComponent*> DevicePrimitives;
+	DIVE::CollectDevicePrimitives(DeviceActor, DevicePrimitives);
+
+	for (int32 BindingIndex = 0; BindingIndex < Bindings.Num(); ++BindingIndex)
+	{
+		const FDIVEActionBinding* Binding = Bindings[BindingIndex];
+		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::ComponentTag)
+		{
 			continue;
 		}
 
-		if (Inspectable->PickInteractionExclusions.Contains(ComponentName))
+		const FString Label = Binding->BindingId.IsNone()
+			? FString::FromInt(BindingIndex)
+			: Binding->BindingId.ToString();
+
+		bool bAnyTagged = false;
+		for (const FName MatchTag : Binding->Targets.MatchValues)
 		{
-			AddWarning(Report, FString::Printf(
-				TEXT("PickContextMenuByComponent key '%s' is listed in PickInteractionExclusions and will never receive pick interaction."),
-				*ComponentName.ToString()));
-		}
-
-		for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
-		{
-			if (Action.ActionId.IsNone())
+			for (const UPrimitiveComponent* Primitive : DevicePrimitives)
 			{
-				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' has an entry with empty ActionId."),
-					*ComponentName.ToString()));
-				continue;
-			}
-
-			if (DIVE::IsReservedContextMenuActionId(Action.ActionId))
-			{
-				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent ActionId '%s' is reserved by DIVE built-in menu rows."),
-					*Action.ActionId.ToString()));
-			}
-
-			const FName QualifiedActionId = DIVE::MakeQualifiedPickContextMenuActionId(ComponentName, Action.ActionId);
-			if (QualifiedActionIds.Contains(QualifiedActionId))
-			{
-				AddError(Report, FString::Printf(
-					TEXT("Duplicate qualified ActionId '%s' in PickContextMenuByComponent."),
-					*QualifiedActionId.ToString()));
-			}
-			else
-			{
-				QualifiedActionIds.Add(QualifiedActionId);
-			}
-		}
-
-		if (ComponentEntry.Value.Actions.IsEmpty())
-		{
-			AddWarning(Report, FString::Printf(
-				TEXT("PickContextMenuByComponent '%s' has no actions."),
-				*ComponentName.ToString()));
-		}
-
-		FDIVEFocusTarget ResolvedCatalogTarget;
-		if (!Inspectable->TryResolveStartFocusTarget(ComponentName, ResolvedCatalogTarget))
-		{
-			AddWarning(Report, FString::Printf(
-				TEXT("PickContextMenuByComponent key '%s' does not match any anchor PartId or pickable mesh component."),
-				*ComponentName.ToString()));
-		}
-
-		if (!ComponentEntry.Value.PrimaryActionId.IsNone())
-		{
-			bool bFoundPrimary = false;
-			for (const FDIVEPickContextMenuAction& Action : ComponentEntry.Value.Actions)
-			{
-				if (Action.ActionId == ComponentEntry.Value.PrimaryActionId)
+				if (Primitive && !MatchTag.IsNone() && Primitive->ComponentHasTag(MatchTag))
 				{
-					bFoundPrimary = true;
-					if (!Action.bEnabled)
-					{
-						AddWarning(Report, FString::Printf(
-							TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' points to a disabled action."),
-							*ComponentName.ToString(),
-							*ComponentEntry.Value.PrimaryActionId.ToString()));
-					}
+					bAnyTagged = true;
 					break;
 				}
 			}
-
-			if (!bFoundPrimary)
+			if (bAnyTagged)
 			{
-				AddError(Report, FString::Printf(
-					TEXT("PickContextMenuByComponent '%s' PrimaryActionId '%s' does not match any resolved ActionId."),
-					*ComponentName.ToString(),
-					*ComponentEntry.Value.PrimaryActionId.ToString()));
+				break;
 			}
+		}
+		if (!bAnyTagged && !Binding->Targets.MatchValues.IsEmpty())
+		{
+			AddWarning(Report, FString::Printf(
+				TEXT("Binding '%s' ComponentTag MatchValues match no device component tags."),
+				*Label));
 		}
 	}
 
@@ -226,39 +197,14 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 				TEXT("PickInteractionExclusions key '%s' does not match any anchor PartId or pickable mesh component."),
 				*ExcludedKey.ToString()));
 		}
-
-		if (Inspectable->PickContextMenuByComponent.Contains(ExcludedKey))
-		{
-			AddWarning(Report, FString::Printf(
-				TEXT("PickInteractionExclusions key '%s' also has a PickContextMenuByComponent entry; pick interaction will never reach it."),
-				*ExcludedKey.ToString()));
-		}
-
-		if (Inspectable->PickHoverOverlayByComponent.Contains(ExcludedKey))
-		{
-			AddWarning(Report, FString::Printf(
-				TEXT("PickInteractionExclusions key '%s' also has a PickHoverOverlayByComponent entry; hover will never apply."),
-				*ExcludedKey.ToString()));
-		}
 	}
 
-	for (const TPair<FName, TSoftObjectPtr<UMaterialInterface>>& OverlayEntry : Inspectable->PickHoverOverlayByComponent)
-	{
-		const FName ComponentName = OverlayEntry.Key;
-		if (ComponentName.IsNone())
-		{
-			AddWarning(Report, TEXT("PickHoverOverlayByComponent has an entry with an empty key."));
-			continue;
-		}
-
-		FDIVEFocusTarget ResolvedTarget;
-		if (!Inspectable->TryResolveStartFocusTarget(ComponentName, ResolvedTarget))
-		{
-			AddWarning(Report, FString::Printf(
-				TEXT("PickHoverOverlayByComponent key '%s' does not match any anchor PartId or pickable mesh component."),
-				*ComponentName.ToString()));
-		}
-	}
+	AddInfo(Report, FString::Printf(
+		TEXT("Actions: catalog=%s componentBindings=%d authoredBindings=%d sections=%d"),
+		Inspectable->ActionCatalog ? *GetNameSafe(Inspectable->ActionCatalog) : TEXT("<none>"),
+		Inspectable->Bindings.Num(),
+		Bindings.Num(),
+		Sections.Num()));
 
 	return Report;
 }
