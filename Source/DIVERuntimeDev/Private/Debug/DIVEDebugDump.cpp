@@ -98,10 +98,9 @@ void DumpBinding(FString& Out, const FDIVEActionBinding& Binding, const TCHAR* S
 	}
 
 	AppendLine(Out, FString::Printf(
-		TEXT("  [%s] BindingId='%s' Priority=%d Match=%s Values=[%s] Section='%s' PrimaryIndex=%d Actions=%d"),
+		TEXT("  [%s] BindingId='%s' Match=%s Values=[%s] Section='%s' PrimaryIndex=%d Actions=%d"),
 		SourceTag,
 		*Binding.BindingId.ToString(),
-		Binding.Targets.Priority,
 		MatchModeName,
 		*FString::Join(ValueStrings, TEXT(", ")),
 		*Binding.SectionId.ToString(),
@@ -195,7 +194,21 @@ void DumpPrimitiveRow(
 		*YesNo(Inspectable->IsPickProxyPrimitive(Primitive)),
 		*YesNo(Inspectable->IsPrimitiveInteractive(Primitive)),
 		*SemanticPartId.ToString()));
+	UDIVEDeviceAction* LmbAction = nullptr;
+	FName LmbTargetKey = NAME_None;
+	FName LmbBindingId = NAME_None;
+	FString LmbSummary = TEXT("(none)");
+	if (Inspectable->TryResolvePrimaryAction(PickTarget, LmbAction, LmbTargetKey, LmbBindingId) && LmbAction)
+	{
+		LmbSummary = FString::Printf(
+			TEXT("BindingId='%s' Action=%s key=%s"),
+			LmbBindingId.IsNone() ? TEXT("<unnamed>") : *LmbBindingId.ToString(),
+			*LmbAction->GetClass()->GetName(),
+			LmbTargetKey.IsNone() ? TEXT("-") : *LmbTargetKey.ToString());
+	}
+
 	AppendLine(Out, FString::Printf(TEXT("    Menu rows (Bindings+Catalog): %s"), *MenuSummary));
+	AppendLine(Out, FString::Printf(TEXT("    LMB primary: %s"), *LmbSummary));
 
 	TArray<const FDIVEActionBinding*> Matched;
 	Inspectable->GatherMatchingBindings(PickTarget, Matched);
@@ -288,9 +301,8 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 		for (const FDIVEMenuSection& Section : Sections)
 		{
 			AppendLine(Out, FString::Printf(
-				TEXT("  SectionId='%s' Sort=%d Header='%s'"),
+				TEXT("  SectionId='%s' Header='%s'"),
 				*Section.SectionId.ToString(),
-				Section.SortOrder,
 				*Section.Header.ToString()));
 		}
 	}
@@ -398,6 +410,8 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 
 	AppendLine(Out, FString::Printf(TEXT("Shape/PickProxy count (listed interesting): %d"), ShapeOrProxyCount));
 	AppendLine(Out, TEXT("Hint: Match modes = ComponentTag / ComponentName / PartId / AnyPrimitive. Matching bindings are unioned by section."));
+	AppendLine(Out, TEXT("Hint: Menu/section order = Bindings and Sections array order (component, then catalog)."));
+	AppendLine(Out, TEXT("Hint: LMB primary = most specific matching binding with PrimaryActionIndex (Name > PartId > Tag > Any); equal specificity keeps the earlier binding."));
 	AppendLine(Out, TEXT("Hint: Menu rows include component Bindings + Action Catalog. Device-specific ops usually live in the Catalog."));
 	AppendLine(Out, TEXT("==== end ===="));
 	return Out;

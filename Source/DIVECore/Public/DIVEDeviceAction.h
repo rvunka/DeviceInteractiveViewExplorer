@@ -33,6 +33,10 @@ struct DIVECORE_API FDIVEActionContext
 	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
 	FName TargetKey = NAME_None;
 
+	/** Slot that produced this invocation. None if the action was not resolved from a binding. */
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FName BindingId = NAME_None;
+
 	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
 	FDIVEFocusTarget PickTarget;
 
@@ -110,12 +114,7 @@ public:
 
 	virtual UWorld* GetWorld() const override;
 
-	/**
-	 * Temporarily binds an execution-time world so that GetWorld() returns a valid result even for
-	 * actions instanced in a UDIVEActionCatalogAsset (whose Outer chain has no world).
-	 * Called by the runtime before each CanExecute / GetDisplayState / Execute / Begin|Update|EndInteraction
-	 * and cleared immediately after. Never hold this pointer beyond the call.
-	 */
+	/** Injected by FDIVEActionWorldScope so catalog-hosted actions have a world during invocation. */
 	void SetExecutionWorld(UWorld* InWorld) { ExecutionWorld = InWorld; }
 	void ClearExecutionWorld()              { ExecutionWorld.Reset(); }
 
@@ -134,19 +133,10 @@ public:
 	FText GetResolvedDisplayName() const;
 
 private:
-	/** Transient world injected by the runtime before each invocation. See SetExecutionWorld. */
 	TWeakObjectPtr<UWorld> ExecutionWorld;
 };
 
-/**
- * RAII guard that temporarily binds an execution world to a UDIVEDeviceAction and clears it on
- * destruction. Use at every call-site before invoking CanExecute / GetDisplayState / Execute /
- * Begin|Update|EndInteraction so that catalog-hosted actions can use world-context Blueprint nodes.
- *
- * Usage:
- *   FDIVEActionWorldScope Scope(Action, Context.DeviceHost ? Context.DeviceHost->GetWorld() : nullptr);
- *   Action->Execute(Context);
- */
+/** RAII: binds Action's execution world for the duration of the scope, then clears it. */
 struct DIVECORE_API FDIVEActionWorldScope
 {
 	FDIVEActionWorldScope(UDIVEDeviceAction* InAction, UWorld* InWorld)
@@ -232,6 +222,9 @@ struct DIVECORE_API FDIVEContextMenuEntry
 
 	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
 	FName TargetKey = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
+	FName BindingId = NAME_None;
 
 	UPROPERTY(BlueprintReadOnly, Category = "DIVE")
 	bool bIsSeparator = false;

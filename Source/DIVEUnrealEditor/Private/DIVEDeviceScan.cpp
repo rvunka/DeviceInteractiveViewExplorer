@@ -5,8 +5,6 @@
 #include "DIVEActionBinding.h"
 #include "DIVEActionBindingValidation.h"
 #include "DIVEAnchorComponent.h"
-#include "DIVEConvention.h"
-#include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "Misc/DataValidation.h"
 
@@ -121,8 +119,6 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 	TArray<const FDIVEActionBinding*> Bindings;
 	Inspectable->GatherAuthoredBindings(Bindings);
 
-	// Use the shared validator so Scan, CatalogAsset::IsDataValid and Inspectable::IsDataValid
-	// all apply the same rules.
 	{
 		FDataValidationContext ValidationCtx;
 		TSet<FName> KnownSectionIds;
@@ -142,43 +138,19 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 		}
 	}
 
-	// Device-specific: ComponentTag match check — requires device primitives.
-	TArray<UPrimitiveComponent*> DevicePrimitives;
-	DIVE::CollectDevicePrimitives(DeviceActor, DevicePrimitives);
-
-	for (int32 BindingIndex = 0; BindingIndex < Bindings.Num(); ++BindingIndex)
 	{
-		const FDIVEActionBinding* Binding = Bindings[BindingIndex];
-		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::ComponentTag)
+		FDataValidationContext AuthoringCtx;
+		Inspectable->AppendDeviceAuthoringValidation(AuthoringCtx);
+		for (const FDataValidationContext::FIssue& Issue : AuthoringCtx.GetIssues())
 		{
-			continue;
-		}
-
-		const FString Label = Binding->BindingId.IsNone()
-			? FString::FromInt(BindingIndex)
-			: Binding->BindingId.ToString();
-
-		bool bAnyTagged = false;
-		for (const FName MatchTag : Binding->Targets.MatchValues)
-		{
-			for (const UPrimitiveComponent* Primitive : DevicePrimitives)
+			if (Issue.Severity == EMessageSeverity::Error)
 			{
-				if (Primitive && !MatchTag.IsNone() && Primitive->ComponentHasTag(MatchTag))
-				{
-					bAnyTagged = true;
-					break;
-				}
+				AddError(Report, Issue.Message.ToString());
 			}
-			if (bAnyTagged)
+			else if (Issue.Severity == EMessageSeverity::Warning)
 			{
-				break;
+				AddWarning(Report, Issue.Message.ToString());
 			}
-		}
-		if (!bAnyTagged && !Binding->Targets.MatchValues.IsEmpty())
-		{
-			AddWarning(Report, FString::Printf(
-				TEXT("Binding '%s' ComponentTag MatchValues match no device component tags."),
-				*Label));
 		}
 	}
 

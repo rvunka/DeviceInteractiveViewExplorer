@@ -42,7 +42,6 @@ void FDIVEActionBindingCustomization::CustomizeChildren(
 {
 	(void)StructCustomizationUtils;
 
-	StructHandle = StructPropertyHandle;
 	PrimaryIndexHandle = StructPropertyHandle->GetChildHandle(
 		GET_MEMBER_NAME_CHECKED(FDIVEActionBinding, PrimaryActionIndex));
 	ActionsHandle = StructPropertyHandle->GetChildHandle(

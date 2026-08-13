@@ -88,13 +88,16 @@ void UDIVEContextMenuUIComponent::HandleSessionEnded(EDIVESessionEndReason /*Rea
 	HideValueReadout();
 }
 
-void UDIVEContextMenuUIComponent::HandleContextMenuEntrySelected(UDIVEDeviceAction* Action, FName TargetKey)
+void UDIVEContextMenuUIComponent::HandleContextMenuEntrySelected(
+	UDIVEDeviceAction* Action,
+	FName TargetKey,
+	FName BindingId)
 {
 	if (UWorld* World = GetWorld())
 	{
 		if (UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
-			Subsystem->ExecuteContextMenuAction(Action, TargetKey);
+			Subsystem->ExecuteContextMenuAction(Action, TargetKey, BindingId);
 		}
 	}
 }

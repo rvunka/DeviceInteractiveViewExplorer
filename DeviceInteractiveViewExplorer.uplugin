@@ -40,6 +40,11 @@
 			"LoadingPhase": "Default"
 		},
 		{
+			"Name": "DIVEUncooked",
+			"Type": "UncookedOnly",
+			"LoadingPhase": "PreDefault"
+		},
+		{
 			"Name": "DIVEUnrealEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"

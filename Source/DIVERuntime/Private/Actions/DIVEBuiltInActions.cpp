@@ -231,7 +231,6 @@ bool UDIVEProxyDriveForwardAction::BeginInteraction_Implementation(const FDIVEAc
 	}
 
 	ActiveProxyObject = ProxyObject;
-	MarkInteractionActive();
 	return true;
 }
 
@@ -252,4 +251,20 @@ void UDIVEProxyDriveForwardAction::EndInteraction_Implementation(bool bCommit)
 	}
 	ActiveProxyObject.Reset();
 	NotifyInteractionCompleted();
+}
+
+UDIVENotifyAction::UDIVENotifyAction()
+{
+	DisplayName = NSLOCTEXT("DIVE", "ContextMenuNotify", "Notify");
+}
+
+bool UDIVENotifyAction::Execute_Implementation(const FDIVEActionContext& Context)
+{
+	if (!CanExecute(Context))
+	{
+		return false;
+	}
+
+	OnExecuted.Broadcast(this, Context);
+	return true;
 }

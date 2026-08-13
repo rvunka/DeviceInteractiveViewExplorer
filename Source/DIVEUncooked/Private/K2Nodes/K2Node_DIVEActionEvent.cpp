@@ -18,7 +18,11 @@
 #include "Engine/SCS_Node.h"
 #include "Engine/SimpleConstructionScript.h"
 #include "GameFramework/Actor.h"
+#include "K2Node_BreakStruct.h"
+#include "K2Node_CallFunction.h"
 #include "K2Node_DynamicCast.h"
+#include "K2Node_IfThenElse.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "KismetCompiler.h"
 #include "Modules/ModuleManager.h"
@@ -117,7 +121,7 @@ void CollectActionClasses(TArray<UClass*>& OutClasses)
 		}
 	}
 
-	// Unloaded Blueprint subclasses via Asset Registry (plan: AR + GetDerivedClasses).
+	// Unloaded Blueprint subclasses via Asset Registry.
 	IAssetRegistry& AssetRegistry =
 		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 
@@ -191,6 +195,43 @@ void EnsureActionClassMenuRefreshHooks()
 			}
 		});
 }
+
+const UDIVEInspectableComponent* FindInspectableTemplate(const UBlueprint* Blueprint)
+{
+	for (const UBlueprint* Current = Blueprint; Current; )
+	{
+		if (Current->SimpleConstructionScript)
+		{
+			for (const USCS_Node* Node : Current->SimpleConstructionScript->GetAllNodes())
+			{
+				if (const UDIVEInspectableComponent* Comp =
+					Cast<UDIVEInspectableComponent>(Node->ComponentTemplate))
+				{
+					return Comp;
+				}
+			}
+		}
+
+		if (const UClass* Generated = Current->GeneratedClass
+			? Current->GeneratedClass
+			: Current->SkeletonGeneratedClass)
+		{
+			if (const AActor* CDO = Cast<AActor>(Generated->GetDefaultObject()))
+			{
+				if (const UDIVEInspectableComponent* Comp =
+					CDO->FindComponentByClass<UDIVEInspectableComponent>())
+				{
+					return Comp;
+				}
+			}
+		}
+
+		const UClass* ParentClass = Current->ParentClass;
+		Current = ParentClass ? Cast<UBlueprint>(ParentClass->ClassGeneratedBy) : nullptr;
+	}
+
+	return nullptr;
+}
 } // namespace
 
 UDIVEActionEventNodeSpawner* UDIVEActionEventNodeSpawner::Create(
@@ -236,7 +277,7 @@ UK2Node* UDIVEActionEventNodeSpawner::FindExistingNode(const UBlueprint* Bluepri
 	FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionEvent>(Blueprint, Nodes);
 	for (UK2Node_DIVEActionEvent* Node : Nodes)
 	{
-		if (Node && Node->ActionClass == ActionClass)
+		if (Node && Node->ActionClass == ActionClass && Node->BindingId.IsNone())
 		{
 			return Node;
 		}
@@ -285,9 +326,19 @@ FText UK2Node_DIVEActionEvent::GetNodeTitle(ENodeTitleType::Type TitleType) cons
 			ActionClass
 				? ActionClass->GetDisplayNameText()
 				: LOCTEXT("NoneAction", "None"));
-		CachedNodeTitle.SetCachedText(
-			FText::Format(LOCTEXT("NodeTitle", "DIVE Action Event ({ActionName})"), Args),
-			this);
+		if (BindingId.IsNone())
+		{
+			CachedNodeTitle.SetCachedText(
+				FText::Format(LOCTEXT("NodeTitle", "DIVE Action Event ({ActionName})"), Args),
+				this);
+		}
+		else
+		{
+			Args.Add(TEXT("BindingId"), FText::FromName(BindingId));
+			CachedNodeTitle.SetCachedText(
+				FText::Format(LOCTEXT("NodeTitleFiltered", "DIVE Action Event ({ActionName} · {BindingId})"), Args),
+				this);
+		}
 	}
 	return CachedNodeTitle;
 }
@@ -301,6 +352,7 @@ FText UK2Node_DIVEActionEvent::GetTooltipText() const
 				"Tooltip",
 				"Fires when the selected DIVE Device Action succeeds on this actor's Inspectable "
 				"(instant Execute returned true, or continuous Begin succeeded). "
+				"Optional BindingId filters to one catalog/component slot. "
 				"Requires UDIVEInspectableComponent on the actor."),
 			this);
 	}
@@ -330,7 +382,8 @@ void UK2Node_DIVEActionEvent::PostEditChangeProperty(FPropertyChangedEvent& Prop
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionEvent, ActionClass))
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionEvent, ActionClass)
+		|| PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionEvent, BindingId))
 	{
 		CachedNodeTitle.MarkDirty();
 		ReconstructNode();
@@ -382,6 +435,28 @@ void UK2Node_DIVEActionEvent::ValidateNodeDuringCompilation(FCompilerResultsLog&
 				.ToString(),
 			this);
 	}
+
+	if (Blueprint)
+	{
+		TArray<UK2Node_DIVEActionEvent*> Nodes;
+		FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionEvent>(Blueprint, Nodes);
+		for (const UK2Node_DIVEActionEvent* Other : Nodes)
+		{
+			if (Other && Other != this
+				&& Other->GetGraph() == GetGraph()
+				&& Other->ActionClass == ActionClass
+				&& Other->BindingId == BindingId)
+			{
+				MessageLog.Warning(
+					*LOCTEXT(
+						"DuplicateFilter",
+						"@@ duplicates another DIVE Action Event with the same Action class and BindingId.")
+						.ToString(),
+					this);
+				break;
+			}
+		}
+	}
 }
 
 void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
@@ -399,10 +474,10 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 
 	UK2Node_DIVEActionBoundEvent* BoundEvent =
 		CompilerContext.SpawnIntermediateNode<UK2Node_DIVEActionBoundEvent>(this, SourceGraph);
-	BoundEvent->ActionClass = ActionClass;
 	BoundEvent->CustomFunctionName = FName(*FString::Printf(
-		TEXT("DIVEActEvt_%s_%s"),
+		TEXT("DIVEActEvt_%s_%s_%s"),
 		*GetActionName().ToString(),
+		BindingId.IsNone() ? TEXT("Any") : *BindingId.ToString(),
 		*BoundEvent->GetName()));
 	BoundEvent->bInternalEvent = true;
 	BoundEvent->bOverrideFunction = false;
@@ -455,7 +530,84 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 	UEdGraphPin* UserAction = FindPinChecked(ActionPinName);
 	UEdGraphPin* UserContext = FindPinChecked(ContextPinName);
 
-	CompilerContext.MovePinLinksToIntermediate(*UserThen, *CastValid);
+	UEdGraphPin* FilteredThen = CastValid;
+	if (!BindingId.IsNone())
+	{
+		UK2Node_BreakStruct* BreakContext =
+			CompilerContext.SpawnIntermediateNode<UK2Node_BreakStruct>(this, SourceGraph);
+		BreakContext->StructType = FDIVEActionContext::StaticStruct();
+		BreakContext->bMadeAfterOverridePinRemoval = true;
+		BreakContext->AllocateDefaultPins();
+
+		UEdGraphPin* BreakInput = BreakContext->FindPin(
+			FDIVEActionContext::StaticStruct()->GetFName(),
+			EGPD_Input);
+		UEdGraphPin* BreakBindingId = BreakContext->FindPin(
+			GET_MEMBER_NAME_CHECKED(FDIVEActionContext, BindingId),
+			EGPD_Output);
+		if (!BreakInput || !BreakBindingId)
+		{
+			CompilerContext.MessageLog.Error(
+				*LOCTEXT("BreakContextFail", "@@ failed to break FDIVEActionContext for BindingId filter.").ToString(),
+				this);
+			BreakAllNodeLinks();
+			return;
+		}
+
+		Schema->TryCreateConnection(EventContext, BreakInput);
+
+		UK2Node_CallFunction* EqualsNode =
+			CompilerContext.SpawnIntermediateNode<UK2Node_CallFunction>(this, SourceGraph);
+		const UFunction* EqualFunction = UKismetMathLibrary::StaticClass()->FindFunctionByName(
+			GET_FUNCTION_NAME_CHECKED(UKismetMathLibrary, EqualEqual_NameName));
+		if (!EqualFunction)
+		{
+			CompilerContext.MessageLog.Error(
+				*LOCTEXT("EqualsFnFail", "@@ could not resolve Name equality for BindingId filter.").ToString(),
+				this);
+			BreakAllNodeLinks();
+			return;
+		}
+		EqualsNode->SetFromFunction(EqualFunction);
+		EqualsNode->AllocateDefaultPins();
+
+		UEdGraphPin* EqualsA = EqualsNode->FindPinChecked(TEXT("A"));
+		UEdGraphPin* EqualsB = EqualsNode->FindPinChecked(TEXT("B"));
+		UEdGraphPin* EqualsResult = EqualsNode->GetReturnValuePin();
+		if (!EqualsResult)
+		{
+			CompilerContext.MessageLog.Error(
+				*LOCTEXT("EqualsResultFail", "@@ Name equality node has no return pin for BindingId filter.").ToString(),
+				this);
+			BreakAllNodeLinks();
+			return;
+		}
+
+		Schema->TryCreateConnection(BreakBindingId, EqualsA);
+		Schema->TrySetDefaultValue(*EqualsB, BindingId.ToString());
+
+		UK2Node_IfThenElse* Branch =
+			CompilerContext.SpawnIntermediateNode<UK2Node_IfThenElse>(this, SourceGraph);
+		Branch->AllocateDefaultPins();
+
+		UEdGraphPin* BranchExec = Branch->GetExecPin();
+		UEdGraphPin* BranchCond = Branch->GetConditionPin();
+		UEdGraphPin* BranchThen = Branch->FindPin(UEdGraphSchema_K2::PN_Then, EGPD_Output);
+		if (!BranchExec || !BranchCond || !BranchThen)
+		{
+			CompilerContext.MessageLog.Error(
+				*LOCTEXT("BranchFail", "@@ failed to expand BindingId branch.").ToString(),
+				this);
+			BreakAllNodeLinks();
+			return;
+		}
+
+		Schema->TryCreateConnection(CastValid, BranchExec);
+		Schema->TryCreateConnection(EqualsResult, BranchCond);
+		FilteredThen = BranchThen;
+	}
+
+	CompilerContext.MovePinLinksToIntermediate(*UserThen, *FilteredThen);
 	CompilerContext.MovePinLinksToIntermediate(*UserAction, *CastResult);
 	CompilerContext.MovePinLinksToIntermediate(*UserContext, *EventContext);
 
@@ -517,7 +669,25 @@ FBlueprintNodeSignature UK2Node_DIVEActionEvent::GetSignature() const
 {
 	FBlueprintNodeSignature NodeSignature = Super::GetSignature();
 	NodeSignature.AddKeyValue(GetActionName().ToString());
+	if (!BindingId.IsNone())
+	{
+		NodeSignature.AddKeyValue(BindingId.ToString());
+	}
 	return NodeSignature;
+}
+
+TArray<FName> UK2Node_DIVEActionEvent::GetAvailableBindingIds() const
+{
+	TArray<FName> Result;
+	Result.Add(NAME_None);
+	if (const UDIVEInspectableComponent* Inspectable = FindInspectableTemplate(GetBlueprint()))
+	{
+		for (const FName Id : Inspectable->GetAvailableBindingIds())
+		{
+			Result.AddUnique(Id);
+		}
+	}
+	return Result;
 }
 
 TSharedPtr<FEdGraphSchemaAction> UK2Node_DIVEActionEvent::GetEventNodeAction(const FText& ActionCategory)

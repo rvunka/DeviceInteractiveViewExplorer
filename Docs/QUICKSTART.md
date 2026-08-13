@@ -34,9 +34,9 @@ When the device is one solid mesh, add **Box / Sphere / Capsule Collision** on t
    (DIVE’s `Pick Trace Channel` defaults to Visibility — there is no separate “Pick” channel).  
    Avoid the **Trigger** profile: it sets Visibility to Ignore.
 3. Shape can stay **Hidden in Game**.
-4. Target bindings by **component tag / name / PartId** (or Any Primitive for built-ins).
+4. Target bindings by **component tag / name** (or Any Primitive for built-ins). Use **Part Id** only when primitives are **attached under a DIVE Anchor** with that PartId — PartId is not the Box/mesh component name.
 
-Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over the shell mesh in front of them. If the box still never wins, check Visibility is Block and the component is on the device actor.
+Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over the shell mesh in front of them. Box/Sphere/Capsule are pick-proxies without the tag; `DIVE.PickProxy` is for hidden **meshes** used as hit volumes. If the box still never wins, check Visibility is Block and the component is on the device actor.
 
 **Pickability rules**: a primitive is considered pickable if `IsVisible() && !bHiddenInGame` (or it is a pick-proxy with collision enabled). Primitives hidden via **Isolate** (`SetHiddenInGame(true)`) are automatically excluded from picking even though the renderer may report them as visible.
 
@@ -77,19 +77,21 @@ On `UDIVEInspectableComponent`:
 **Where to put logic (no BeginPlay dump):**
 
 1. **Default:** put the handler in the **action BP** (`Execute` / continuous overrides). Use `Context.DeviceHost` / `Context.Target` there. Call a Blueprint Interface or function on the device when you need domain side-effects.
-2. **Optional Condition:** Content Browser → **DIVE → Action Condition** → `Evaluate` returns false to **hide** the menu row (example: “Remove Cover” only after bolts are gone). Assign the Condition instance on the action. Leave **None** if always visible.
-3. **Device Action Event (EI-like):** on the device Actor BP Event Graph, search **DIVE Action Event** or browse **DIVE → Events**. Pick the entry for your action class (one node per class). Fires when that action succeeds on this actor's Inspectable (instant `Execute` returned true, or continuous `Begin`). Pins: typed `Action` + `Context`. Still prefer putting heavy logic in the action BP; use the event when the device graph must react.
-4. **Device fan-out (optional):** Inspectable **On Action Executed** (Details **+**) still broadcasts every successful action — useful for logging/debug. Prefer DIVE Action Event nodes over Cast chains.
-5. **Avoid** wiring everything from device BeginPlay via `FindActionInstance` + per-action `OnExecuted` unless you intentionally listen to a shared C++/foreign action class.
+2. **Device-owned (no action logic):** in the binding’s Actions add **DIVE Notify Action**. Set **DisplayName** (menu label, default `Notify`) and optional **BindingId**. On the device Event Graph add **DIVE Action Event (DIVE Notify Action)**. Empty BindingId = any Notify slot; set BindingId to split two Notify rows. Use `Context.Target` when several parts share one binding (e.g. tagged lamps).
+3. **Optional Condition:** Content Browser → **DIVE → Action Condition** → `Evaluate` returns false to **hide** the menu row (example: “Remove Cover” only after bolts are gone). Assign the Condition instance on the action. Leave **None** if always visible.
+4. **Device Action Event (EI-like):** on the device Actor BP Event Graph, search **DIVE Action Event** or browse **DIVE → Events**. Pick the entry for your action class. Empty **BindingId** (Details) = any instance of that class; set BindingId to fire only for that catalog/component slot (two Unscrew bindings can have two event nodes). Fires when that action succeeds on this actor's Inspectable (instant `Execute` returned true, or continuous `Begin`). Pins: typed `Action` + `Context` (`Context.BindingId` is filled from the matched slot). Still prefer putting heavy logic in the action BP; use the event when the device graph must react.
+5. **Device fan-out (optional):** Inspectable **On Action Executed** (Details **+**) still broadcasts every successful action — useful for logging/debug. Prefer DIVE Action Event nodes over Cast chains.
+6. **Avoid** wiring everything from device BeginPlay via `FindActionInstance` + per-action `OnExecuted` unless you intentionally listen to a shared C++/foreign action class.
 
 Matching bindings are **unioned** by section (not winner-take-all). Duplicate DisplayNames in one section log a warning. Duplicate non-empty **BindingId** is an error.
 
 Example — tagged bolts → continuous unscrew BP:
 
 1. Tag bolt meshes `DIVE.Bolt`.
-2. Content Browser → **DIVE → Continuous Device Action** → `BPA_Unscrew` (params + Begin/Update/End; on complete call device interface e.g. `NotifyBoltRemoved`).
-3. **DIVE → Action Catalog** → section `Maintenance`, binding Match=Component Tag `DIVE.Bolt`, add `BPA_Unscrew` instance.
-4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Default mode.
+2. Content Browser → **DIVE → Continuous Device Action** → `BP_Unscrew` (params + Begin/Update/End; on complete call device interface e.g. `NotifyBoltRemoved`).
+3. **DIVE → Action Catalog** → section `Maintenance`, binding Match=Component Tag `DIVE.Bolt`, add `BP_Unscrew` instance.
+4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Default mode. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
+
 **Continuous actions:**
 - **Primary (hold):** press → `BeginInteraction` → drag while held → release → `EndInteraction`.
 - **Context menu:** click row → `BeginInteraction` (modal drag without hold) → finish with next primary click / Escape / self-complete. Same LMB-up that confirms the menu row is ignored so the gesture is not cancelled immediately.
@@ -150,7 +152,7 @@ Click menu row
  → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`PrimaryActionIndex`** is set on a matching binding.
+Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Default mode when **`PrimaryActionIndex`** is set on a matching binding. Winner among overlapping primaries: **Name > PartId > Tag > AnyPrimitive**; equal specificity → earlier binding in the list (Scan warns if more than one).
 
 ### Primary action path (production)
 
@@ -158,7 +160,7 @@ Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryAct
 IA_DIVE_PrimaryAction Started
  → DIVE Input::HandlePrimaryActionPressed()
  → Session::ExecutePrimaryActionAtScreenPosition (Default mode)
- → matching binding PrimaryActionIndex → UDIVEDeviceAction::Execute / BeginInteraction
+ → most-specific matching binding PrimaryActionIndex → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog primary actions.
@@ -170,9 +172,11 @@ Default rows come from component **Bindings** (Focus, Isolate, Admin). Device-sp
 
 | Field | Purpose |
 |-------|---------|
-| `PartId` | Semantic id; can match `DefaultStartFocusId` |
+| `PartId` | Semantic id for focus / bindings; **not** a component name |
 | `DisplayName` | UI label |
 | Transform / view rotation | Authored camera point |
+
+Anchors are viewpoints — they are **not** pickable. A binding with Match Mode **Part Id** matches any **primitive attached under** that anchor in the Components hierarchy (Attach Parent). Sibling mesh/box next to the anchor does not inherit the PartId.
 
 Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional **Show View Direction** arrow is editor-only (hidden in PIE/game).
 
@@ -246,7 +250,7 @@ Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 
 ## 5. Editor / diagnostics
 
-**DIVE Scan Device** (RMB on actor in level → DIVE) — validates anchors, **Catalog / Bindings** (`SectionId`, `PrimaryActionIndex`, MatchValues / AnyPrimitive), exclusions.
+**DIVE Scan Device** (RMB on actor in level → DIVE) — validates anchors, **Catalog / Bindings** (`SectionId`, `PrimaryActionIndex`, MatchValues / AnyPrimitive), equal-specificity primary overlaps (warning; earlier binding wins), PartId→anchor coverage, shape pick-channel Block, exclusions.
 
 **DIVE Dump Device** (same menu) or console in PIE:
 

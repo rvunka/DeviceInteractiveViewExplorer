@@ -167,7 +167,7 @@ Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_P
 
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
-| **Default** | Binding `PrimaryActionIndex` when configured; hover overlay on pickable mesh |
+| **Default** | Binding `PrimaryActionIndex` when configured (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh |
 | **Physical** | Begin/update/end drive on hit control (`IDIVEProxyDrive` via `InternalProxyDriveAction`, or pawn bridge via ATSEP) |
 | **Logical** | Planned (v1 roadmap); not yet in the enum |
 

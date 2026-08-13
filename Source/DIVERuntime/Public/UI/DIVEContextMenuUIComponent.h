@@ -50,7 +50,7 @@ protected:
 	void HandleSessionEnded(EDIVESessionEndReason Reason, AActor* DeviceHost);
 
 	UFUNCTION()
-	void HandleContextMenuEntrySelected(UDIVEDeviceAction* Action, FName TargetKey);
+	void HandleContextMenuEntrySelected(UDIVEDeviceAction* Action, FName TargetKey, FName BindingId);
 
 	UFUNCTION()
 	void HandleContextMenuDismissed();

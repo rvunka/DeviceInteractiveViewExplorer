@@ -3,29 +3,20 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "DIVEDeviceAction.h"
 #include "Engine/DynamicBlueprintBinding.h"
 
 #include "DIVEActionEventDelegateBinding.generated.h"
 
-/** One compiled DIVE Action Event → OnActionExecuted bind entry. */
 USTRUCT()
 struct DIVERUNTIME_API FDIVEActionEventBlueprintBinding
 {
 	GENERATED_BODY()
 
-	/** Optional filter class (filtering is also done in the K2 ExpandNode Cast). Stored for diagnostics. */
-	UPROPERTY()
-	TSubclassOf<UDIVEDeviceAction> ActionClass;
-
 	UPROPERTY()
 	FName FunctionNameToBind = NAME_None;
 };
 
-/**
- * Runtime binding for EI-like DIVE Action Event nodes.
- * Finds UDIVEInspectableComponent on the actor instance and binds OnActionExecuted.
- */
+/** Binds DIVE Action Event nodes to Inspectable.OnActionExecuted on the actor instance. */
 UCLASS()
 class DIVERUNTIME_API UDIVEActionEventDelegateBinding : public UDynamicBlueprintBinding
 {

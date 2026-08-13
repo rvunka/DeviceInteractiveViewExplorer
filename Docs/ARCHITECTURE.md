@@ -83,7 +83,7 @@ Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = foc
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`**. Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
+In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`** (winner = most specific Match Mode: Name > PartId > Tag > Any; equal specificity keeps the earlier binding in the Bindings array; menu/section order follows those arrays). Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
 
 ## Device interaction (direct manipulation)
 
@@ -121,7 +121,7 @@ _Future:_ world-level focus dim via custom depth / post-process (not actor hidin
 
 ## Editor
 
-**DIVE Scan Device** — validates anchors + Catalog / Bindings (SectionId, PrimaryActionIndex, MatchValues / AnyPrimitive), exclusions.
+**DIVE Scan Device** — validates anchors + Catalog / Bindings (SectionId, PrimaryActionIndex, MatchValues / AnyPrimitive), equal-specificity primary overlaps (warning; earlier binding wins), PartId→anchor coverage, shape pick-channel Block, exclusions.
 
 **DIVE Dump Device** / `DIVE.DumpDevice` / `DIVE.DumpAll` — component + Catalog bindings, sections, per-primitive menu resolution (`DIVERuntimeDev`; not in Shipping).
 

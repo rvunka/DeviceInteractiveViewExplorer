@@ -15,8 +15,9 @@ class FKismetCompilerContext;
 struct FBlueprintNodeSignature;
 
 /**
- * Spawner that jumps to an existing DIVE Action Event for the same ActionClass
- * instead of placing a duplicate (Enhanced Input pattern).
+ * Spawner that jumps to an existing wildcard DIVE Action Event (same ActionClass, empty BindingId)
+ * instead of placing a duplicate. Filtered nodes (non-empty BindingId) are added by duplicating
+ * the wildcard node and setting BindingId in Details.
  */
 UCLASS(Transient)
 class UDIVEActionEventNodeSpawner : public UBlueprintNodeSpawner
@@ -40,7 +41,7 @@ private:
 	TSubclassOf<UDIVEDeviceAction> ActionClass;
 };
 
-/** EI-like event: pick a DIVE Device Action class; fires when that action succeeds on this device. */
+/** Event node: pick a DIVE Device Action class; fires when that action succeeds on this device. */
 UCLASS()
 class UK2Node_DIVEActionEvent : public UK2Node, public IK2Node_EventNodeInterface
 {
@@ -51,6 +52,11 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "DIVE")
 	TSubclassOf<UDIVEDeviceAction> ActionClass;
+
+	UPROPERTY(EditAnywhere, Category = "DIVE", meta = (
+		GetOptions = "GetAvailableBindingIds",
+		ToolTip = "None = any instance of this action class. Non-empty = only the matching BindingId."))
+	FName BindingId;
 
 	//~ UEdGraphNode
 	virtual void AllocateDefaultPins() override;
@@ -75,6 +81,9 @@ public:
 	//~ IK2Node_EventNodeInterface
 	virtual TSharedPtr<FEdGraphSchemaAction> GetEventNodeAction(const FText& ActionCategory) override;
 	//~ End IK2Node_EventNodeInterface
+
+	UFUNCTION()
+	TArray<FName> GetAvailableBindingIds() const;
 
 private:
 	FName GetActionName() const;

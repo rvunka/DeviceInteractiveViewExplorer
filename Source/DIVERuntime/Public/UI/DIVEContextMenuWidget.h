@@ -9,12 +9,14 @@
 
 #include "DIVEContextMenuWidget.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	FOnDIVEContextMenuEntrySelected,
 	UDIVEDeviceAction*,
 	Action,
 	FName,
-	TargetKey);
+	TargetKey,
+	FName,
+	BindingId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDIVEContextMenuDismissed);
 
 class UDIVEContextMenuWidget;
@@ -27,6 +29,7 @@ class UDIVEContextMenuActionButton : public UButton
 public:
 	TObjectPtr<UDIVEDeviceAction> Action = nullptr;
 	FName TargetKey = NAME_None;
+	FName BindingId = NAME_None;
 	TWeakObjectPtr<UDIVEContextMenuWidget> OwnerWidget;
 
 	UFUNCTION()
@@ -95,7 +98,7 @@ protected:
 
 	friend class UDIVEContextMenuActionButton;
 
-	void HandleEntryClicked(UDIVEDeviceAction* Action, FName TargetKey);
+	void HandleEntryClicked(UDIVEDeviceAction* Action, FName TargetKey, FName BindingId);
 
 	UFUNCTION()
 	void HandleDismissCaptureClicked();

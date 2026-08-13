@@ -21,6 +21,11 @@
 UDIVEInspectableComponent::UDIVEInspectableComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	DefaultFocusAction = CreateDefaultSubobject<UDIVEFocusAction>(TEXT("DefaultFocusAction"));
+	DefaultIsolateAction = CreateDefaultSubobject<UDIVEIsolateAction>(TEXT("DefaultIsolateAction"));
+	DefaultSimulatePhysicsAction =
+		CreateDefaultSubobject<UDIVESimulatePhysicsAction>(TEXT("DefaultSimulatePhysicsAction"));
+	DefaultDeleteMeshAction = CreateDefaultSubobject<UDIVEDeleteMeshAction>(TEXT("DefaultDeleteMeshAction"));
 }
 
 void UDIVEInspectableComponent::PostInitProperties()
@@ -36,25 +41,15 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 		return;
 	}
 
-	// Create defaults only when seeding. Cleared Bindings stay empty across reload (delta vs CDO).
-	UDIVEFocusAction* FocusAction = NewObject<UDIVEFocusAction>(this, TEXT("DefaultFocusAction"), RF_Transactional);
-	UDIVEIsolateAction* IsolateAction = NewObject<UDIVEIsolateAction>(this, TEXT("DefaultIsolateAction"), RF_Transactional);
-	UDIVESimulatePhysicsAction* SimulatePhysicsAction =
-		NewObject<UDIVESimulatePhysicsAction>(this, TEXT("DefaultSimulatePhysicsAction"), RF_Transactional);
-	UDIVEDeleteMeshAction* DeleteMeshAction =
-		NewObject<UDIVEDeleteMeshAction>(this, TEXT("DefaultDeleteMeshAction"), RF_Transactional);
-
 	if (Sections.IsEmpty())
 	{
 		FDIVEMenuSection StandardSection;
 		StandardSection.SectionId = DIVE::kSectionStandard;
-		StandardSection.SortOrder = 0;
 		Sections.Add(StandardSection);
 
 		FDIVEMenuSection AdminSection;
 		AdminSection.SectionId = DIVE::kSectionAdmin;
 		AdminSection.Header = NSLOCTEXT("DIVE", "SectionAdminHeader", "Admin");
-		AdminSection.SortOrder = 1000;
 		Sections.Add(AdminSection);
 	}
 
@@ -62,16 +57,16 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 	StandardBinding.BindingId = TEXT("BuiltIn.Standard");
 	StandardBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	StandardBinding.SectionId = DIVE::kSectionStandard;
-	StandardBinding.Actions.Add(FocusAction);
-	StandardBinding.Actions.Add(IsolateAction);
+	StandardBinding.Actions.Add(DefaultFocusAction);
+	StandardBinding.Actions.Add(DefaultIsolateAction);
 	Bindings.Add(StandardBinding);
 
 	FDIVEActionBinding AdminBinding;
 	AdminBinding.BindingId = TEXT("BuiltIn.Admin");
 	AdminBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	AdminBinding.SectionId = DIVE::kSectionAdmin;
-	AdminBinding.Actions.Add(SimulatePhysicsAction);
-	AdminBinding.Actions.Add(DeleteMeshAction);
+	AdminBinding.Actions.Add(DefaultSimulatePhysicsAction);
+	AdminBinding.Actions.Add(DefaultDeleteMeshAction);
 	Bindings.Add(AdminBinding);
 }
 
@@ -94,7 +89,7 @@ bool UDIVEInspectableComponent::RequestSessionWithParams(const FDIVESessionParam
 	return Subsystem ? Subsystem->TryBeginSession(GetOwner(), this, Params) : false;
 }
 
-void UDIVEInspectableComponent::BuildSemanticRegistry()
+void UDIVEInspectableComponent::BuildSemanticRegistry() const
 {
 	SemanticRegistry.Nodes.Reset();
 
@@ -139,6 +134,21 @@ TArray<FName> UDIVEInspectableComponent::GetAvailableSectionIds() const
 		if (!Section.SectionId.IsNone())
 		{
 			Result.AddUnique(Section.SectionId);
+		}
+	}
+	return Result;
+}
+
+TArray<FName> UDIVEInspectableComponent::GetAvailableBindingIds() const
+{
+	TArray<FName> Result;
+	TArray<const FDIVEActionBinding*> AuthoredBindings;
+	GatherAuthoredBindings(AuthoredBindings);
+	for (const FDIVEActionBinding* Binding : AuthoredBindings)
+	{
+		if (Binding && !Binding->BindingId.IsNone())
+		{
+			Result.AddUnique(Binding->BindingId);
 		}
 	}
 	return Result;
@@ -670,40 +680,13 @@ void UDIVEInspectableComponent::GatherMatchingBindings(
 	TArray<const FDIVEActionBinding*> AllBindings;
 	GatherAuthoredBindings(AllBindings);
 
-	struct FScoredBinding
+	// Authored order only (component Bindings, then catalog). Menu row order follows this list.
+	for (const FDIVEActionBinding* Binding : AllBindings)
 	{
-		const FDIVEActionBinding* Binding = nullptr;
-		int32 SourceIndex = 0;
-	};
-
-	TArray<FScoredBinding> Matched;
-	for (int32 Index = 0; Index < AllBindings.Num(); ++Index)
-	{
-		const FDIVEActionBinding* Binding = AllBindings[Index];
-		if (!Binding || !DoesTargetQueryMatchPick(Binding->Targets, PickTarget))
+		if (Binding && DoesTargetQueryMatchPick(Binding->Targets, PickTarget))
 		{
-			continue;
+			OutBindings.Add(Binding);
 		}
-
-		FScoredBinding Scored;
-		Scored.Binding = Binding;
-		Scored.SourceIndex = Index;
-		Matched.Add(Scored);
-	}
-
-	Matched.Sort([](const FScoredBinding& A, const FScoredBinding& B)
-	{
-		if (A.Binding->Targets.Priority != B.Binding->Targets.Priority)
-		{
-			return A.Binding->Targets.Priority > B.Binding->Targets.Priority;
-		}
-		return A.SourceIndex < B.SourceIndex;
-	});
-
-	OutBindings.Reserve(Matched.Num());
-	for (const FScoredBinding& Scored : Matched)
-	{
-		OutBindings.Add(Scored.Binding);
 	}
 }
 
@@ -774,36 +757,34 @@ UDIVEDeviceAction* UDIVEInspectableComponent::FindActionInstance(
 bool UDIVEInspectableComponent::TryResolvePrimaryAction(
 	const FDIVEFocusTarget& PickTarget,
 	UDIVEDeviceAction*& OutAction,
-	FName& OutTargetKey) const
+	FName& OutTargetKey,
+	FName& OutBindingId) const
 {
 	OutAction = nullptr;
 	OutTargetKey = NAME_None;
+	OutBindingId = NAME_None;
 
 	TArray<const FDIVEActionBinding*> Matched;
 	GatherMatchingBindings(PickTarget, Matched);
-	for (const FDIVEActionBinding* Binding : Matched)
-	{
-		if (!Binding)
-		{
-			continue;
-		}
 
-		if (UDIVEDeviceAction* Primary = Binding->GetPrimaryAction())
-		{
-			OutAction = Primary;
-			OutTargetKey = ResolveTargetKeyForQuery(Binding->Targets, PickTarget);
-			return true;
-		}
+	const FDIVEActionBinding* Winner = SelectPrimaryBinding(Matched);
+	if (!Winner)
+	{
+		return false;
 	}
 
-	return false;
+	OutAction = Winner->GetPrimaryAction();
+	OutTargetKey = ResolveTargetKeyForQuery(Winner->Targets, PickTarget);
+	OutBindingId = Winner->BindingId;
+	return OutAction != nullptr;
 }
 
 FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
 	const FDIVEFocusTarget& PickTarget,
 	FName TargetKey,
 	const FVector2D& ScreenPosition,
-	const FHitResult& PickHit) const
+	const FHitResult& PickHit,
+	FName BindingId) const
 {
 	FDIVEActionContext Context;
 	Context.DeviceHost = GetOwner();
@@ -812,6 +793,7 @@ FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
 	Context.TargetKey = TargetKey.IsNone()
 		? (Context.Target ? Context.Target->GetFName() : PickTarget.SemanticPartId)
 		: TargetKey;
+	Context.BindingId = BindingId;
 	Context.PickTarget = PickTarget;
 	Context.ScreenPosition = ScreenPosition;
 	Context.PickHit = PickHit;
@@ -831,14 +813,6 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 
 	TArray<FDIVEMenuSection> AuthoredSections;
 	GatherAuthoredSections(AuthoredSections);
-	AuthoredSections.Sort([](const FDIVEMenuSection& A, const FDIVEMenuSection& B)
-	{
-		if (A.SortOrder != B.SortOrder)
-		{
-			return A.SortOrder < B.SortOrder;
-		}
-		return A.SectionId.LexicalLess(B.SectionId);
-	});
 
 	struct FPendingRow
 	{
@@ -847,31 +821,30 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 		bool bEnabled = true;
 		bool bChecked = false;
 		FName TargetKey = NAME_None;
-		int32 BindingPriority = 0;
-		int32 BindingOrder = 0;
-		int32 ActionOrder = 0;
+		FName BindingId = NAME_None;
 	};
 
 	TMap<FName, TArray<FPendingRow>> RowsBySection;
-	TSet<FName> UsedSections;
 
-	for (int32 BindingOrder = 0; BindingOrder < Matched.Num(); ++BindingOrder)
+	for (const FDIVEActionBinding* Binding : Matched)
 	{
-		const FDIVEActionBinding* Binding = Matched[BindingOrder];
 		if (!Binding)
 		{
 			continue;
 		}
 
 		const FName SectionId = Binding->SectionId.IsNone() ? DIVE::kSectionStandard : Binding->SectionId;
-		UsedSections.Add(SectionId);
 		const FName TargetKey = ResolveTargetKeyForQuery(Binding->Targets, PickTarget);
-		const FDIVEActionContext Context = MakeActionContext(PickTarget, TargetKey);
+		const FDIVEActionContext Context = MakeActionContext(
+			PickTarget,
+			TargetKey,
+			FVector2D::ZeroVector,
+			FHitResult(),
+			Binding->BindingId);
 		UWorld* ContextWorld = GetOwner() ? GetOwner()->GetWorld() : nullptr;
 
-		for (int32 ActionOrder = 0; ActionOrder < Binding->Actions.Num(); ++ActionOrder)
+		for (UDIVEDeviceAction* Action : Binding->Actions)
 		{
-			UDIVEDeviceAction* Action = Binding->Actions[ActionOrder];
 			if (!Action)
 			{
 				continue;
@@ -890,9 +863,7 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 			Row.bEnabled = Display.bEnabled;
 			Row.bChecked = Display.bChecked;
 			Row.TargetKey = TargetKey;
-			Row.BindingPriority = Binding->Targets.Priority;
-			Row.BindingOrder = BindingOrder;
-			Row.ActionOrder = ActionOrder;
+			Row.BindingId = Binding->BindingId;
 			RowsBySection.FindOrAdd(SectionId).Add(Row);
 		}
 	}
@@ -904,19 +875,6 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 		{
 			return;
 		}
-
-		Rows->Sort([](const FPendingRow& A, const FPendingRow& B)
-		{
-			if (A.BindingPriority != B.BindingPriority)
-			{
-				return A.BindingPriority > B.BindingPriority;
-			}
-			if (A.BindingOrder != B.BindingOrder)
-			{
-				return A.BindingOrder < B.BindingOrder;
-			}
-			return A.ActionOrder < B.ActionOrder;
-		});
 
 		TSet<FString> SeenLabels;
 		for (const FPendingRow& Row : *Rows)
@@ -941,6 +899,7 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 			Entry.bEnabled = Row.bEnabled;
 			Entry.bChecked = Row.bChecked;
 			Entry.TargetKey = Row.TargetKey;
+			Entry.BindingId = Row.BindingId;
 			Entry.bIsSeparator = false;
 			InOutEntries.Add(Entry);
 		}
@@ -958,9 +917,15 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 			HeaderBySection.Add(Section.SectionId, Section.Header);
 		}
 	}
-	for (const FName& Used : UsedSections)
+	for (const FDIVEActionBinding* Binding : Matched)
 	{
-		SectionOrder.AddUnique(Used);
+		if (!Binding)
+		{
+			continue;
+		}
+
+		const FName SectionId = Binding->SectionId.IsNone() ? DIVE::kSectionStandard : Binding->SectionId;
+		SectionOrder.AddUnique(SectionId);
 	}
 
 	for (const FName SectionId : SectionOrder)
@@ -1067,6 +1032,219 @@ UMaterialInterface* UDIVEInspectableComponent::ResolvePickHoverOverlayMaterial(c
 
 #if WITH_EDITOR
 
+namespace
+{
+FString MakeBindingValidationLabel(const FDIVEActionBinding* Binding, const int32 BindingIndex)
+{
+	if (Binding && !Binding->BindingId.IsNone())
+	{
+		return Binding->BindingId.ToString();
+	}
+
+	return FString::FromInt(BindingIndex);
+}
+}
+
+void UDIVEInspectableComponent::AppendDeviceAuthoringValidation(FDataValidationContext& Context) const
+{
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	BuildSemanticRegistry();
+
+	TArray<UPrimitiveComponent*> DevicePrimitives;
+	DIVE::CollectDevicePrimitives(Owner, DevicePrimitives);
+
+	TArray<const FDIVEActionBinding*> AllBindings;
+	GatherAuthoredBindings(AllBindings);
+
+	// Equal-specificity primary overlap on the same interactive primitive.
+	for (UPrimitiveComponent* Primitive : DevicePrimitives)
+	{
+		if (!Primitive || !IsPrimitiveInteractive(Primitive))
+		{
+			continue;
+		}
+
+		const FName SemanticPartId = ResolveSemanticPartId(Primitive);
+		const FDIVEFocusTarget PickTarget = FDIVEFocusTarget::FromPrimitive(Primitive, SemanticPartId);
+
+		TArray<const FDIVEActionBinding*> PrimaryCandidates;
+		int32 MaxSpecificity = INDEX_NONE;
+		for (const FDIVEActionBinding* Binding : AllBindings)
+		{
+			if (!Binding
+				|| !Binding->GetPrimaryAction()
+				|| !DoesTargetQueryMatchPick(Binding->Targets, PickTarget))
+			{
+				continue;
+			}
+
+			const int32 Specificity = GetTargetMatchSpecificity(Binding->Targets.MatchMode);
+			if (PrimaryCandidates.IsEmpty() || Specificity > MaxSpecificity)
+			{
+				PrimaryCandidates.Reset();
+				PrimaryCandidates.Add(Binding);
+				MaxSpecificity = Specificity;
+			}
+			else if (Specificity == MaxSpecificity)
+			{
+				PrimaryCandidates.Add(Binding);
+			}
+		}
+
+		if (PrimaryCandidates.Num() > 1)
+		{
+			TArray<FString> Labels;
+			for (const FDIVEActionBinding* Binding : PrimaryCandidates)
+			{
+				Labels.Add(Binding && !Binding->BindingId.IsNone()
+					? Binding->BindingId.ToString()
+					: TEXT("<unnamed>"));
+			}
+
+			const FString WinnerLabel = Labels.IsEmpty() ? TEXT("<unnamed>") : Labels[0];
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("Primitive '%s' has %d primary bindings at equal match specificity (%d): %s. Earlier binding '%s' wins LMB; clear PrimaryActionIndex on the others if unintended."),
+				*Primitive->GetName(),
+				PrimaryCandidates.Num(),
+				MaxSpecificity,
+				*FString::Join(Labels, TEXT(", ")),
+				*WinnerLabel)));
+		}
+	}
+
+	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
+	{
+		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
+		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::ComponentTag)
+		{
+			continue;
+		}
+
+		const FString BindingLabel = MakeBindingValidationLabel(Binding, BindingIndex);
+
+		bool bAnyTagged = false;
+		for (const FName MatchTag : Binding->Targets.MatchValues)
+		{
+			if (MatchTag.IsNone())
+			{
+				continue;
+			}
+			for (const UPrimitiveComponent* Primitive : DevicePrimitives)
+			{
+				if (Primitive && Primitive->ComponentHasTag(MatchTag))
+				{
+					bAnyTagged = true;
+					break;
+				}
+			}
+			if (bAnyTagged)
+			{
+				break;
+			}
+		}
+		if (!bAnyTagged && !Binding->Targets.MatchValues.IsEmpty())
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("Binding '%s' ComponentTag MatchValues match no device component tags."),
+				*BindingLabel)));
+		}
+	}
+
+	// PartId bindings: each MatchValue must resolve to an anchor that has attached primitives.
+	TArray<UDIVEAnchorComponent*> Anchors;
+	DIVE::ForEachDeviceActor(Owner, [&Anchors](AActor* Actor)
+	{
+		if (!Actor)
+		{
+			return;
+		}
+
+		TArray<UDIVEAnchorComponent*> ActorAnchors;
+		Actor->GetComponents<UDIVEAnchorComponent>(ActorAnchors);
+		Anchors.Append(ActorAnchors);
+	});
+
+	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
+	{
+		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
+		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::PartId)
+		{
+			continue;
+		}
+
+		const FString BindingLabel = MakeBindingValidationLabel(Binding, BindingIndex);
+		for (const FName MatchPartId : Binding->Targets.MatchValues)
+		{
+			if (MatchPartId.IsNone())
+			{
+				continue;
+			}
+
+			UDIVEAnchorComponent* MatchedAnchor = nullptr;
+			for (UDIVEAnchorComponent* Anchor : Anchors)
+			{
+				if (Anchor && Anchor->GetResolvedPartId() == MatchPartId)
+				{
+					MatchedAnchor = Anchor;
+					break;
+				}
+			}
+
+			if (!MatchedAnchor)
+			{
+				Context.AddWarning(FText::FromString(FString::Printf(
+					TEXT("Binding '%s' PartId '%s' matches no DIVE Anchor on this device (PartId is the anchor field, not a component name)."),
+					*BindingLabel,
+					*MatchPartId.ToString())));
+				continue;
+			}
+
+			TArray<UPrimitiveComponent*> AttachedPrimitives;
+			DIVE::CollectAttachedPrimitives(MatchedAnchor, AttachedPrimitives);
+			// Anchor itself is a SceneComponent — CollectAttachedPrimitives only adds UPrimitiveComponent
+			// children (and the root if it were a primitive). Empty = nothing to pick under this PartId.
+			if (AttachedPrimitives.IsEmpty())
+			{
+				Context.AddWarning(FText::FromString(FString::Printf(
+					TEXT("Binding '%s' PartId '%s' has anchor '%s' but no attached primitives — attach Box/mesh under the anchor."),
+					*BindingLabel,
+					*MatchPartId.ToString(),
+					*GetNameSafe(MatchedAnchor))));
+			}
+		}
+	}
+
+	// Shape pick volumes must Block the pick channel (Trigger profiles often Ignore Visibility).
+	for (const UPrimitiveComponent* Primitive : DevicePrimitives)
+	{
+		if (!Primitive || !Primitive->IsA(UShapeComponent::StaticClass()))
+		{
+			continue;
+		}
+
+		if (!SkipComponentTag.IsNone() && Primitive->ComponentHasTag(SkipComponentTag))
+		{
+			continue;
+		}
+
+		const ECollisionResponse Response = Primitive->GetCollisionResponseToChannel(PickTraceChannel);
+		if (Response != ECR_Block)
+		{
+			Context.AddWarning(FText::FromString(FString::Printf(
+				TEXT("Shape '%s' does not Block pick channel %d (response=%d). Set Collision Responses so DIVE's Pick Trace Channel Blocks (default Visibility)."),
+				*Primitive->GetName(),
+				static_cast<int32>(PickTraceChannel.GetValue()),
+				static_cast<int32>(Response))));
+		}
+	}
+
+}
+
 EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationContext& Context) const
 {
 	EDataValidationResult Result = EDataValidationResult::Valid;
@@ -1161,7 +1339,6 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		}
 	}
 
-	// Sections + bindings: use the shared validator for consistent contract across Catalog/Inspectable/Scan.
 	TArray<FDIVEMenuSection> AllSections;
 	GatherAuthoredSections(AllSections);
 	TSet<FName> KnownSectionIds;
@@ -1170,10 +1347,6 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		Result = EDataValidationResult::Invalid;
 	}
 
-	// Collect device primitives once outside the per-binding loop (avoid quadratic work).
-	TArray<UPrimitiveComponent*> DevicePrimitives;
-	DIVE::CollectDevicePrimitives(Owner, DevicePrimitives);
-
 	TArray<const FDIVEActionBinding*> AllBindings;
 	GatherAuthoredBindings(AllBindings);
 	if (!DIVEActionBindingValidation::ValidateBindings(AllBindings, KnownSectionIds, Context))
@@ -1181,46 +1354,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 		Result = EDataValidationResult::Invalid;
 	}
 
-	// Device-specific: verify that ComponentTag MatchValues actually match something on this actor.
-	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
-	{
-		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
-		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::ComponentTag)
-		{
-			continue;
-		}
-
-		const FString BindingLabel = Binding->BindingId.IsNone()
-			? FString::FromInt(BindingIndex)
-			: Binding->BindingId.ToString();
-
-		bool bAnyTagged = false;
-		for (const FName MatchTag : Binding->Targets.MatchValues)
-		{
-			if (MatchTag.IsNone())
-			{
-				continue;
-			}
-			for (const UPrimitiveComponent* Primitive : DevicePrimitives)
-			{
-				if (Primitive && Primitive->ComponentHasTag(MatchTag))
-				{
-					bAnyTagged = true;
-					break;
-				}
-			}
-			if (bAnyTagged)
-			{
-				break;
-			}
-		}
-		if (!bAnyTagged && !Binding->Targets.MatchValues.IsEmpty())
-		{
-			Context.AddWarning(FText::FromString(FString::Printf(
-				TEXT("Binding '%s' ComponentTag MatchValues match no device component tags."),
-				*BindingLabel)));
-		}
-	}
+	AppendDeviceAuthoringValidation(Context);
 
 	for (const FName& ExcludedKey : PickInteractionExclusions)
 	{

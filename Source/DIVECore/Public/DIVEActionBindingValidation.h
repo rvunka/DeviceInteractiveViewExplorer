@@ -7,8 +7,6 @@
 #include "CoreMinimal.h"
 #include "DIVEActionBinding.h"
 
-struct FDIVEActionBinding;
-struct FDIVEMenuSection;
 class FDataValidationContext;
 
 /**

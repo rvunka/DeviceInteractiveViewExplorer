@@ -38,7 +38,6 @@ private:
 	void OnPrimaryOptionSelected(TSharedPtr<FPrimaryOption> Option, ESelectInfo::Type SelectInfo);
 	TSharedPtr<FPrimaryOption> FindOptionByIndex(int32 Index) const;
 
-	TSharedPtr<IPropertyHandle> StructHandle;
 	TSharedPtr<IPropertyHandle> PrimaryIndexHandle;
 	TSharedPtr<IPropertyHandle> ActionsHandle;
 	TArray<TSharedPtr<FPrimaryOption>> PrimaryOptions;

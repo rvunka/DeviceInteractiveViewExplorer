@@ -121,7 +121,6 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 	Binding.BindingId = TEXT("Bolts");
 	Binding.Targets.MatchMode = EDIVETargetMatchMode::ComponentTag;
 	Binding.Targets.MatchValues = { TEXT("DIVE.Bolt") };
-	Binding.Targets.Priority = 10;
 	Binding.SectionId = DIVE::kSectionStandard;
 	Binding.PrimaryActionIndex = 0;
 
@@ -137,6 +136,28 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Standard section id stable"), DIVE::kSectionStandard == FName(TEXT("Standard")));
 	TestTrue(TEXT("Admin section id stable"), DIVE::kSectionAdmin == FName(TEXT("Admin")));
 
+	// CDO, not NewObject — instance UActorComponent asserts in PostInitProperties until
+	// EngineElements registers Typed Element type "Components" (see DefaultBindings smoke).
+	const UDIVEInspectableComponent* Inspectable =
+		UDIVEInspectableComponent::StaticClass()->GetDefaultObject<UDIVEInspectableComponent>();
+	TestNotNull(TEXT("Inspectable CDO for MakeActionContext"), Inspectable);
+	if (Inspectable)
+	{
+		const FDIVEFocusTarget Pick = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
+		const FDIVEActionContext Context = Inspectable->MakeActionContext(
+			Pick,
+			NAME_None,
+			FVector2D::ZeroVector,
+			FHitResult(),
+			FName(TEXT("CoverBolts")));
+		TestEqual(
+			TEXT("MakeActionContext copies BindingId"),
+			Context.BindingId,
+			FName(TEXT("CoverBolts")));
+		const FDIVEActionContext EmptyBindingContext = Inspectable->MakeActionContext(Pick, NAME_None);
+		TestTrue(TEXT("MakeActionContext BindingId defaults to None"), EmptyBindingContext.BindingId.IsNone());
+	}
+
 	UDIVEContinuousDeviceAction* Continuous = NewObject<UDIVEProxyDriveForwardAction>();
 	TestNotNull(TEXT("Continuous action instance"), Continuous);
 	if (Continuous)
@@ -146,6 +167,82 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("MarkInteractionActive sets flag"), Continuous->IsInteractionActive());
 		Continuous->NotifyInteractionCompleted();
 		TestFalse(TEXT("NotifyInteractionCompleted clears flag"), Continuous->IsInteractionActive());
+	}
+
+	UDIVENotifyAction* Notify = NewObject<UDIVENotifyAction>();
+	TestNotNull(TEXT("Notify action instance"), Notify);
+	if (Notify)
+	{
+		const FDIVEActionContext EmptyContext;
+		TestTrue(TEXT("Notify CanExecute is true without a pick"), Notify->CanExecute(EmptyContext));
+		TestTrue(TEXT("Notify Execute succeeds with no extra logic"), Notify->Execute(EmptyContext));
+	}
+
+	// LMB primary: specificity beats authored order among unequal modes.
+	{
+		UDIVENotifyAction* NamePrimary = NewObject<UDIVENotifyAction>();
+		UDIVEFocusAction* AnyPrimary = NewObject<UDIVEFocusAction>();
+		TestNotNull(TEXT("Name primary action"), NamePrimary);
+		TestNotNull(TEXT("Any primary action"), AnyPrimary);
+		if (NamePrimary && AnyPrimary)
+		{
+			FDIVEActionBinding AnyBinding;
+			AnyBinding.BindingId = TEXT("BuiltIn.Standard");
+			AnyBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
+			AnyBinding.Actions.Add(AnyPrimary);
+			AnyBinding.PrimaryActionIndex = 0;
+
+			FDIVEActionBinding NameBinding;
+			NameBinding.BindingId = TEXT("Switches");
+			NameBinding.Targets.MatchMode = EDIVETargetMatchMode::ComponentName;
+			NameBinding.Targets.MatchValues = { TEXT("Switch1") };
+			NameBinding.Actions.Add(NamePrimary);
+			NameBinding.PrimaryActionIndex = 0;
+
+			TArray<const FDIVEActionBinding*> Matched;
+			Matched.Add(&AnyBinding);
+			Matched.Add(&NameBinding);
+
+			const FDIVEActionBinding* Winner = SelectPrimaryBinding(Matched);
+			TestTrue(TEXT("ComponentName primary beats AnyPrimitive"), Winner == &NameBinding);
+			TestEqual(
+				TEXT("Specificity Name > Any"),
+				GetTargetMatchSpecificity(EDIVETargetMatchMode::ComponentName),
+				3);
+			TestEqual(
+				TEXT("Specificity Any is 0"),
+				GetTargetMatchSpecificity(EDIVETargetMatchMode::AnyPrimitive),
+				0);
+		}
+	}
+
+	// Equal specificity: first in Matched (authored order) wins.
+	{
+		UDIVENotifyAction* FirstAction = NewObject<UDIVENotifyAction>();
+		UDIVENotifyAction* SecondAction = NewObject<UDIVENotifyAction>();
+		TestNotNull(TEXT("Equal-spec first action"), FirstAction);
+		TestNotNull(TEXT("Equal-spec second action"), SecondAction);
+		if (FirstAction && SecondAction)
+		{
+			FDIVEActionBinding First;
+			First.BindingId = TEXT("SwitchA");
+			First.Targets.MatchMode = EDIVETargetMatchMode::ComponentName;
+			First.Actions.Add(FirstAction);
+			First.PrimaryActionIndex = 0;
+
+			FDIVEActionBinding Second;
+			Second.BindingId = TEXT("SwitchB");
+			Second.Targets.MatchMode = EDIVETargetMatchMode::ComponentName;
+			Second.Actions.Add(SecondAction);
+			Second.PrimaryActionIndex = 0;
+
+			TArray<const FDIVEActionBinding*> Matched;
+			Matched.Add(&First);
+			Matched.Add(&Second);
+
+			const FDIVEActionBinding* Winner = SelectPrimaryBinding(Matched);
+			TestTrue(TEXT("Equal Name specificity keeps authored order"), Winner == &First);
+		}
 	}
 
 	return true;

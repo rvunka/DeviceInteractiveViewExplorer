@@ -19,6 +19,10 @@ class UDIVEDeviceDefinitionAsset;
 class UDIVEAnchorComponent;
 class UPrimitiveComponent;
 class UMaterialInterface;
+class UDIVEFocusAction;
+class UDIVEIsolateAction;
+class UDIVESimulatePhysicsAction;
+class UDIVEDeleteMeshAction;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVESessionLifecycle, bool, bSessionActive);
 
@@ -133,12 +137,10 @@ public:
 
 	/**
 	 * Fired by the session after a successful instant Execute, or after a successful continuous Begin.
-	 * Bind from the device actor (Details +). Branch with Cast To your action BP class (no Switch-on-class in BP).
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
 	FOnDIVEActionExecuted OnActionExecuted;
 
-	/** Runtime fan-out used by the session after a successful action start. */
 	void NotifyActionExecuted(UDIVEDeviceAction* Action, const FDIVEActionContext& Context);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DisplayName = "Request Session"))
@@ -148,7 +150,7 @@ public:
 	bool RequestSessionWithParams(const FDIVESessionParams& Params);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
-	void BuildSemanticRegistry();
+	void BuildSemanticRegistry() const;
 
 	/**
 	 * Returns available SectionId values for the GetOptions dropdown on Binding.SectionId.
@@ -157,6 +159,10 @@ public:
 	 */
 	UFUNCTION()
 	TArray<FName> GetAvailableSectionIds() const;
+
+	/** Non-empty BindingId values from local Bindings and the linked Action Catalog. */
+	UFUNCTION()
+	TArray<FName> GetAvailableBindingIds() const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	const FDIVEPartTree& GetSemanticRegistry() const { return SemanticRegistry; }
@@ -246,7 +252,8 @@ public:
 	bool TryResolvePrimaryAction(
 		const FDIVEFocusTarget& PickTarget,
 		UDIVEDeviceAction*& OutAction,
-		FName& OutTargetKey) const;
+		FName& OutTargetKey,
+		FName& OutBindingId) const;
 
 	void AppendConfiguredContextMenuEntries(
 		const FDIVEFocusTarget& PickTarget,
@@ -258,17 +265,34 @@ public:
 		const FDIVEFocusTarget& PickTarget,
 		FName TargetKey,
 		const FVector2D& ScreenPosition = FVector2D::ZeroVector,
-		const FHitResult& PickHit = FHitResult()) const;
+		const FHitResult& PickHit = FHitResult(),
+		FName BindingId = NAME_None) const;
 
 #if WITH_EDITOR
+	/**
+	 * Device-only authoring checks (warnings): equal-specificity primary overlap,
+	 * ComponentTag MatchValues, PartId→anchor coverage, shape pick-channel Block.
+	 * Shared by IsDataValid and DIVE Scan.
+	 */
+	void AppendDeviceAuthoringValidation(FDataValidationContext& Context) const;
+
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 
 	virtual void PostInitProperties() override;
 
 private:
+	UPROPERTY(Instanced)
+	TObjectPtr<UDIVEFocusAction> DefaultFocusAction;
+	UPROPERTY(Instanced)
+	TObjectPtr<UDIVEIsolateAction> DefaultIsolateAction;
+	UPROPERTY(Instanced)
+	TObjectPtr<UDIVESimulatePhysicsAction> DefaultSimulatePhysicsAction;
+	UPROPERTY(Instanced)
+	TObjectPtr<UDIVEDeleteMeshAction> DefaultDeleteMeshAction;
+
 	UPROPERTY(Transient)
-	FDIVEPartTree SemanticRegistry;
+	mutable FDIVEPartTree SemanticRegistry;
 
 	UPROPERTY(Transient)
 	bool bSessionActive = false;

@@ -156,7 +156,10 @@ public:
 	bool OpenContextMenuAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
-	bool ExecuteContextMenuAction(UDIVEDeviceAction* Action, FName TargetKey = NAME_None);
+	bool ExecuteContextMenuAction(
+		UDIVEDeviceAction* Action,
+		FName TargetKey = NAME_None,
+		FName BindingId = NAME_None);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ContextMenu")
 	void CloseContextMenu();

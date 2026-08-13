@@ -2,9 +2,9 @@
 
 using UnrealBuildTool;
 
-public class DIVEUnrealEditor : ModuleRules
+public class DIVEUncooked : ModuleRules
 {
-	public DIVEUnrealEditor(ReadOnlyTargetRules Target) : base(Target)
+	public DIVEUncooked(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
@@ -14,21 +14,17 @@ public class DIVEUnrealEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"DIVECore",
-			"DIVERuntime",
-			"DIVERuntimeDev"
+			"DIVERuntime"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"UnrealEd",
-			"AssetTools",
-			"Slate",
-			"SlateCore",
-			"ToolMenus",
-			"EditorFramework",
-			"DataValidation",
-			"PropertyEditor",
-			"InputCore"
+			"AssetRegistry",
+			"BlueprintGraph",
+			"Kismet",
+			"KismetCompiler",
+			"SlateCore"
 		});
 	}
 }

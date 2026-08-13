@@ -83,12 +83,18 @@ bool FDIVESessionPickOps::ExecutePrimaryActionAtScreenPosition(
 
 	UDIVEDeviceAction* PrimaryAction = nullptr;
 	FName TargetKey = NAME_None;
-	if (!Inspectable->TryResolvePrimaryAction(PickTarget, PrimaryAction, TargetKey) || !PrimaryAction)
+	FName BindingId = NAME_None;
+	if (!Inspectable->TryResolvePrimaryAction(PickTarget, PrimaryAction, TargetKey, BindingId) || !PrimaryAction)
 	{
 		return false;
 	}
 
-	const FDIVEActionContext Context = Inspectable->MakeActionContext(PickTarget, TargetKey, ScreenPosition, PickHit);
+	const FDIVEActionContext Context = Inspectable->MakeActionContext(
+		PickTarget,
+		TargetKey,
+		ScreenPosition,
+		PickHit,
+		BindingId);
 
 	{
 		FDIVEActionWorldScope WorldScope(PrimaryAction, Session.GetWorld());

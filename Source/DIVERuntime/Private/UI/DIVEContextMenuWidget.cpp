@@ -105,7 +105,7 @@ void UDIVEContextMenuActionButton::HandleClicked()
 {
 	if (UDIVEContextMenuWidget* Menu = OwnerWidget.Get())
 	{
-		Menu->HandleEntryClicked(Action, TargetKey);
+		Menu->HandleEntryClicked(Action, TargetKey, BindingId);
 	}
 }
 
@@ -312,11 +312,11 @@ FSlateFontInfo UDIVEContextMenuWidget::ResolveSectionHeaderFont() const
 		24);
 }
 
-void UDIVEContextMenuWidget::HandleEntryClicked(UDIVEDeviceAction* Action, FName TargetKey)
+void UDIVEContextMenuWidget::HandleEntryClicked(UDIVEDeviceAction* Action, FName TargetKey, FName BindingId)
 {
 	if (Action)
 	{
-		OnEntrySelected.Broadcast(Action, TargetKey);
+		OnEntrySelected.Broadcast(Action, TargetKey, BindingId);
 	}
 }
 
@@ -419,6 +419,7 @@ void UDIVEContextMenuWidget::AddActionRow(
 	RowButton->SetIsEnabled(Entry.bEnabled);
 	RowButton->Action = Entry.Action;
 	RowButton->TargetKey = Entry.TargetKey;
+	RowButton->BindingId = Entry.BindingId;
 	RowButton->OwnerWidget = this;
 
 	UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());

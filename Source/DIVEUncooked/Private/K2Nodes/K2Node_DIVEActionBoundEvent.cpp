@@ -3,7 +3,6 @@
 #include "K2Nodes/K2Node_DIVEActionBoundEvent.h"
 
 #include "DIVEActionEventDelegateBinding.h"
-#include "DIVEDeviceAction.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(K2Node_DIVEActionBoundEvent)
 
@@ -24,7 +23,6 @@ void UK2Node_DIVEActionBoundEvent::RegisterDynamicBinding(UDynamicBlueprintBindi
 		CastChecked<UDIVEActionEventDelegateBinding>(BindingObject);
 
 	FDIVEActionEventBlueprintBinding Binding;
-	Binding.ActionClass = ActionClass;
 	Binding.FunctionNameToBind = CustomFunctionName;
 	ActionBinding->ActionEventBindings.Add(Binding);
 }

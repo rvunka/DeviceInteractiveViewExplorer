@@ -10,7 +10,7 @@ DIVE provides:
 - **Explicit focus** — context menu or `HandleFocusUnderCursor` (not the default meaning of primary action in Default mode)
 - **Interaction modes** — Default (inspect) / Physical (proxy drive on device controls)
 - **In-session context menu** — component **Bindings** (Focus/Isolate/Admin) + **Action Catalog** (`UDIVEDeviceAction`)
-- **Primary action** — `PrimaryActionIndex` on binding (`IA_DIVE_PrimaryAction` → `HandlePrimaryAction*`); hover overlay under **DIVE | Pick | Hover**
+- **Primary action** — `PrimaryActionIndex` on binding; among matches LMB uses specificity (Name > PartId > Tag > Any), ties keep earlier Bindings entry (`IA_DIVE_PrimaryAction` → `HandlePrimaryAction*`); hover overlay under **DIVE | Pick | Hover**
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
 - **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (host implements)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (DIVE | Camera)

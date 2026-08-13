@@ -362,7 +362,10 @@ bool UDIVESessionSubsystem::OpenContextMenuAtScreenPosition(
 	return true;
 }
 
-bool UDIVESessionSubsystem::ExecuteContextMenuAction(UDIVEDeviceAction* Action, FName TargetKey)
+bool UDIVESessionSubsystem::ExecuteContextMenuAction(
+	UDIVEDeviceAction* Action,
+	FName TargetKey,
+	FName BindingId)
 {
 	if (!IsSessionActive() || !bContextMenuOpen || !Action)
 	{
@@ -384,7 +387,8 @@ bool UDIVESessionSubsystem::ExecuteContextMenuAction(UDIVEDeviceAction* Action, 
 		PickTarget,
 		TargetKey,
 		ScreenPosition,
-		PickHit);
+		PickHit,
+		BindingId);
 
 	{
 		FDIVEActionWorldScope WorldScope(Action, GetWorld());

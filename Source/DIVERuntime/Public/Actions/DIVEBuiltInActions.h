@@ -75,3 +75,17 @@ private:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UObject> ActiveProxyObject;
 };
+
+/** Catalog slot with no built-in logic. Succeeds and fires the device DIVE Action Event. */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Notify Action",
+	ToolTip = "No built-in logic. Succeeds and fires the device DIVE Action Event."))
+class DIVERUNTIME_API UDIVENotifyAction : public UDIVEDeviceAction
+{
+	GENERATED_BODY()
+
+public:
+	UDIVENotifyAction();
+
+	virtual bool Execute_Implementation(const FDIVEActionContext& Context) override;
+};
