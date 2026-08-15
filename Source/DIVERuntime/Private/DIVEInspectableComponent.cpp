@@ -4,6 +4,7 @@
 
 #include "Actions/DIVEBuiltInActions.h"
 #include "DIVEAnchorComponent.h"
+#include "DIVEDeviceAction.h"
 #include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEConvention.h"
 #include "DIVEHierarchy.h"
@@ -21,11 +22,6 @@
 UDIVEInspectableComponent::UDIVEInspectableComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-	DefaultFocusAction = CreateDefaultSubobject<UDIVEFocusAction>(TEXT("DefaultFocusAction"));
-	DefaultIsolateAction = CreateDefaultSubobject<UDIVEIsolateAction>(TEXT("DefaultIsolateAction"));
-	DefaultSimulatePhysicsAction =
-		CreateDefaultSubobject<UDIVESimulatePhysicsAction>(TEXT("DefaultSimulatePhysicsAction"));
-	DefaultDeleteMeshAction = CreateDefaultSubobject<UDIVEDeleteMeshAction>(TEXT("DefaultDeleteMeshAction"));
 }
 
 void UDIVEInspectableComponent::PostInitProperties()
@@ -53,20 +49,27 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 		Sections.Add(AdminSection);
 	}
 
+	UDIVEFocusAction* FocusAction = NewObject<UDIVEFocusAction>(this, TEXT("DefaultFocusAction"));
+	UDIVEIsolateAction* IsolateAction = NewObject<UDIVEIsolateAction>(this, TEXT("DefaultIsolateAction"));
+	UDIVESimulatePhysicsAction* SimulatePhysicsAction =
+		NewObject<UDIVESimulatePhysicsAction>(this, TEXT("DefaultSimulatePhysicsAction"));
+	UDIVEDeleteMeshAction* DeleteMeshAction =
+		NewObject<UDIVEDeleteMeshAction>(this, TEXT("DefaultDeleteMeshAction"));
+
 	FDIVEActionBinding StandardBinding;
 	StandardBinding.BindingId = TEXT("BuiltIn.Standard");
 	StandardBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	StandardBinding.SectionId = DIVE::kSectionStandard;
-	StandardBinding.Actions.Add(DefaultFocusAction);
-	StandardBinding.Actions.Add(DefaultIsolateAction);
+	StandardBinding.Actions.Add(FocusAction);
+	StandardBinding.Actions.Add(IsolateAction);
 	Bindings.Add(StandardBinding);
 
 	FDIVEActionBinding AdminBinding;
 	AdminBinding.BindingId = TEXT("BuiltIn.Admin");
 	AdminBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	AdminBinding.SectionId = DIVE::kSectionAdmin;
-	AdminBinding.Actions.Add(DefaultSimulatePhysicsAction);
-	AdminBinding.Actions.Add(DefaultDeleteMeshAction);
+	AdminBinding.Actions.Add(SimulatePhysicsAction);
+	AdminBinding.Actions.Add(DeleteMeshAction);
 	Bindings.Add(AdminBinding);
 }
 
@@ -75,6 +78,16 @@ bool UDIVEInspectableComponent::RequestSession()
 	FDIVESessionParams Params;
 	Params.InitialFocusId = DefaultStartFocusId;
 	return RequestSessionWithParams(Params);
+}
+
+bool UDIVEInspectableComponent::TryRequestSessionFromActionId(FName ActionId)
+{
+	if (ActionId != DIVE::kActionOpenDIVE)
+	{
+		return false;
+	}
+
+	return RequestSession();
 }
 
 bool UDIVEInspectableComponent::RequestSessionWithParams(const FDIVESessionParams& Params)
@@ -254,6 +267,24 @@ bool UDIVEInspectableComponent::IsPrimitiveInteractive(const UPrimitiveComponent
 	return IsPrimitivePickable(Primitive) && !IsPrimitiveExcludedFromPickInteraction(Primitive);
 }
 
+bool UDIVEInspectableComponent::HasPickHoverOverlay() const
+{
+	if (DefaultPickHoverOverlayMaterial.ToSoftObjectPath().IsValid())
+	{
+		return true;
+	}
+
+	for (const TPair<FName, TSoftObjectPtr<UMaterialInterface>>& Pair : PickHoverOverlayByComponent)
+	{
+		if (Pair.Value.ToSoftObjectPath().IsValid())
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 float UDIVEInspectableComponent::GetEffectiveOrbitSensitivity() const
 {
 	return GetEffectiveCameraSettings().OrbitSensitivity;
@@ -324,6 +355,7 @@ FDIVECameraEffectiveSettings UDIVEInspectableComponent::GetEffectiveCameraSettin
 		Settings.FocusOrbitFitMultiplier = DeviceDefinition->FocusOrbitFitMultiplier;
 		Settings.FocusNearPaddingFactor = DeviceDefinition->FocusNearPaddingFactor;
 		Settings.DefaultOrbitDistance = DeviceDefinition->DefaultOrbitDistance;
+		Settings.FocusBlendDuration = DeviceDefinition->FocusBlendDuration;
 	}
 
 	return Settings;
@@ -331,19 +363,20 @@ FDIVECameraEffectiveSettings UDIVEInspectableComponent::GetEffectiveCameraSettin
 
 float UDIVEInspectableComponent::ComputeOrbitDistanceForFocus(const FDIVEFocusTarget& Target) const
 {
-	const float MinDistance = GetEffectiveMinOrbitDistanceCm();
-	const float MaxDistance = FMath::Max(GetEffectiveMaxOrbitDistanceCm(), MinDistance);
+	const FDIVECameraEffectiveSettings Settings = GetEffectiveCameraSettings();
+	const float MinDistance = Settings.MinOrbitDistanceCm;
+	const float MaxDistance = FMath::Max(Settings.MaxOrbitDistanceCm, MinDistance);
 
 	if (Target.Kind == EDIVEFocusKind::Primitive)
 	{
 		if (const UPrimitiveComponent* Primitive = Target.Primitive.Get())
 		{
 			const float Radius = FMath::Max(Primitive->Bounds.SphereRadius, 1.f);
-			return FMath::Clamp(Radius * GetEffectiveFocusOrbitFitMultiplier(), MinDistance, MaxDistance);
+			return FMath::Clamp(Radius * Settings.FocusOrbitFitMultiplier, MinDistance, MaxDistance);
 		}
 	}
 
-	return FMath::Clamp(GetEffectiveDefaultOrbitDistance(), MinDistance, MaxDistance);
+	return FMath::Clamp(Settings.DefaultOrbitDistance, MinDistance, MaxDistance);
 }
 
 float UDIVEInspectableComponent::ComputeFocusClearanceRadius(const FDIVEFocusTarget& Target) const
@@ -360,7 +393,7 @@ float UDIVEInspectableComponent::ComputeFocusClearanceRadius(const FDIVEFocusTar
 	}
 
 	const float Radius = FMath::Max(Primitive->Bounds.SphereRadius, 0.f);
-	return Radius * GetEffectiveFocusNearPaddingFactor();
+	return Radius * GetEffectiveCameraSettings().FocusNearPaddingFactor;
 }
 
 bool UDIVEInspectableComponent::TryResolveStartFocusTarget(FName FocusObjectId, FDIVEFocusTarget& OutTarget) const
@@ -396,7 +429,7 @@ bool UDIVEInspectableComponent::TryResolveStartFocusTarget(FName FocusObjectId, 
 
 		for (UPrimitiveComponent* Primitive : Primitives)
 		{
-			if (!Primitive || Primitive->GetFName() != FocusObjectId)
+			if (!Primitive || !MatchesComponentNameValue(Primitive, FocusObjectId))
 			{
 				continue;
 			}
@@ -434,28 +467,40 @@ bool UDIVEInspectableComponent::FindAnchorNode(FName PartId, FDIVEPartNode& OutN
 		return false;
 	}
 
-	TArray<UDIVEAnchorComponent*> Anchors;
-	Owner->GetComponents<UDIVEAnchorComponent>(Anchors);
-	for (UDIVEAnchorComponent* Anchor : Anchors)
+	bool bResolved = false;
+	DIVE::ForEachDeviceActor(Owner, [PartId, &OutNode, &bResolved](AActor* Actor)
 	{
-		if (!Anchor)
+		if (bResolved || !Actor)
 		{
-			continue;
+			return;
 		}
 
-		const FName ResolvedPartId = Anchor->GetResolvedPartId();
-		if (ResolvedPartId == PartId || Anchor->GetFName() == PartId)
+		TArray<UDIVEAnchorComponent*> Anchors;
+		Actor->GetComponents<UDIVEAnchorComponent>(Anchors);
+		for (UDIVEAnchorComponent* Anchor : Anchors)
 		{
+			if (!Anchor)
+			{
+				continue;
+			}
+
+			const FName ResolvedPartId = Anchor->GetResolvedPartId();
+			if (ResolvedPartId != PartId && Anchor->GetFName() != PartId)
+			{
+				continue;
+			}
+
 			OutNode.PartId = ResolvedPartId;
 			OutNode.DisplayName = Anchor->DisplayName.IsEmpty()
 				? FText::FromName(ResolvedPartId)
 				: Anchor->DisplayName;
 			OutNode.SceneComponent = Anchor;
-			return true;
+			bResolved = true;
+			return;
 		}
-	}
+	});
 
-	return false;
+	return bResolved;
 }
 
 void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
@@ -474,6 +519,7 @@ void UDIVEInspectableComponent::NotifyActionExecuted(
 	}
 
 	OnActionExecuted.Broadcast(Action, Context);
+	Action->OnExecuted.Broadcast(Action, Context);
 }
 
 void UDIVEInspectableComponent::GatherAuthoredBindings(TArray<const FDIVEActionBinding*>& OutBindings) const
@@ -540,6 +586,7 @@ bool UDIVEInspectableComponent::MatchesComponentNameValue(
 	const UPrimitiveComponent* Primitive,
 	const FName MatchValue) const
 {
+	// Name-only: exact FName, then BP-stable token. Do not call TryResolveStartFocusTarget.
 	if (!Primitive || MatchValue.IsNone())
 	{
 		return false;
@@ -555,14 +602,6 @@ bool UDIVEInspectableComponent::MatchesComponentNameValue(
 	if (!PrimitiveToken.IsEmpty()
 		&& !MatchToken.IsEmpty()
 		&& PrimitiveToken.Equals(MatchToken, ESearchCase::IgnoreCase))
-	{
-		return true;
-	}
-
-	FDIVEFocusTarget Resolved;
-	if (TryResolveStartFocusTarget(MatchValue, Resolved)
-		&& Resolved.Kind == EDIVEFocusKind::Primitive
-		&& Resolved.Primitive.Get() == Primitive)
 	{
 		return true;
 	}
@@ -670,6 +709,38 @@ FName UDIVEInspectableComponent::ResolveTargetKeyForQuery(
 	}
 
 	return Primitive ? Primitive->GetFName() : PickTarget.SemanticPartId;
+}
+
+void UDIVEInspectableComponent::CollectPrimitivesMatchingQuery(
+	const FDIVETargetQuery& Query,
+	TArray<UPrimitiveComponent*>& OutPrimitives) const
+{
+	OutPrimitives.Reset();
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return;
+	}
+
+	BuildSemanticRegistry();
+
+	TArray<UPrimitiveComponent*> DevicePrimitives;
+	DIVE::CollectDevicePrimitives(Owner, DevicePrimitives);
+	for (UPrimitiveComponent* Primitive : DevicePrimitives)
+	{
+		if (!Primitive || !IsPrimitiveInteractive(Primitive))
+		{
+			continue;
+		}
+
+		const FDIVEFocusTarget PickTarget =
+			FDIVEFocusTarget::FromPrimitive(Primitive, ResolveSemanticPartId(Primitive));
+		if (DoesTargetQueryMatchPick(Query, PickTarget))
+		{
+			OutPrimitives.Add(Primitive);
+		}
+	}
 }
 
 void UDIVEInspectableComponent::GatherMatchingBindings(
@@ -1028,6 +1099,15 @@ UMaterialInterface* UDIVEInspectableComponent::ResolvePickHoverOverlayMaterial(c
 	}
 
 	return ResolveSoftMaterial(DefaultPickHoverOverlayMaterial);
+}
+
+void UDIVEInspectableComponent::PreloadPickHoverOverlays()
+{
+	ResolveSoftMaterial(DefaultPickHoverOverlayMaterial);
+	for (const TPair<FName, TSoftObjectPtr<UMaterialInterface>>& Pair : PickHoverOverlayByComponent)
+	{
+		ResolveSoftMaterial(Pair.Value);
+	}
 }
 
 #if WITH_EDITOR

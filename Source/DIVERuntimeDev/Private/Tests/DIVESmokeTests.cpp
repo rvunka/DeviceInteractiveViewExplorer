@@ -7,11 +7,14 @@
 #include "DIVEConvention.h"
 #include "DIVEDeviceAction.h"
 #include "DIVEInspectableComponent.h"
+#include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
 #include "DIVEProxyDriveResolve.h"
 #include "DIVETypes.h"
 #include "Utils/DIVEContextMenu.h"
 
+#include "Components/PrimitiveComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -37,7 +40,7 @@ bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters
 	TArray<FDIVEContextMenuEntry> Entries;
 	const FDIVEFocusTarget InvalidPick = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
 
-	DIVEContextMenu::BuildEntries(nullptr, InvalidPick, false, Entries);
+	DIVEContextMenu::BuildEntries(nullptr, InvalidPick, Entries);
 	TestEqual(TEXT("No inspectable => empty menu"), Entries.Num(), 0);
 
 	// Use CDO — NewObject<UActorComponent>() at Smoke startup runs before EngineElements
@@ -85,6 +88,13 @@ bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters
 		}
 	}
 	TestTrue(TEXT("Default Admin section has Header"), bFoundAdminHeader);
+
+	TestFalse(TEXT("CDO has no hover overlay authored"), Inspectable->HasPickHoverOverlay());
+
+	TestEqual(
+		TEXT("CDO FocusBlendDuration default"),
+		Inspectable->GetEffectiveCameraSettings().FocusBlendDuration,
+		0.35f);
 
 	TestTrue(TEXT("AnyPrimitive is a distinct match mode"),
 		EDIVETargetMatchMode::AnyPrimitive != EDIVETargetMatchMode::ComponentTag);
@@ -249,6 +259,98 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVECollectPrimitivesMatchingQuerySmokeTest,
+	"DIVE.Actions.CollectMatchingPrimitives",
+	SmokeUnitTestFlags)
+
+bool FDIVECollectPrimitivesMatchingQuerySmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	const UDIVEInspectableComponent* Inspectable =
+		UDIVEInspectableComponent::StaticClass()->GetDefaultObject<UDIVEInspectableComponent>();
+	TestNotNull(TEXT("Inspectable CDO available"), Inspectable);
+	if (!Inspectable)
+	{
+		return false;
+	}
+
+	FDIVETargetQuery TagQuery;
+	TagQuery.MatchMode = EDIVETargetMatchMode::ComponentTag;
+	TagQuery.MatchValues = { TEXT("DIVE.Bolt") };
+
+	TArray<UPrimitiveComponent*> Matches;
+	Inspectable->CollectPrimitivesMatchingQuery(TagQuery, Matches);
+	TestEqual(TEXT("CDO Collect (no owner) is empty for Tag"), Matches.Num(), 0);
+
+	FDIVETargetQuery AnyQuery;
+	AnyQuery.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
+	Inspectable->CollectPrimitivesMatchingQuery(AnyQuery, Matches);
+	TestEqual(TEXT("CDO Collect (no owner) is empty for AnyPrimitive"), Matches.Num(), 0);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEComponentNameMatchSmokeTest,
+	"DIVE.Actions.ComponentNameMatch",
+	SmokeUnitTestFlags)
+
+bool FDIVEComponentNameMatchSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	const UDIVEInspectableComponent* Inspectable =
+		UDIVEInspectableComponent::StaticClass()->GetDefaultObject<UDIVEInspectableComponent>();
+	TestNotNull(TEXT("Inspectable CDO available"), Inspectable);
+	if (!Inspectable)
+	{
+		return false;
+	}
+
+	TestEqual(
+		TEXT("Normalize strips _GEN_VARIABLE"),
+		DIVE::NormalizeComponentToken(TEXT("Switch_GEN_VARIABLE")),
+		FString(TEXT("Switch")));
+	TestEqual(
+		TEXT("Normalize strips numeric suffix"),
+		DIVE::NormalizeComponentToken(TEXT("Switch_12")),
+		FString(TEXT("Switch")));
+
+	const UStaticMeshComponent* MeshCDO =
+		UStaticMeshComponent::StaticClass()->GetDefaultObject<UStaticMeshComponent>();
+	TestNotNull(TEXT("StaticMesh CDO available"), MeshCDO);
+	if (!MeshCDO)
+	{
+		return false;
+	}
+
+	const FDIVEFocusTarget Pick = FDIVEFocusTarget::FromPrimitive(
+		const_cast<UStaticMeshComponent*>(MeshCDO),
+		NAME_None);
+
+	FDIVETargetQuery ExactName;
+	ExactName.MatchMode = EDIVETargetMatchMode::ComponentName;
+	ExactName.MatchValues = { MeshCDO->GetFName() };
+	TestTrue(
+		TEXT("ComponentName matches exact FName"),
+		Inspectable->DoesTargetQueryMatchPick(ExactName, Pick));
+
+	FDIVETargetQuery FocusIdQuery;
+	FocusIdQuery.MatchMode = EDIVETargetMatchMode::ComponentName;
+	FocusIdQuery.MatchValues = { TEXT("StartFocusPart") };
+	TestFalse(
+		TEXT("ComponentName does not treat FocusId/PartId as a name match"),
+		Inspectable->DoesTargetQueryMatchPick(FocusIdQuery, Pick));
+
+	TestFalse(
+		TEXT("Wrong ActionId does not open session"),
+		const_cast<UDIVEInspectableComponent*>(Inspectable)->TryRequestSessionFromActionId(TEXT("NotOpenDIVE")));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FDIVEActionWorldContextSmokeTest,
 	"DIVE.Actions.ExecutionWorld",
 	SmokeUnitTestFlags)
@@ -324,6 +426,29 @@ bool FDIVEActionCanExecuteGateSmokeTest::RunTest(const FString& Parameters)
 	TestFalse(
 		TEXT("Focus CanExecute is false without a valid primitive pick"),
 		Focus->CanExecute(EmptyContext));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVECameraDefinitionBlendSmokeTest,
+	"DIVE.Camera.DefinitionBlendDuration",
+	SmokeUnitTestFlags)
+
+bool FDIVECameraDefinitionBlendSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UDIVEDeviceDefinitionAsset* Definition = NewObject<UDIVEDeviceDefinitionAsset>();
+	TestNotNull(TEXT("Device definition instance"), Definition);
+	if (!Definition)
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("Definition FocusBlendDuration default"), Definition->FocusBlendDuration, 0.35f);
+	Definition->FocusBlendDuration = 0.9f;
+	TestEqual(TEXT("Definition FocusBlendDuration writes"), Definition->FocusBlendDuration, 0.9f);
 
 	return true;
 }

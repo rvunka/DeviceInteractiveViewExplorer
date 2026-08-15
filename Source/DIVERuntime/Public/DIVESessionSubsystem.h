@@ -289,4 +289,9 @@ private:
 		TArray<FDIVEContextMenuEntry>& OutEntries,
 		FDIVEFocusTarget& OutPickTarget,
 		FHitResult& OutPickHit) const;
+
+	bool ExecuteResolvedAction(
+		UDIVEDeviceAction* Action,
+		const FDIVEActionContext& Context,
+		bool bSetIgnoreNextReleaseIfContinuous);
 };

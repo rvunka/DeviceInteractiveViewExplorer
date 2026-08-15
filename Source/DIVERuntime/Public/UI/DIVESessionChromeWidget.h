@@ -18,7 +18,6 @@ public:
 
 	void SetStyle(const FDIVESessionChromeStyle& InStyle);
 	void SetInteractionMode(EDIVESessionInteractionMode InMode);
-	void SetModeHintVisible(bool bInVisible);
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -41,5 +40,4 @@ protected:
 
 	FDIVESessionChromeStyle CachedStyle;
 	EDIVESessionInteractionMode CachedMode = EDIVESessionInteractionMode::Default;
-	bool bShowModeHint = true;
 };

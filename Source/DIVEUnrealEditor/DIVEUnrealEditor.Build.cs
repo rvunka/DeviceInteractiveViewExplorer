@@ -14,8 +14,7 @@ public class DIVEUnrealEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"DIVECore",
-			"DIVERuntime",
-			"DIVERuntimeDev"
+			"DIVERuntime"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
@@ -28,7 +27,8 @@ public class DIVEUnrealEditor : ModuleRules
 			"EditorFramework",
 			"DataValidation",
 			"PropertyEditor",
-			"InputCore"
+			"InputCore",
+			"DIVERuntimeDev"
 		});
 	}
 }

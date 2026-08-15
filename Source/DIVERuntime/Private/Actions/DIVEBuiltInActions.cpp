@@ -48,12 +48,7 @@ bool UDIVEFocusAction::Execute_Implementation(const FDIVEActionContext& Context)
 		return false;
 	}
 
-	const bool bHandled = Subsystem->FocusTarget(Context.PickTarget, true);
-	if (bHandled)
-	{
-		OnExecuted.Broadcast(this, Context);
-	}
-	return bHandled;
+	return Subsystem->FocusTarget(Context.PickTarget, true);
 }
 
 UDIVEIsolateAction::UDIVEIsolateAction()
@@ -93,12 +88,7 @@ bool UDIVEIsolateAction::Execute_Implementation(const FDIVEActionContext& Contex
 		return false;
 	}
 
-	const bool bHandled = Subsystem->ToggleIsolationForTarget(Context.PickTarget);
-	if (bHandled)
-	{
-		OnExecuted.Broadcast(this, Context);
-	}
-	return bHandled;
+	return Subsystem->ToggleIsolationForTarget(Context.PickTarget);
 }
 
 UDIVESimulatePhysicsAction::UDIVESimulatePhysicsAction()
@@ -134,12 +124,7 @@ bool UDIVESimulatePhysicsAction::Execute_Implementation(const FDIVEActionContext
 		return false;
 	}
 
-	const bool bHandled = Subsystem->ToggleMeshPhysicsForTarget(Context.PickTarget);
-	if (bHandled)
-	{
-		OnExecuted.Broadcast(this, Context);
-	}
-	return bHandled;
+	return Subsystem->ToggleMeshPhysicsForTarget(Context.PickTarget);
 }
 
 UDIVEDeleteMeshAction::UDIVEDeleteMeshAction()
@@ -174,12 +159,7 @@ bool UDIVEDeleteMeshAction::Execute_Implementation(const FDIVEActionContext& Con
 		return false;
 	}
 
-	const bool bHandled = Subsystem->DeleteMeshForTarget(Context.PickTarget);
-	if (bHandled)
-	{
-		OnExecuted.Broadcast(this, Context);
-	}
-	return bHandled;
+	return Subsystem->DeleteMeshForTarget(Context.PickTarget);
 }
 
 UDIVEProxyDriveForwardAction::UDIVEProxyDriveForwardAction()
@@ -265,6 +245,5 @@ bool UDIVENotifyAction::Execute_Implementation(const FDIVEActionContext& Context
 		return false;
 	}
 
-	OnExecuted.Broadcast(this, Context);
 	return true;
 }

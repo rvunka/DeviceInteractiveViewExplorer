@@ -34,7 +34,7 @@ DIVE provides:
 3. Optional: `UDIVEAnchorComponent` for authored camera viewpoints / PartId.
 4. On pawn: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (Input auto-finds UI by class).
 5. Optional PIE: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — RMB context menu, MMB orbit, etc.
-6. Open session via ACTS `DIVE::kActionOpenDIVE` (`OpenDIVE`) or `RequestSession()` in game code.
+6. Open session: ACTS `OnActionExecuted` → `TryRequestSessionFromActionId` (`OpenDIVE` / `DIVE::kActionOpenDIVE`), or `RequestSession()` — see `Docs/QUICKSTART.md` §3.
 7. Custom menu: **Action Catalog / Bindings** + action instances — **`Docs/QUICKSTART.md`** §1.
 8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `DeviceInteractionModel.md` §6). For generic GRIP drag: enable **`DIVEGRIPBridge`** and add `UDIVEGRIPBridgeComponent` on the pawn.
 

@@ -6,7 +6,7 @@
 
 namespace DIVE
 {
-/** Action name for the "open DIVE session" input event. Consumed by the game layer (ACTS); not handled inside DIVE itself. */
+/** Action name for ACTS → DIVE session. Host: OnActionExecuted → TryRequestSessionFromActionId. */
 inline const FName kActionOpenDIVE = TEXT("OpenDIVE");
 inline constexpr float kDefaultOrbitDistance = 200.f;
 inline constexpr float kDefaultMinOrbitDistance = 20.f;

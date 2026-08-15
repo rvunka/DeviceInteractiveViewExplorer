@@ -19,10 +19,6 @@ class UDIVEDeviceDefinitionAsset;
 class UDIVEAnchorComponent;
 class UPrimitiveComponent;
 class UMaterialInterface;
-class UDIVEFocusAction;
-class UDIVEIsolateAction;
-class UDIVESimulatePhysicsAction;
-class UDIVEDeleteMeshAction;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnDIVESessionLifecycle, bool, bSessionActive);
 
@@ -137,17 +133,28 @@ public:
 
 	/**
 	 * Fired by the session after a successful instant Execute, or after a successful continuous Begin.
+	 * NotifyActionExecuted also fans out to Action->OnExecuted (K2 listens here).
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
 	FOnDIVEActionExecuted OnActionExecuted;
 
 	void NotifyActionExecuted(UDIVEDeviceAction* Action, const FDIVEActionContext& Context);
 
+	void NotifySessionLifecycle(bool bActive);
+
 	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DisplayName = "Request Session"))
 	bool RequestSession();
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (DisplayName = "Request Session (With Params)"))
 	bool RequestSessionWithParams(const FDIVESessionParams& Params);
+
+	/**
+	 * Host ACTS glue: if ActionId is OpenDIVE (`DIVE::kActionOpenDIVE`), begins a session.
+	 * Any other id is ignored. Bind from UACTSInteractableComponent::OnActionExecuted.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "DIVE", meta = (
+		DisplayName = "Try Request Session From Action Id"))
+	bool TryRequestSessionFromActionId(FName ActionId);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE")
 	void BuildSemanticRegistry() const;
@@ -183,6 +190,12 @@ public:
 	/** Pickable and not listed in Pick Interaction Exclusions. */
 	UFUNCTION(BlueprintPure, Category = "DIVE|Pick")
 	bool IsPrimitiveInteractive(const UPrimitiveComponent* Primitive) const;
+
+	/** True when a default or per-component hover overlay soft path is authored. */
+	UFUNCTION(BlueprintPure, Category = "DIVE|Pick|Hover")
+	bool HasPickHoverOverlay() const;
+
+	void PreloadPickHoverOverlays();
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|Camera")
 	float GetEffectiveOrbitSensitivity() const;
@@ -234,7 +247,10 @@ public:
 
 	bool DoesTargetQueryMatchPick(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
 
-	FName ResolveTargetKeyForQuery(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
+	/** Interactive device primitives that match Query (same rules as session pick / Scan). */
+	void CollectPrimitivesMatchingQuery(
+		const FDIVETargetQuery& Query,
+		TArray<UPrimitiveComponent*>& OutPrimitives) const;
 
 	void GatherMatchingBindings(
 		const FDIVEFocusTarget& PickTarget,
@@ -282,26 +298,15 @@ public:
 	virtual void PostInitProperties() override;
 
 private:
-	UPROPERTY(Instanced)
-	TObjectPtr<UDIVEFocusAction> DefaultFocusAction;
-	UPROPERTY(Instanced)
-	TObjectPtr<UDIVEIsolateAction> DefaultIsolateAction;
-	UPROPERTY(Instanced)
-	TObjectPtr<UDIVESimulatePhysicsAction> DefaultSimulatePhysicsAction;
-	UPROPERTY(Instanced)
-	TObjectPtr<UDIVEDeleteMeshAction> DefaultDeleteMeshAction;
-
 	UPROPERTY(Transient)
 	mutable FDIVEPartTree SemanticRegistry;
 
 	UPROPERTY(Transient)
 	bool bSessionActive = false;
 
-	friend class UDIVESessionSubsystem;
-
-	void NotifySessionLifecycle(bool bActive);
 	void SeedDefaultBindingsIfNeeded();
 
+	FName ResolveTargetKeyForQuery(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
 	bool MatchesComponentNameValue(const UPrimitiveComponent* Primitive, FName MatchValue) const;
 	bool IsPrimitiveExcludedFromPickInteraction(const UPrimitiveComponent* Primitive) const;
 	bool FindPickHoverOverlaySoftMaterial(const FDIVEFocusTarget& PickTarget, TSoftObjectPtr<UMaterialInterface>& OutSoftMaterial) const;

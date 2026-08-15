@@ -5,6 +5,7 @@
 #include "DIVEActionBinding.h"
 #include "DIVEActionBindingValidation.h"
 #include "DIVEAnchorComponent.h"
+#include "DIVEHierarchy.h"
 #include "DIVEInspectableComponent.h"
 #include "Misc/DataValidation.h"
 
@@ -71,7 +72,17 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 	Inspectable->BuildSemanticRegistry();
 
 	TArray<UDIVEAnchorComponent*> Anchors;
-	DeviceActor->GetComponents<UDIVEAnchorComponent>(Anchors);
+	DIVE::ForEachDeviceActor(DeviceActor, [&Anchors](AActor* Actor)
+	{
+		if (!Actor)
+		{
+			return;
+		}
+
+		TArray<UDIVEAnchorComponent*> ActorAnchors;
+		Actor->GetComponents<UDIVEAnchorComponent>(ActorAnchors);
+		Anchors.Append(ActorAnchors);
+	});
 	Report.AnchorCount = Anchors.Num();
 
 	TMap<FName, UDIVEAnchorComponent*> PartIdOwners;
@@ -101,6 +112,11 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 		{
 			PartIdOwners.Add(ResolvedPartId, Anchor);
 		}
+	}
+
+	if (!Inspectable->HasPickHoverOverlay())
+	{
+		AddWarning(Report, TEXT("No hover overlay material (Default Pick Hover Overlay Material or Pick Hover Overlay By Component). Hover highlight is a no-op."));
 	}
 
 	if (!Inspectable->DefaultStartFocusId.IsNone())

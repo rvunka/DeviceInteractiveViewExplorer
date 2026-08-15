@@ -38,4 +38,8 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
 	void HandlePawnPhysicalManualRotateReleased();
+
+	/** Optional: wheel while pawn-bridge grab is active (e.g. GRIP hold distance). No-op if unsupported. */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
+	void HandlePawnPhysicalGrabHoldDistanceScroll(float WheelDelta);
 };

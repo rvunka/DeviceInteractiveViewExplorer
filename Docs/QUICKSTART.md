@@ -22,6 +22,7 @@ On the **device actor** (the thing being inspected):
 | **Min / Max Orbit Distance Cm** | 20 / 2000 | Hard zoom limits |
 | **Focus Orbit Fit Multiplier** | 2.75 | Focus on a mesh → distance ≈ radius × this |
 | **Focus Near Padding Factor** | 1.2 | Soft near floor ≈ radius × this (avoids diving into the part) |
+| **Focus Blend Duration** | 0.35 | Seconds to blend the camera to a new focus (also on Device Definition) |
 
 Focus on a primitive fits orbit distance to its bounds; wheel zoom scales with current distance.
 
@@ -42,7 +43,7 @@ Pick uses a multi-hit ray and **prefers shape / `DIVE.PickProxy` volumes** over 
 
 **Isolate** on a pick volume keeps device **meshes** visible (the shell) and hides other volumes / unrelated primitives. Clearing Isolate restores each component’s original Hidden-in-Game state (so authored-hidden boxes stay hidden).
 
-**Hover overlay**: applied as `OverlayMaterial` on `UMeshComponent`. DIVE saves and restores any pre-existing overlay material owned by the device, so device-authored overlays survive hover highlight/clear.
+**Hover overlay**: applied as `OverlayMaterial` on `UMeshComponent`. DIVE saves and restores any pre-existing overlay material owned by the device, so device-authored overlays survive hover highlight/clear. **Without a Hover Overlay Material (or a per-component override) hover is a no-op** — DIVE does not trace for highlight. Scan warns when neither is set.
 
 Hover overlay still applies only to `UMeshComponent`.
 
@@ -90,14 +91,14 @@ Example — tagged bolts → continuous unscrew BP:
 1. Tag bolt meshes `DIVE.Bolt`.
 2. Content Browser → **DIVE → Continuous Device Action** → `BP_Unscrew` (params + Begin/Update/End; on complete call device interface e.g. `NotifyBoltRemoved`).
 3. **DIVE → Action Catalog** → section `Maintenance`, binding Match=Component Tag `DIVE.Bolt`, add `BP_Unscrew` instance.
-4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Default mode. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
+4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Default mode. Binding Details shows **Matched → Targets: N components** (same pick rules as the session) and **Select** highlights those meshes on a placed device. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
 
 **Continuous actions:**
 - **Primary (hold):** press → `BeginInteraction` → drag while held → release → `EndInteraction`.
 - **Context menu:** click row → `BeginInteraction` (modal drag without hold) → finish with next primary click / Escape / self-complete. Same LMB-up that confirms the menu row is ignored so the gesture is not cancelled immediately.
 - Session marks the action active after a successful `Begin`. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
 
-Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on Context Menu UI).
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on Context Menu UI). Device `IDIVEProxyDrive` / continuous actions feed it; **pawn GRIP bridge drag does not** (cursor-pull has no normalized value).
 
 Interaction parameters live on the action instance; device domain state lives on the device (see `DeviceInteractionModel.md`).
 
@@ -110,7 +111,7 @@ Interaction parameters live on the action instance; device domain state lives on
 | **Hover Overlay Material** | Device-wide default for all interactive meshes under the cursor |
 | **Pick Hover Overlay By Component** | Optional per-mesh override (component name or PartId → material) |
 
-Uses `UMeshComponent::SetOverlayMaterial` (Default mode only). Non-mesh primitives are skipped. Assign a material authored for mesh overlay (outline / tint).
+Uses `UMeshComponent::SetOverlayMaterial` (Default mode only). Non-mesh primitives are skipped. Assign a material authored for mesh overlay (outline / tint). Empty default + empty per-component map = no hover trace.
 
 ### Pick interaction exclusions
 
@@ -203,7 +204,13 @@ On `UDIVEInspectableComponent` → **DIVE | Camera**, or shared `UDIVEDeviceDefi
 
 ## 3. ACTS entry (optional)
 
-On `UACTSInteractableComponent`: **ActionId** `DIVE::kActionOpenDIVE` (`OpenDIVE`) → `RequestSession()` in game code.
+On the **device actor**, bind `UACTSInteractableComponent::OnActionExecuted` to
+`UDIVEInspectableComponent::Try Request Session From Action Id`.
+
+When ACTS executes ActionId **`OpenDIVE`** (`DIVE::kActionOpenDIVE`), the helper calls
+`RequestSession()`. Any other ActionId is ignored.
+
+Do not wire this in the game module C++ — Content/Blueprint on the device is the host glue.
 
 ## 4. Player character input
 
@@ -231,8 +238,6 @@ Map once on the player character's IMC — **not** on the device:
 | `IA_DIVE_ContextMenu` | `HandleContextMenuRequested` |
 | `IA_DIVE_SetMode_Physical` / `_Default` | `SetInteractionMode` |
 | `IA_DIVE_Back` / `IA_DIVE_Exit` | `HandleNavigateBack` / `HandleExitSession` |
-
-Remove unused `IA_DIVE_ExecuteOperation` from Content / IMC if present.
 
 ### Legacy KBM (DIVERuntimeDev — dev only)
 

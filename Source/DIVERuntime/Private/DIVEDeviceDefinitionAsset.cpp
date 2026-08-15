@@ -40,6 +40,12 @@ EDataValidationResult UDIVEDeviceDefinitionAsset::IsDataValid(FDataValidationCon
 		Result = EDataValidationResult::Invalid;
 	}
 
+	if (FocusBlendDuration < 0.f)
+	{
+		Context.AddError(FText::FromString(TEXT("FocusBlendDuration must be greater than or equal to zero.")));
+		Result = EDataValidationResult::Invalid;
+	}
+
 	return Result;
 }
 

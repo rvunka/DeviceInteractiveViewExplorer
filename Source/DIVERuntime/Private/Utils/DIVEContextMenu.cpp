@@ -9,12 +9,11 @@ namespace DIVEContextMenu
 void BuildEntries(
 	UDIVEInspectableComponent* Inspectable,
 	const FDIVEFocusTarget& PickTarget,
-	bool bHasValidPick,
 	TArray<FDIVEContextMenuEntry>& OutEntries)
 {
 	OutEntries.Reset();
 
-	if (Inspectable && bHasValidPick && PickTarget.Kind == EDIVEFocusKind::Primitive)
+	if (Inspectable && PickTarget.Kind == EDIVEFocusKind::Primitive)
 	{
 		Inspectable->AppendConfiguredContextMenuEntries(PickTarget, OutEntries);
 	}

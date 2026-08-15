@@ -2,17 +2,16 @@
 
 #include "Utils/DIVEGripLegacyDevQuery.h"
 
+#include "DIVEPawnPhysicalDrive.h"
+#include "DIVEPawnPhysicalDriveResolve.h"
 #include "DIVESessionSubsystem.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
 
 #if DIVE_WITH_GRIP
 #include "Hand/GRIPHandComponent.h"
 #include "Input/GRIPInputComponent.h"
-#endif
-
-#if DIVE_WITH_GRIP_BRIDGE
-#include "DIVEGRIPBridgeComponent.h"
 #endif
 
 namespace DIVEGripLegacyDevQueryPrivate
@@ -57,39 +56,37 @@ namespace DIVEGripLegacyDevQueryPrivate
 		const UDIVESessionSubsystem* DiveSubsystem = GetDiveSubsystem(Owner);
 		return DiveSubsystem && DiveSubsystem->IsPawnPhysicalDriveActive();
 	}
-}
 
-bool DIVEGripLegacyDevQuery::ShouldDeferMouseWheelToGrip(const AActor* Owner)
-{
+	bool ShouldDeferMouseWheelToGrip(const AActor* Owner)
+	{
 #if DIVE_WITH_GRIP
-	return DIVEGripLegacyDevQueryPrivate::IsGripOwningMouseWheel(Owner);
+		return IsGripOwningMouseWheel(Owner);
 #else
-	(void)Owner;
-	return false;
+		(void)Owner;
+		return false;
 #endif
+	}
 }
 
 bool DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(const AActor* Owner, const float WheelDelta)
 {
-	if (!ShouldDeferMouseWheelToGrip(Owner) || FMath::IsNearlyZero(WheelDelta))
+	if (!DIVEGripLegacyDevQueryPrivate::ShouldDeferMouseWheelToGrip(Owner) || FMath::IsNearlyZero(WheelDelta))
 	{
 		return false;
 	}
 
-#if DIVE_WITH_GRIP_BRIDGE
 	if (DIVEGripLegacyDevQueryPrivate::IsPawnBridgePhysicalDriveActive(Owner))
 	{
-		TInlineComponentArray<UActorComponent*> Components(Owner);
-		for (UActorComponent* Component : Components)
+		APawn* Pawn = const_cast<APawn*>(Cast<APawn>(Owner));
+		if (IDIVEPawnPhysicalDrive* Drive = DIVEPawnPhysicalDriveResolve::FindOnPawn(Pawn))
 		{
-			if (UDIVEGRIPBridgeComponent* Bridge = Cast<UDIVEGRIPBridgeComponent>(Component))
+			if (UObject* DriveObject = Cast<UObject>(Drive))
 			{
-				Bridge->ApplyGrabHoldDistanceScroll(WheelDelta);
+				IDIVEPawnPhysicalDrive::Execute_HandlePawnPhysicalGrabHoldDistanceScroll(DriveObject, WheelDelta);
 				return true;
 			}
 		}
 	}
-#endif
 
 #if DIVE_WITH_GRIP
 	TInlineComponentArray<UActorComponent*> Components(Owner);

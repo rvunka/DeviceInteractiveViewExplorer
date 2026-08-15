@@ -121,6 +121,8 @@ bool UDIVESessionSubsystem::TryBeginSession(
 
 	SessionState = EDIVESessionState::Active;
 
+	Inspectable->PreloadPickHoverOverlays();
+
 	PlayerController->SetViewTargetWithBlend(CameraRig, 0.f);
 	Inspectable->NotifySessionLifecycle(true);
 
@@ -324,7 +326,6 @@ bool UDIVESessionSubsystem::BuildContextMenuEntries(
 	DIVEContextMenu::BuildEntries(
 		Inspectable,
 		OutPickTarget,
-		bHasValidPick,
 		OutEntries);
 
 	return !OutEntries.IsEmpty();
@@ -390,32 +391,53 @@ bool UDIVESessionSubsystem::ExecuteContextMenuAction(
 		PickHit,
 		BindingId);
 
+	return ExecuteResolvedAction(Action, Context, true);
+}
+
+bool UDIVESessionSubsystem::ExecuteResolvedAction(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	const bool bSetIgnoreNextReleaseIfContinuous)
+{
+	if (!IsSessionActive() || !Action)
 	{
-		FDIVEActionWorldScope WorldScope(Action, GetWorld());
-		if (!Action->CanExecute(Context))
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	if (!Inspectable)
+	{
+		return false;
+	}
+
+	FDIVEActionWorldScope WorldScope(Action, GetWorld());
+	if (!Action->CanExecute(Context))
+	{
+		return false;
+	}
+
+	if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(Action))
+	{
+		if (!TryBeginContinuousAction(Continuous, Context))
 		{
 			return false;
 		}
 
-		if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(Action))
+		if (bSetIgnoreNextReleaseIfContinuous)
 		{
-			if (!TryBeginContinuousAction(Continuous, Context))
-			{
-				return false;
-			}
-
 			bIgnoreNextPrimaryActionRelease = true;
-			return true;
 		}
 
-		if (!Action->Execute(Context))
-		{
-			return false;
-		}
-
-		Inspectable->NotifyActionExecuted(Action, Context);
 		return true;
 	}
+
+	if (!Action->Execute(Context))
+	{
+		return false;
+	}
+
+	Inspectable->NotifyActionExecuted(Action, Context);
+	return true;
 }
 
 void UDIVESessionSubsystem::CloseContextMenu()

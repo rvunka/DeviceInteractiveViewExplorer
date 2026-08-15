@@ -3,6 +3,7 @@
 #include "Input/DIVEInputComponent.h"
 
 #include "DIVESessionSubsystem.h"
+#include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
@@ -86,10 +87,18 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		&& !ShouldSuppressSessionInput()
 		&& !Subsystem->IsProxyDriving())
 	{
-		FVector2D ScreenPosition;
-		if (TryGetCursorScreenPosition(ScreenPosition))
+		UDIVEInspectableComponent* Inspectable = Subsystem->GetActiveInspectable();
+		if (!Inspectable || !Inspectable->HasPickHoverOverlay())
 		{
-			Subsystem->UpdatePickHover(ScreenPosition, GetLocalPlayerController());
+			Subsystem->ClearPickHover();
+		}
+		else
+		{
+			FVector2D ScreenPosition;
+			if (TryGetCursorScreenPosition(ScreenPosition))
+			{
+				Subsystem->UpdatePickHover(ScreenPosition, GetLocalPlayerController());
+			}
 		}
 	}
 	else if (Subsystem)
@@ -854,7 +863,7 @@ void UDIVEInputComponent::SetInteractionMode(EDIVESessionInteractionMode NewMode
 
 void UDIVEInputComponent::HandleCycleInteractionMode()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}
@@ -900,7 +909,7 @@ void UDIVEInputComponent::HandleExitSession()
 
 void UDIVEInputComponent::HandleToggleIsolate()
 {
-	if (!IsLocallyControlledOwner())
+	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
 		return;
 	}

@@ -96,26 +96,7 @@ bool FDIVESessionPickOps::ExecutePrimaryActionAtScreenPosition(
 		PickHit,
 		BindingId);
 
-	{
-		FDIVEActionWorldScope WorldScope(PrimaryAction, Session.GetWorld());
-		if (!PrimaryAction->CanExecute(Context))
-		{
-			return false;
-		}
-
-		if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(PrimaryAction))
-		{
-			return Session.TryBeginContinuousAction(Continuous, Context);
-		}
-
-		if (!PrimaryAction->Execute(Context))
-		{
-			return false;
-		}
-
-		Inspectable->NotifyActionExecuted(PrimaryAction, Context);
-		return true;
-	}
+	return Session.ExecuteResolvedAction(PrimaryAction, Context, false);
 }
 
 void FDIVESessionPickOps::UpdatePickHover(
@@ -127,6 +108,13 @@ void FDIVESessionPickOps::UpdatePickHover(
 		|| Session.InteractionMode != EDIVESessionInteractionMode::Default
 		|| Session.bContextMenuOpen
 		|| !PlayerController)
+	{
+		ClearPickHover(Session);
+		return;
+	}
+
+	UDIVEInspectableComponent* Inspectable = Session.ActiveInspectable.Get();
+	if (!Inspectable || !Inspectable->HasPickHoverOverlay())
 	{
 		ClearPickHover(Session);
 		return;
@@ -152,8 +140,7 @@ void FDIVESessionPickOps::UpdatePickHover(
 	}
 
 	UPrimitiveComponent* Primitive = PickTarget.Primitive.Get();
-	UDIVEInspectableComponent* Inspectable = Session.ActiveInspectable.Get();
-	if (!Primitive || !Inspectable || !Inspectable->IsPrimitiveInteractive(Primitive))
+	if (!Primitive || !Inspectable->IsPrimitiveInteractive(Primitive))
 	{
 		ClearPickHover(Session);
 		return;

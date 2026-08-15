@@ -109,6 +109,7 @@ public:
 		ToolTip = "Optional. None = always show. DIVE Action Condition BP for Evaluate."))
 	TObjectPtr<UDIVEActionCondition> Condition;
 
+	/** Fan-out from UDIVEInspectableComponent::NotifyActionExecuted after a successful session Execute/Begin. */
 	UPROPERTY(BlueprintAssignable, Category = "Action")
 	FOnDIVEActionExecuted OnExecuted;
 

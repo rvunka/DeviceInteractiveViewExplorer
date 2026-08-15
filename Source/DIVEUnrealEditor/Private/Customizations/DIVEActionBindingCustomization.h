@@ -2,14 +2,18 @@
 
 #pragma once
 
+#include "DIVEActionBinding.h"
 #include "IPropertyTypeCustomization.h"
+#include "Input/Reply.h"
 #include "Templates/SharedPointer.h"
 #include "Widgets/Input/SComboBox.h"
 
 class IPropertyHandle;
 class SWidget;
+class UDIVEInspectableComponent;
+class UPrimitiveComponent;
 
-/** Details UI for FDIVEActionBinding: PrimaryActionIndex as a combo of Actions display names. */
+/** Details UI for FDIVEActionBinding: PrimaryActionIndex combo + matched-primitive preview. */
 class FDIVEActionBindingCustomization : public IPropertyTypeCustomization
 {
 public:
@@ -38,8 +42,30 @@ private:
 	void OnPrimaryOptionSelected(TSharedPtr<FPrimaryOption> Option, ESelectInfo::Type SelectInfo);
 	TSharedPtr<FPrimaryOption> FindOptionByIndex(int32 Index) const;
 
+	const FDIVETargetQuery* GetTargetQuery() const;
+	UDIVEInspectableComponent* ResolvePreviewInspectable() const;
+	void InvalidateMatchedPreview();
+	void EnsureMatchedPreview() const;
+	void CollectMatchingPrimitives(TArray<UPrimitiveComponent*>& OutPrimitives) const;
+	FText GetTargetsPreviewText() const;
+	bool CanSelectMatchingPrimitives() const;
+	FReply OnSelectMatchingPrimitives();
+
+	TSharedPtr<IPropertyHandle> StructHandle;
 	TSharedPtr<IPropertyHandle> PrimaryIndexHandle;
 	TSharedPtr<IPropertyHandle> ActionsHandle;
+	TSharedPtr<IPropertyHandle> TargetsHandle;
 	TArray<TSharedPtr<FPrimaryOption>> PrimaryOptions;
 	TWeakPtr<SComboBox<TSharedPtr<FPrimaryOption>>> PrimaryComboWeak;
+
+	struct FMatchedPreview
+	{
+		TWeakObjectPtr<UDIVEInspectableComponent> Inspectable;
+		EDIVETargetMatchMode MatchMode = EDIVETargetMatchMode::ComponentTag;
+		TArray<FName> MatchValues;
+		TArray<TWeakObjectPtr<UPrimitiveComponent>> Primitives;
+		bool bValid = false;
+	};
+
+	mutable FMatchedPreview MatchedPreview;
 };

@@ -33,16 +33,6 @@ public class DIVERuntimeDev : ModuleRules
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=0");
 		}
-
-		if (IsSiblingPluginEnabled(Target, ModuleDirectory, "DIVEGRIPBridge", "DIVEGRIPBridge"))
-		{
-			PrivateDefinitions.Add("DIVE_WITH_GRIP_BRIDGE=1");
-			PrivateDependencyModuleNames.Add("DIVEGRIPBridge");
-		}
-		else
-		{
-			PrivateDefinitions.Add("DIVE_WITH_GRIP_BRIDGE=0");
-		}
 	}
 
 	static bool IsSiblingPluginEnabled(

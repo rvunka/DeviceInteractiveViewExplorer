@@ -21,6 +21,11 @@
 		{
 			"Name": "DataValidation",
 			"Enabled": true
+		},
+		{
+			"Name": "GraspRigidbodyInertialPhysics",
+			"Enabled": true,
+			"Optional": true
 		}
 	],
 	"Modules": [

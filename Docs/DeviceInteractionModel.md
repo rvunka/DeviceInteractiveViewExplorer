@@ -285,11 +285,11 @@ DIVERuntime          GRIPRuntime          DIVEGRIPBridge (sibling plugin)
 1. Pawn keeps **two** grip instances when DIVE must not steal the player hand:
    - `GRIP Hand` / `GRIP Hand Player` — gameplay grab
    - `GRIP Hand Dive` — Physical drag (+ matching Aim if needed)
-   - `UDIVEGRIPBridgeComponent` with **GRIP Hand Component** = `GRIP Hand Dive`
+   - `UDIVEGRIPBridgeComponent`: prefer **GRIP Hand** / **GRIP Hand Aim** component pickers; names (`GRIP Hand Dive`) are fallback
 2. Single-Hand fallback: leave Dive name empty only when there is **one** Hand on the pawn (legacy hijack + warning).
 3. In **Physical** mode, if no device proxy handles the pick, session falls back to `IDIVEPawnPhysicalDrive` on the pawn.
 4. Bridge calls GRIP Hand API (`TryGrabFromHit`, `SetHandWorldTransform`, aim suppress **on the Dive Aim**) — see GRIP `INTEGRATION.md` / multi-hand slots.
-5. Cursor-follow drag: bridge deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate.
+5. Cursor-follow drag: bridge deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate. The session does **not** push `ScreenDelta`; value HUD / `OnInteractionValueChanged` are not fed from this path (device `IDIVEProxyDrive` still is).
 6. **Do not** add bridge components to device actors; one bridge per pawn.
 
 See GRIP [`ARCHITECTURE.md`](../../GraspRigidbodyInertialPhysics/Docs/ARCHITECTURE.md) § Grip instances and [`MultiInstance_Anchor_Architecture.md`](../../GraspRigidbodyInertialPhysics/Docs/MultiInstance_Anchor_Architecture.md).
@@ -299,7 +299,7 @@ Use **B** for «grab and pull» on simulating bodies (admin **Simulate Physics**
 **Routing priority in Physical mode**
 
 ```text
-Pick hit → IDIVEProxyDrive (device) → IDIVEPawnPhysicalDrive (pawn bridge) → fail (verbose log)
+Pick hit → IDIVEProxyDrive (device) → IDIVEPawnPhysicalDrive (pawn bridge) → fail (Warning log)
 ```
 
 ### Dependency summary

@@ -134,7 +134,7 @@ const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
 
 ### 3.5. Мелочи
 
-- `DIVE::kActionOpenDIVE` в коде плагина не используется — это контрактная константа для ACTS-стороны, что легально, но заслуживает комментария «consumed by game code via ACTS» прямо у объявления.
+- `DIVE::kActionOpenDIVE` в коде плагина не используется — это контрактная константа для ACTS-стороны, что легально, но заслуживает комментария «consumed by game code via ACTS» прямо у объявления. **Closed Remaining DIVE Pass:** `TryRequestSessionFromActionId` + QUICKSTART §3.
 - `FDIVEContextMenuEntry` — чисто рантаймовая структура, но её поля помечены `EditAnywhere`; редактировать их негде и незачем.
 - Четыре `CreateDefaultSubobject`-действия (`DefaultFocusAction` и др.) на `UDIVEInspectableComponent` живут на **каждом** инстансе компонента, даже если автор очистил `Bindings` и они ни в чём не участвуют. Сид-механика (`PostInitProperties` + проверка пустоты) корректна с точки зрения дельта-сериализации, но мёртвые субобъекты остаются. Дешёвая альтернатива — создавать их в `SeedDefaultBindingsIfNeeded` через `NewObject` только когда сид реально происходит.
 
@@ -210,7 +210,7 @@ const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
 **Что можно было бы упростить, но не стоит:**
 - Слить `DIVECore` и `DIVERuntime` — нет: разделение «типы/интерфейсы vs сессия» реально позволяет девайсам зависеть только от Core.
 - Убрать двойной дом биндингов (компонент + каталог) — нет: компонентные биндинги нужны для сид-дефолтов и одноразовых устройств, каталог — для массовых (100 болтов). Правила слияния простые (union + dedupe секций).
-- Отказаться от `FDIVEMenuSection` в пользу неявных групп — нет: явные секции с `SortOrder` — это ровно то, что просил исходный запрос («группировать как захочется»).
+- Отказаться от `FDIVEMenuSection` в пользу неявных групп — нет: явные секции с порядком массива `Sections` (поля `SortOrder` нет) — это ровно то, что просил исходный запрос («группировать как захочется»).
 
 **Что упростить стоит (сводится к §2–§4):**
 - один код-путь proxy-drive вместо двух (§4.1) — *минус* целый класс расхождений;
@@ -299,7 +299,7 @@ const bool bVisible = Primitive->IsVisible() && !Primitive->bHiddenInGame;
 |------|------|--------|
 | PrimaryActionIndex UI | `FDIVEActionBindingCustomization` — combo display-имён Actions (`DIVEUnrealEditor`) | ✅ |
 | WorldSubsystem | `UDIVESessionSubsystem` → `UWorldSubsystem` + все GetSubsystem call-sites | ✅ |
-| NewObject defaults | CDSOs убраны; сид через `NewObject` только в `SeedDefaultBindingsIfNeeded` | ✅ |
+| NewObject defaults | CDSOs убраны; сид через `NewObject` только в `SeedDefaultBindingsIfNeeded` | ✅ Health Pass 2 (2026-08-14): конструктор больше не `CreateDefaultSubobject`; сид `NewObject` с теми же именами субобъектов |
 | Auto smoke | `DIVE.Actions.ExecutionWorld`, `DIVE.Actions.CanExecuteGate` (+ прежние DefaultBindings/BindingResolve) | ✅ |
 
 **Audit_v08 code/doc debts = 100%.** Runtime PIE smoke остаётся operational checklist (не code debt):

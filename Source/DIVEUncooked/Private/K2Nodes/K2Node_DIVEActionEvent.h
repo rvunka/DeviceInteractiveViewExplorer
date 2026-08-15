@@ -6,6 +6,7 @@
 #include "K2Node.h"
 #include "K2Node_EventNodeInterface.h"
 #include "BlueprintNodeSpawner.h"
+#include "UObject/SoftObjectPath.h"
 
 #include "K2Node_DIVEActionEvent.generated.h"
 
@@ -18,6 +19,9 @@ struct FBlueprintNodeSignature;
  * Spawner that jumps to an existing wildcard DIVE Action Event (same ActionClass, empty BindingId)
  * instead of placing a duplicate. Filtered nodes (non-empty BindingId) are added by duplicating
  * the wildcard node and setting BindingId in Details.
+ *
+ * ActionClassPath is the registrar identity for Blueprint subclasses so the palette can list
+ * unloaded action BPs without LoadObject. The class is loaded on non-template Invoke.
  */
 UCLASS(Transient)
 class UDIVEActionEventNodeSpawner : public UBlueprintNodeSpawner
@@ -27,18 +31,24 @@ class UDIVEActionEventNodeSpawner : public UBlueprintNodeSpawner
 public:
 	static UDIVEActionEventNodeSpawner* Create(
 		TSubclassOf<UEdGraphNode> NodeClass,
-		TSubclassOf<UDIVEDeviceAction> InActionClass);
+		const FSoftClassPath& InActionClassPath);
 
 	virtual UEdGraphNode* Invoke(
 		UEdGraph* ParentGraph,
 		FBindingSet const& Bindings,
 		FVector2D const Location) const override;
 
+	virtual FBlueprintNodeSignature GetSpawnerSignature() const override;
+
 private:
 	UK2Node* FindExistingNode(const UBlueprint* Blueprint) const;
+	UClass* ResolveActionClass(bool bLoadIfNeeded) const;
 
 	UPROPERTY()
 	TSubclassOf<UDIVEDeviceAction> ActionClass;
+
+	UPROPERTY()
+	FSoftClassPath ActionClassPath;
 };
 
 /** Event node: pick a DIVE Device Action class; fires when that action succeeds on this device. */

@@ -10,8 +10,7 @@ class UDIVEInspectableComponent;
 namespace DIVEContextMenu
 {
 DIVERUNTIME_API void BuildEntries(
-	UDIVEInspectableComponent* Inspectable,
-	const FDIVEFocusTarget& PickTarget,
-	bool bHasValidPick,
-	TArray<FDIVEContextMenuEntry>& OutEntries);
+		UDIVEInspectableComponent* Inspectable,
+		const FDIVEFocusTarget& PickTarget,
+		TArray<FDIVEContextMenuEntry>& OutEntries);
 }

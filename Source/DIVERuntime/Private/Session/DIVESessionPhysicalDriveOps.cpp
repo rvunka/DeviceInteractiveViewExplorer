@@ -100,7 +100,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 				NAME_None,
 				ScreenPosition,
 				HitResult);
-			if (Session.TryBeginContinuousAction(Session.InternalProxyDriveAction, Context))
+			if (Session.TryBeginContinuousAction(Session.InternalProxyDriveAction.Get(), Context))
 			{
 				return true;
 			}
@@ -132,7 +132,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 
 	UE_LOG(
 		LogDIVE,
-		Verbose,
+		Warning,
 		TEXT("DIVE: Physical pick on '%s' had no device proxy drive and no pawn physical drive backend."),
 		*GetNameSafe(HitComponent));
 

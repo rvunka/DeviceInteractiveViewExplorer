@@ -255,7 +255,7 @@ struct FDIVEMenuSection
 {
     UPROPERTY(EditAnywhere) FName SectionId;
     UPROPERTY(EditAnywhere) FText Header;     // опциональный заголовок
-    UPROPERTY(EditAnywhere) int32 SortOrder;  // порядок секций; между секциями — разделитель
+    UPROPERTY(EditAnywhere) int32 SortOrder;  // целевой снимок: в v0.8 поля нет; порядок = индекс в Sections
 };
 ```
 
@@ -507,8 +507,7 @@ Runtime-модуль, зависит от DIVECore, но не наоборот. 
    рудимент), а триггер выделения объективный — второй потребитель (ACTS-меню / VR).
 2. **Union, без флагов-исключений.** Winner-take-all выражается поверх union (условия на
    действиях, приоритеты), обратное — нет: union строго более выразителен, второй механизм не
-   нужен. Детерминизм: сортировка строк (Section.SortOrder → Binding.Priority ↓ → порядок
-   массива); одинаковый resolved-DisplayName в одной секции — **warning валидации**, не тихий
+   нужен. Детерминизм: сортировка строк (в цели — `Section.SortOrder` → Priority; **в v0.8 поля SortOrder нет**, порядок = индекс массивов `Sections` / Bindings); одинаковый resolved-DisplayName в одной секции — **warning валидации**, не тихий
    дедуп (тихая магия хуже дубликата в меню). Никаких `bExclusive` — это возвращение
    winner-take-all через чёрный ход.
 3. **`IDIVEDeviceActionHandler` — удалить полностью в фазе 4.** Escape-hatch не нужен: ярус C

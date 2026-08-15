@@ -7,9 +7,13 @@
 #include "DIVEDeviceAction.h"
 #include "DIVEInspectableComponent.h"
 
+#include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/IAssetRegistry.h"
+#include "Blueprint/BlueprintSupport.h"
 #include "BlueprintActionDatabase.h"
 #include "BlueprintActionDatabaseRegistrar.h"
+#include "BlueprintNodeSignature.h"
 #include "BlueprintNodeSpawner.h"
 #include "BlueprintNodeTemplateCache.h"
 #include "EdGraphSchema_K2.h"
@@ -25,8 +29,11 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "KismetCompiler.h"
+#include "Misc/PackageName.h"
 #include "Modules/ModuleManager.h"
 #include "Styling/AppStyle.h"
+#include "UObject/Class.h"
+#include "UObject/SoftObjectPath.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(K2Node_DIVEActionEvent)
 
@@ -106,22 +113,71 @@ bool BlueprintHasInspectableComponent(const UBlueprint* Blueprint)
 	return false;
 }
 
-void CollectActionClasses(TArray<UClass*>& OutClasses)
+bool IsNativeScriptClassPath(const FTopLevelAssetPath& ClassPath)
 {
-	OutClasses.Reset();
+	return ClassPath.GetPackageName().ToString().StartsWith(TEXT("/Script/"));
+}
 
-	// Loaded classes (native + already-loaded Blueprint generated classes).
+FSoftObjectPath BlueprintAssetPathFromGeneratedClass(const FTopLevelAssetPath& GeneratedClassPath)
+{
+	FString PathString = GeneratedClassPath.ToString();
+	if (PathString.EndsWith(TEXT("_C")))
+	{
+		PathString.LeftChopInline(2);
+	}
+	return FSoftObjectPath(PathString);
+}
+
+FAssetData FindBlueprintAssetData(IAssetRegistry& AssetRegistry, const FTopLevelAssetPath& GeneratedClassPath)
+{
+	const FSoftObjectPath BlueprintPath = BlueprintAssetPathFromGeneratedClass(GeneratedClassPath);
+	FAssetData AssetData = AssetRegistry.GetAssetByObjectPath(BlueprintPath);
+	if (AssetData.IsValid())
+	{
+		return AssetData;
+	}
+
+	return AssetRegistry.GetAssetByObjectPath(FSoftObjectPath(GeneratedClassPath.ToString()));
+}
+
+bool IsDeviceActionBlueprintAsset(const FAssetData& AssetData)
+{
+	if (!AssetData.IsValid()
+		|| AssetData.AssetClassPath != UBlueprint::StaticClass()->GetClassPathName())
+	{
+		return false;
+	}
+
+	FString NativeParentExport;
+	if (!AssetData.GetTagValue(FBlueprintTags::NativeParentClassPath, NativeParentExport)
+		|| NativeParentExport.IsEmpty())
+	{
+		return false;
+	}
+
+	const FString NativeParentPath = FPackageName::ExportTextPathToObjectPath(NativeParentExport);
+	const UClass* NativeParent = UClass::TryFindTypeSlow<UClass>(NativeParentPath);
+	return NativeParent && NativeParent->IsChildOf(UDIVEDeviceAction::StaticClass());
+}
+
+void CollectActionClassEntries(TArray<UClass*>& OutLoaded, TArray<FSoftClassPath>& OutUnloaded)
+{
+	OutLoaded.Reset();
+	OutUnloaded.Reset();
+
+	TSet<FTopLevelAssetPath> Seen;
+
 	TArray<UClass*> Derived;
 	GetDerivedClasses(UDIVEDeviceAction::StaticClass(), Derived, /*bRecursive=*/true);
 	for (UClass* Class : Derived)
 	{
 		if (IsUsableActionClass(Class))
 		{
-			OutClasses.AddUnique(Class);
+			OutLoaded.Add(Class);
+			Seen.Add(Class->GetClassPathName());
 		}
 	}
 
-	// Unloaded Blueprint subclasses via Asset Registry.
 	IAssetRegistry& AssetRegistry =
 		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 
@@ -134,17 +190,39 @@ void CollectActionClasses(TArray<UClass*>& OutClasses)
 
 	for (const FTopLevelAssetPath& ClassPath : DerivedPaths)
 	{
-		const FString PathString = ClassPath.ToString();
-		UClass* Class = FindObject<UClass>(nullptr, *PathString);
-		if (!Class)
+		if (Seen.Contains(ClassPath))
 		{
-			Class = LoadObject<UClass>(nullptr, *PathString);
+			continue;
 		}
 
-		if (IsUsableActionClass(Class))
+		const FString PathString = ClassPath.ToString();
+		if (UClass* Class = FindObject<UClass>(nullptr, *PathString))
 		{
-			OutClasses.AddUnique(Class);
+			if (IsUsableActionClass(Class))
+			{
+				OutLoaded.Add(Class);
+				Seen.Add(ClassPath);
+			}
+			continue;
 		}
+
+		if (IsNativeScriptClassPath(ClassPath))
+		{
+			continue;
+		}
+
+		const FString AssetName = ClassPath.GetAssetName().ToString();
+		if (AssetName == TEXT("DIVEDeviceAction")
+			|| AssetName == TEXT("DIVEContinuousDeviceAction")
+			|| AssetName.StartsWith(TEXT("SKEL_"))
+			|| AssetName.StartsWith(TEXT("REINST_"))
+			|| AssetName.StartsWith(TEXT("TRASHCLASS_")))
+		{
+			continue;
+		}
+
+		OutUnloaded.Add(FSoftClassPath(PathString));
+		Seen.Add(ClassPath);
 	}
 }
 
@@ -170,30 +248,17 @@ void EnsureActionClassMenuRefreshHooks()
 		AssetRegistry.OnFilesLoaded().AddLambda(Refresh);
 	}
 
-	AssetRegistry.OnAssetAdded().AddLambda(
-		[Refresh](const FAssetData& AssetData)
+	auto MaybeRefresh = [Refresh](const FAssetData& AssetData)
+	{
+		if (IsDeviceActionBlueprintAsset(AssetData))
 		{
-			if (AssetData.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName())
-			{
-				Refresh();
-			}
-		});
-	AssetRegistry.OnAssetRemoved().AddLambda(
-		[Refresh](const FAssetData& AssetData)
-		{
-			if (AssetData.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName())
-			{
-				Refresh();
-			}
-		});
-	AssetRegistry.OnAssetUpdated().AddLambda(
-		[Refresh](const FAssetData& AssetData)
-		{
-			if (AssetData.AssetClassPath == UBlueprint::StaticClass()->GetClassPathName())
-			{
-				Refresh();
-			}
-		});
+			Refresh();
+		}
+	};
+
+	AssetRegistry.OnAssetAdded().AddLambda(MaybeRefresh);
+	AssetRegistry.OnAssetRemoved().AddLambda(MaybeRefresh);
+	AssetRegistry.OnAssetUpdated().AddLambda(MaybeRefresh);
 }
 
 const UDIVEInspectableComponent* FindInspectableTemplate(const UBlueprint* Blueprint)
@@ -236,15 +301,66 @@ const UDIVEInspectableComponent* FindInspectableTemplate(const UBlueprint* Bluep
 
 UDIVEActionEventNodeSpawner* UDIVEActionEventNodeSpawner::Create(
 	TSubclassOf<UEdGraphNode> NodeClass,
-	TSubclassOf<UDIVEDeviceAction> InActionClass)
+	const FSoftClassPath& InActionClassPath)
 {
 	check(NodeClass);
-	check(InActionClass);
+	check(InActionClassPath.IsValid());
 
 	UDIVEActionEventNodeSpawner* NodeSpawner = NewObject<UDIVEActionEventNodeSpawner>(GetTransientPackage());
 	NodeSpawner->NodeClass = NodeClass;
-	NodeSpawner->ActionClass = InActionClass;
+	NodeSpawner->ActionClassPath = InActionClassPath;
+	if (UClass* LoadedClass = InActionClassPath.ResolveClass())
+	{
+		NodeSpawner->ActionClass = LoadedClass;
+	}
+
+	FString DisplayName = InActionClassPath.GetAssetName();
+	if (DisplayName.EndsWith(TEXT("_C")))
+	{
+		DisplayName.LeftChopInline(2);
+	}
+
+	const FText ActionLabel = NodeSpawner->ActionClass
+		? NodeSpawner->ActionClass->GetDisplayNameText()
+		: FText::FromString(DisplayName);
+
+	NodeSpawner->DefaultMenuSignature.MenuName = FText::Format(
+		LOCTEXT("MenuNodeTitle", "DIVE Action Event ({0})"),
+		ActionLabel);
+	NodeSpawner->DefaultMenuSignature.Category = LOCTEXT("MenuCategory", "DIVE|Events");
+
+	NodeSpawner->CustomizeNodeDelegate =
+		UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateLambda(
+			[InActionClassPath](UEdGraphNode* NewNode, bool bIsTemplateNode)
+			{
+				UK2Node_DIVEActionEvent* ActionNode = CastChecked<UK2Node_DIVEActionEvent>(NewNode);
+				UClass* Class = InActionClassPath.ResolveClass();
+				if (!Class && !bIsTemplateNode)
+				{
+					Class = InActionClassPath.TryLoadClass<UDIVEDeviceAction>();
+				}
+				if (Class)
+				{
+					ActionNode->ActionClass = Class;
+				}
+			});
+
 	return NodeSpawner;
+}
+
+UClass* UDIVEActionEventNodeSpawner::ResolveActionClass(const bool bLoadIfNeeded) const
+{
+	if (UClass* Loaded = ActionClass.Get())
+	{
+		return Loaded;
+	}
+
+	if (UClass* Existing = ActionClassPath.ResolveClass())
+	{
+		return Existing;
+	}
+
+	return bLoadIfNeeded ? ActionClassPath.TryLoadClass<UDIVEDeviceAction>() : nullptr;
 }
 
 UEdGraphNode* UDIVEActionEventNodeSpawner::Invoke(
@@ -253,10 +369,22 @@ UEdGraphNode* UDIVEActionEventNodeSpawner::Invoke(
 	FVector2D const Location) const
 {
 	check(ParentGraph);
-	UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraphChecked(ParentGraph);
+	const bool bIsTemplate = FBlueprintNodeTemplateCache::IsTemplateOuter(ParentGraph);
 
-	if (!FBlueprintNodeTemplateCache::IsTemplateOuter(ParentGraph))
+	UClass* Resolved = ResolveActionClass(/*bLoadIfNeeded=*/ !bIsTemplate);
+	if (Resolved)
 	{
+		const_cast<UDIVEActionEventNodeSpawner*>(this)->ActionClass = Resolved;
+	}
+
+	if (!bIsTemplate)
+	{
+		if (!IsUsableActionClass(Resolved))
+		{
+			return nullptr;
+		}
+
+		UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraphChecked(ParentGraph);
 		if (UK2Node* PreExistingNode = FindExistingNode(Blueprint))
 		{
 			return PreExistingNode;
@@ -266,9 +394,18 @@ UEdGraphNode* UDIVEActionEventNodeSpawner::Invoke(
 	return Super::Invoke(ParentGraph, Bindings, Location);
 }
 
+FBlueprintNodeSignature UDIVEActionEventNodeSpawner::GetSpawnerSignature() const
+{
+	FBlueprintNodeSignature SpawnerSignature;
+	SpawnerSignature.SetNodeClass(NodeClass);
+	SpawnerSignature.AddKeyValue(ActionClassPath.ToString());
+	return SpawnerSignature;
+}
+
 UK2Node* UDIVEActionEventNodeSpawner::FindExistingNode(const UBlueprint* Blueprint) const
 {
-	if (!ActionClass)
+	UClass* Resolved = ResolveActionClass(/*bLoadIfNeeded=*/ false);
+	if (!Resolved)
 	{
 		return nullptr;
 	}
@@ -277,7 +414,7 @@ UK2Node* UDIVEActionEventNodeSpawner::FindExistingNode(const UBlueprint* Bluepri
 	FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionEvent>(Blueprint, Nodes);
 	for (UK2Node_DIVEActionEvent* Node : Nodes)
 	{
-		if (Node && Node->ActionClass == ActionClass && Node->BindingId.IsNone())
+		if (Node && Node->ActionClass == Resolved && Node->BindingId.IsNone())
 		{
 			return Node;
 		}
@@ -616,46 +753,82 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 
 void UK2Node_DIVEActionEvent::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
-	auto CustomizeNode = [](UEdGraphNode* NewNode, bool /*bIsTemplateNode*/, TSubclassOf<UDIVEDeviceAction> InActionClass)
+	auto RegisterLoadedClass = [this, &ActionRegistrar](UClass* Class)
 	{
-		UK2Node_DIVEActionEvent* ActionNode = CastChecked<UK2Node_DIVEActionEvent>(NewNode);
-		ActionNode->ActionClass = InActionClass;
+		if (!IsUsableActionClass(Class) || !ActionRegistrar.IsOpenForRegistration(Class))
+		{
+			return;
+		}
+
+		UDIVEActionEventNodeSpawner* NodeSpawner =
+			UDIVEActionEventNodeSpawner::Create(GetClass(), FSoftClassPath(Class));
+		if (NodeSpawner)
+		{
+			// Native: key = UClass. Blueprint generated: ResolveClassKey maps BPGC → Blueprint
+			// asset (same key as FAssetData of the loaded Blueprint). Passing UClass keeps the
+			// filter branch working when ActionKeyFilter is the generated class.
+			ActionRegistrar.AddBlueprintAction(Class, NodeSpawner);
+		}
+	};
+
+	auto RegisterUnloadedClass = [this, &ActionRegistrar](const FSoftClassPath& ClassPath)
+	{
+		if (!ClassPath.IsValid())
+		{
+			return;
+		}
+
+		IAssetRegistry& AssetRegistry =
+			FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		const FAssetData AssetData = FindBlueprintAssetData(
+			AssetRegistry,
+			ClassPath.GetAssetPath());
+		if (!AssetData.IsValid() || !ActionRegistrar.IsOpenForRegistration(AssetData))
+		{
+			return;
+		}
+
+		UDIVEActionEventNodeSpawner* NodeSpawner =
+			UDIVEActionEventNodeSpawner::Create(GetClass(), ClassPath);
+		if (NodeSpawner)
+		{
+			ActionRegistrar.AddBlueprintAction(AssetData, NodeSpawner);
+		}
 	};
 
 	if (ActionRegistrar.IsOpenForRegistration(GetClass()))
 	{
 		EnsureActionClassMenuRefreshHooks();
 
-		TArray<UClass*> ActionClasses;
-		CollectActionClasses(ActionClasses);
+		TArray<UClass*> LoadedClasses;
+		TArray<FSoftClassPath> UnloadedClasses;
+		CollectActionClassEntries(LoadedClasses, UnloadedClasses);
 
-		for (UClass* Class : ActionClasses)
+		for (UClass* Class : LoadedClasses)
 		{
-			UDIVEActionEventNodeSpawner* NodeSpawner =
-				UDIVEActionEventNodeSpawner::Create(GetClass(), Class);
-			check(NodeSpawner);
-
-			NodeSpawner->CustomizeNodeDelegate =
-				UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateStatic(
-					CustomizeNode,
-					TSubclassOf<UDIVEDeviceAction>(Class));
-			ActionRegistrar.AddBlueprintAction(Class, NodeSpawner);
+			RegisterLoadedClass(Class);
+		}
+		for (const FSoftClassPath& ClassPath : UnloadedClasses)
+		{
+			RegisterUnloadedClass(ClassPath);
 		}
 	}
 	else if (const UClass* ConstClass = Cast<UClass>(ActionRegistrar.GetActionKeyFilter()))
 	{
-		UClass* Class = const_cast<UClass*>(ConstClass);
-		if (IsUsableActionClass(Class))
+		RegisterLoadedClass(const_cast<UClass*>(ConstClass));
+	}
+	else if (const UBlueprint* Blueprint = Cast<UBlueprint>(ActionRegistrar.GetActionKeyFilter()))
+	{
+		UClass* Generated = Blueprint->GeneratedClass
+			? Blueprint->GeneratedClass
+			: Blueprint->SkeletonGeneratedClass;
+		if (IsUsableActionClass(Generated))
 		{
-			UDIVEActionEventNodeSpawner* NodeSpawner =
-				UDIVEActionEventNodeSpawner::Create(GetClass(), Class);
-			check(NodeSpawner);
-
-			NodeSpawner->CustomizeNodeDelegate =
-				UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateStatic(
-					CustomizeNode,
-					TSubclassOf<UDIVEDeviceAction>(Class));
-			ActionRegistrar.AddBlueprintAction(Class, NodeSpawner);
+			RegisterLoadedClass(Generated);
+		}
+		else if (!Generated)
+		{
+			RegisterUnloadedClass(FSoftClassPath(Blueprint->GetPathName() + TEXT("_C")));
 		}
 	}
 }

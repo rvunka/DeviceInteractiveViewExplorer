@@ -39,16 +39,6 @@ void UDIVESessionChromeWidget::SetInteractionMode(EDIVESessionInteractionMode In
 	}
 }
 
-void UDIVESessionChromeWidget::SetModeHintVisible(bool bInVisible)
-{
-	bShowModeHint = bInVisible;
-
-	if (ModeHint)
-	{
-		ModeHint->SetVisibility(bInVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	}
-}
-
 FText UDIVESessionChromeWidget::ResolveModeLabel(EDIVESessionInteractionMode InMode) const
 {
 	switch (InMode)
@@ -100,11 +90,10 @@ void UDIVESessionChromeWidget::RebuildChrome()
 
 	ModeHint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ModeHint"));
 	ModeHint->SetFont(FCoreStyle::GetDefaultFontStyle(TEXT("Regular"), CachedStyle.HintFontSize));
-	ModeHint->SetText(CachedStyle.ModeSwitchHint.IsEmpty()
-		? NSLOCTEXT("DIVE", "DefaultModeSwitchHint", "Switch mode")
-		: CachedStyle.ModeSwitchHint);
+	const bool bHasHint = !CachedStyle.ModeSwitchHint.IsEmpty();
+	ModeHint->SetText(CachedStyle.ModeSwitchHint);
 	ModeHint->SetColorAndOpacity(CachedStyle.HintText);
-	ModeHint->SetVisibility(bShowModeHint ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	ModeHint->SetVisibility(bHasHint ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
 	if (UVerticalBoxSlot* HintSlot = ContentBox->AddChildToVerticalBox(ModeHint))
 	{
