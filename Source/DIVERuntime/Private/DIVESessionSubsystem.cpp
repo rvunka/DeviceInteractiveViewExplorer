@@ -12,7 +12,6 @@
 #include "Session/DIVESessionIsolationOps.h"
 #include "Session/DIVESessionPhysicalDriveOps.h"
 #include "Session/DIVESessionPickOps.h"
-#include "Utils/DIVEContextMenu.h"
 #include "Utils/DIVEPlayerQuery.h"
 
 void UDIVESessionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -108,7 +107,7 @@ bool UDIVESessionSubsystem::TryBeginSession(
 		return false;
 	}
 
-	const FDIVECameraEffectiveSettings CameraSettings = Inspectable->GetEffectiveCameraSettings();
+	const FDIVECameraSettings CameraSettings = Inspectable->GetEffectiveCameraSettings();
 	SessionDefaultOrbitDistance = CameraSettings.DefaultOrbitDistance;
 
 	ActiveCameraRig = CameraRig;
@@ -227,7 +226,7 @@ void UDIVESessionSubsystem::ApplyCameraInputFromInspectable()
 {
 	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
 	{
-		const FDIVECameraEffectiveSettings Settings = Inspectable->GetEffectiveCameraSettings();
+		const FDIVECameraSettings Settings = Inspectable->GetEffectiveCameraSettings();
 		ConfigureActiveCameraInput(Settings.OrbitSensitivity, Settings.ZoomSensitivity);
 
 		if (ADIVECameraRig* CameraRig = ActiveCameraRig.Get())
@@ -282,12 +281,7 @@ bool UDIVESessionSubsystem::FocusTarget(const FDIVEFocusTarget& Target, bool bPu
 
 bool UDIVESessionSubsystem::NavigateBack()
 {
-	if (!IsSessionActive())
-	{
-		return false;
-	}
-
-	if (FocusStack.Num() <= 1)
+	if (!CanNavigateBack())
 	{
 		return false;
 	}
@@ -323,10 +317,11 @@ bool UDIVESessionSubsystem::BuildContextMenuEntries(
 	}
 
 	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
-	DIVEContextMenu::BuildEntries(
-		Inspectable,
-		OutPickTarget,
-		OutEntries);
+	OutEntries.Reset();
+	if (Inspectable && OutPickTarget.Kind == EDIVEFocusKind::Primitive)
+	{
+		Inspectable->AppendConfiguredContextMenuEntries(OutPickTarget, OutEntries);
+	}
 
 	return !OutEntries.IsEmpty();
 }
@@ -558,7 +553,7 @@ void UDIVESessionSubsystem::ClearIsolation()
 
 bool UDIVESessionSubsystem::IsPawnPhysicalDriveActive() const
 {
-	return bProxyDriving && ActivePhysicalDriveKind == EDIVEActivePhysicalDriveKind::PawnBridge;
+	return bProxyDriving && ActivePhysicalDriveKind == EDIVEActivePhysicalDriveKind::PawnDrive;
 }
 
 bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(

@@ -14,13 +14,13 @@
 │  DIVE Scan Device · validation reports  │
 ├─────────────────────────────────────────┤
 │ DIVEGRIPBridge (sibling plugin, optional §7) │
-│  UDIVEGRIPBridgeComponent — pawn physical │
-│  drive via GRIP Hand API                │
+│  UDIVEGRIPPhysicalDriveProvider — UObject    │
+│  on DIVE Player; IDIVEPawnPhysicalDrive      │
 ├─────────────────────────────────────────┤
 │ DIVERuntime                             │
 │  UDIVESessionSubsystem — focus stack      │
-│  UDIVEInputComponent — session input      │
-│  UDIVEContextMenuUIComponent — context menu │
+│  UDIVEPlayerComponent — sole pawn AC      │
+│    input · chrome · context menu · drive  │
 │  UDIVEInspectableComponent              │
 │  UDIVEAnchorComponent (optional)        │
 │  ADIVECameraRig                         │
@@ -34,28 +34,33 @@
 
 **Current:** `UWorldSubsystem` (`UDIVESessionSubsystem`) — one active DIVE session per game/PIE world (`DoesSupportWorldType` filters out Editor preview worlds).
 
-Input components guard with `IsLocallyControlled()`. Session ends on world tear-down (`OnWorldBeginTearDown` + `Deinitialize`) and on `UDIVEInputComponent::EndPlay` for the locally controlled pawn.
+DIVE Player guards with `IsLocallyControlled()`. Owner **must** be a locally controlled `APawn` (validated by `IsDataValid` on Player). Session ends on world tear-down (`OnWorldBeginTearDown` + `Deinitialize`), on `UDIVEPlayerComponent::EndPlay` for the locally controlled pawn, and when that pawn loses local control while a session is active.
+
+**Invariant:** one active session per world ⇒ Action Catalog instances are shared and must not be cloned per device. Continuous actions use `ensure(!bInteractionActive)`.
 
 **Input restore note:** session end approximates prior mode via `EDIVEPreservedInputMode` (GameAndUI only if both cursor and click events were on). PlayerController does not expose the previous `FInputMode` directly.
+
+Replication / listen-server presentation on a remote pawn is a non-goal.
 
 ## Input
 
 | Component | Module | Role |
 |-----------|--------|------|
-| **DIVE Input** | `DIVERuntime` | Semantic `Handle*` API for Enhanced Input (no `EKeys` in runtime) |
-| **DIVE Context Menu UI** | `DIVERuntime` | In-session menu widget; auto-found by Input |
-| **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Input** (PIE dev) |
+| **DIVE Player** | `DIVERuntime` | Sole pawn ActorComponent: `Handle*`, chrome, context menu, optional Physical provider |
+| **Legacy KBM** | `DIVERuntimeDev` | `BindKey` only → forwards to **DIVE Player** (PIE dev). Player does not create it |
 
-Recommended pawn stack: **`UDIVEInputComponent`** + **`UDIVEContextMenuUIComponent`** (+ optional **Legacy KBM** for PIE).
+Recommended pawn stack: one **`UDIVEPlayerComponent`** (+ optional **Legacy KBM** for PIE). When **DIVEGRIPBridge** is enabled, Player auto-creates an instanced **DIVE GRIP Physical Drive** UObject (`IDIVEPawnPhysicalDrive`). Physical GRIP on the pawn is **GRIP Rig** with slots **Player** and **Dive** (Hand is not in Add Component). Bind Enhanced Input to Player `Handle*`.
 
-**Contract:** physical keys → `UInputAction` in host Content → Enhanced Input on **Pawn / PlayerController** → plugin `Handle*`. See `../../../Docs/Plugin_Architecture_Principles.md` §4 and **`Docs/DeviceInteractionModel.md` §4**.
+**Contract:** physical keys → `UInputAction` in host Content → Enhanced Input on **Pawn / PlayerController** → plugin `Handle*`. See `../../../Docs/Plugin_Architecture_Principles.md` §4 and **`Docs/Additional/DeviceInteractionModel.md` §4**.
+
+`HandleExitSession` while the context menu is open is **intentional** — Exit is not suppressed by the menu.
 
 ### Session chrome (always available)
 
 Orbit, zoom, focus undo, exit, and context menu work in **every** interaction mode.
 
 Zoom steps scale with orbit distance by default; focusing a primitive fits distance to its
-bounds and raises a soft near floor from the part radius (`DIVE | Camera` on Inspectable).
+bounds and raises a soft near floor from the part radius (`FDIVECameraSettings` on Inspectable, or Device Definition when `bUseDeviceDefinitionSettings`).
 
 Pick accepts visible meshes and **shape collision** volumes (including Hidden-in-Game shapes);
 hidden meshes need tag `DIVE.PickProxy`.
@@ -79,11 +84,13 @@ hidden meshes need tag `DIVE.PickProxy`.
 | `IA_DIVE_SetMode_*` | Started | `SetInteractionMode` |
 | `IA_DIVE_ContextMenu` | Started | `HandleContextMenuRequested` |
 
+Bind these on **DIVE Player**.
+
 Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = focus, **Tab** = cycle mode, **LMB** = `HandlePrimaryAction*` (see table in `QUICKSTART.md` §4).
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`** (winner = most specific Match Mode: Name > PartId > Tag > Any; equal specificity keeps the earlier binding in the Bindings array; menu/section order follows those arrays). Binding Details shows **Targets: N** for the current Match query (Select highlights matching primitives on a placed device). Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEContextMenuUIComponent`** on player character. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
+In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`** (winner = most specific Match Mode: Name > PartId > Tag > Any; equal specificity keeps the earlier binding in the Bindings array; menu/section order follows those arrays). Binding Details shows **Targets: N** for the current Match query (Select highlights matching primitives on a placed device). Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEPlayerComponent`** on the player character owns the menu widget. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
 
 ## Device interaction (direct manipulation)
 
@@ -123,9 +130,22 @@ _Future:_ world-level focus dim via custom depth / post-process (not actor hidin
 
 **DIVE Scan Device** — validates anchors on the device actor **and attached children**, Catalog / Bindings (`SectionId`, `PrimaryActionIndex`, MatchValues / AnyPrimitive), equal-specificity primary overlaps (warning; earlier binding wins), PartId→anchor coverage, shape pick-channel Block, exclusions, missing hover overlay.
 
-**DIVE Dump Device** / `DIVE.DumpDevice` / `DIVE.DumpAll` — component + Catalog bindings, sections, per-primitive menu resolution (`DIVERuntimeDev`; not in Shipping).
+**DIVE Dump Device** (same menu) or console in PIE — dump implementation in `DIVEUncooked`; console from `DIVERuntimeDev`:
 
-Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.BindingResolve`, `DIVE.Actions.ExecutionWorld`, `DIVE.Actions.CanExecuteGate`, `DIVE.PawnPhysicalDrive.Resolve`, `DIVE.Camera.DefinitionBlendDuration` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
+Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.BindingResolve`, `DIVE.Actions.CollectMatchingPrimitives`, `DIVE.Actions.ComponentNameMatch`, `DIVE.Actions.ExecutionWorld`, `DIVE.Actions.CanExecuteGate`, `DIVE.PawnPhysicalDrive.Resolve`, `DIVE.Player.IsDataValid`, `DIVE.Camera.DefinitionBlendDuration`, `DIVE.Session.Lifecycle` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
+
+| Smoke | What it covers |
+|-------|----------------|
+| `DIVE.ContextMenu.DefaultBindings` | CDO Bindings, Focus, AnyPrimitive, Admin header |
+| `DIVE.Actions.BindingResolve` | Primary index, specificity, continuous/notify |
+| `DIVE.Actions.ExecutionWorld` | Catalog action world injection |
+| `DIVE.Actions.CollectMatchingPrimitives` | CDO Collect is empty without an owner |
+| `DIVE.Actions.ComponentNameMatch` | Name normalize / FocusId is not a name match |
+| `DIVE.Actions.CanExecuteGate` | `CanExecute` blocks Execute |
+| `DIVE.PawnPhysicalDrive.Resolve` | Null pawn; N>1 unnamed → null; named match (when a live world exists) |
+| `DIVE.Player.IsDataValid` | CDO valid; non-Pawn owner invalid (live world) |
+| `DIVE.Camera.DefinitionBlendDuration` | Device Definition `CameraSettings.FocusBlendDuration` |
+| `DIVE.Session.Lifecycle` | Live world + local PC: Begin → active → End. Skips without PIE/PC (no `CreateWorld`) |
 
 ## Dependencies
 
@@ -133,12 +153,12 @@ Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.Bindin
 |--------|------|------|------|
 | **DIVERuntime** | no | no | no |
 | **DIVEGRIPBridge** (sibling plugin) | no | yes (§7 bridge) | no |
-| **DIVERuntimeDev** | no | co-location only (§3.3 PIE) | no |
+| **DIVERuntimeDev** | no | UBT enable check (§6.2.9) | no |
 
-**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (see `DIVEGRIPBridge.Build.cs`). Without GRIP the bridge compiles as a no-op stub. DIVE `.uplugin` must **not** depend on `DIVEGRIPBridge` (cycle) or Optional GRIP (GRIP is owned by the bridge / host; `DIVERuntimeDev` co-locates via Build.cs only). No Enhanced Input assets or `BindKey` in production Runtime modules.
+**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (`ProjectDescriptor` / `Plugins.ReadAvailablePlugins` in `DIVEGRIPBridge.Build.cs` and `DIVERuntimeDev.Build.cs`). Unlisted project plugins still follow `IsEnabledByDefault` (GRIP is not required in the host `.uproject`). Without GRIP the bridge compiles as a no-op stub. DIVE `.uplugin` must **not** depend on `DIVEGRIPBridge` (cycle) or Optional GRIP (GRIP is owned by the bridge / host). No Enhanced Input assets or `BindKey` in production Runtime modules.
 
-**Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn bridge (device `IDIVEProxyDrive` still receives deltas). Pawn-bridge drag does not broadcast `OnInteractionValueChanged` / value HUD.
+**Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn drive (device `IDIVEProxyDrive` still receives deltas). Pawn-drive drag does not broadcast `OnInteractionValueChanged` / value HUD.
 
-**Diagnostics:** `DIVE.DumpDevice` / `DIVE.DumpAll` live in **`DIVERuntimeDev`** (PIE / Editor). Not registered from Shipping `DIVERuntime`.
+**Diagnostics:** `DIVE.DumpDevice` / `DIVE.DumpAll` live in **`DIVEUncooked`** (editor menu + file write). Console commands are registered from **`DIVERuntimeDev`**. `DIVEUnrealEditor` does not link RuntimeDev.
 
 Normative principles: [`Docs/Plugin_Architecture_Principles.md`](../../../Docs/Plugin_Architecture_Principles.md).

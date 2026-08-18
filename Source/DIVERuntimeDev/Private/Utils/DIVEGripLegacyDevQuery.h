@@ -6,6 +6,6 @@ class AActor;
 
 namespace DIVEGripLegacyDevQuery
 {
-	/** While grabbing, forward wheel to DIVE bridge or GRIP Input. Returns true when handled. */
+	/** While grabbing, forward wheel to DIVE pawn physical drive, GRIP Rig, or GRIP Input. Returns true when handled. */
 	bool TryForwardMouseWheelToGrip(const AActor* Owner, float WheelDelta);
 }

@@ -19,7 +19,7 @@ void FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(UDIVESessionSubsystem&
 {
 	switch (Session.ActivePhysicalDriveKind)
 	{
-	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge:
+	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive:
 		if (UObject* PawnDriveObject = Session.ActivePawnPhysicalDrive.GetObject())
 		{
 			IDIVEPawnPhysicalDrive::Execute_EndPawnPhysicalDrive(PawnDriveObject, bCommit);
@@ -107,8 +107,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 		}
 	}
 
-	// Pawn bridge path (e.g. GRIP): handled directly since it has its own lifecycle separate from
-	// the action system.
+	// Pawn physical drive (e.g. GRIP): own lifecycle, separate from the action system.
 	FDIVEProxyDriveContext DriveContext;
 	DriveContext.ScreenPosition = ScreenPosition;
 	DriveContext.FocusTarget = PickTarget;
@@ -122,7 +121,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 			if (IDIVEPawnPhysicalDrive::Execute_CanBeginPawnPhysicalDrive(PawnDriveObject, DriveContext)
 				&& IDIVEPawnPhysicalDrive::Execute_BeginPawnPhysicalDrive(PawnDriveObject, DriveContext))
 			{
-				Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge;
+				Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive;
 				Session.ActivePawnPhysicalDrive = PawnDriveObject;
 				Session.bProxyDriving = true;
 				return true;
@@ -148,7 +147,7 @@ void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem
 
 	switch (Session.ActivePhysicalDriveKind)
 	{
-	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge:
+	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive:
 		if (!Session.ActivePawnPhysicalDrive.GetObject())
 		{
 			ClearProxyDrive(Session);
@@ -189,7 +188,7 @@ void FDIVESessionPhysicalDriveOps::EndProxyDrive(UDIVESessionSubsystem& Session,
 
 void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotatePressed(UDIVESessionSubsystem& Session)
 {
-	if (!Session.bProxyDriving || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge)
+	if (!Session.bProxyDriving || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive)
 	{
 		return;
 	}
@@ -202,7 +201,7 @@ void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotatePressed(U
 
 void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotateReleased(UDIVESessionSubsystem& Session)
 {
-	if (!Session.bProxyDriving || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnBridge)
+	if (!Session.bProxyDriving || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive)
 	{
 		return;
 	}

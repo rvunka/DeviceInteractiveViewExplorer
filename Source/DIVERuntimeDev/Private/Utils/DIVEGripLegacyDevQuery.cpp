@@ -11,7 +11,7 @@
 
 #if DIVE_WITH_GRIP
 #include "Hand/GRIPHandComponent.h"
-#include "Input/GRIPInputComponent.h"
+#include "Hand/GRIPRigComponent.h"
 #endif
 
 namespace DIVEGripLegacyDevQueryPrivate
@@ -51,12 +51,6 @@ namespace DIVEGripLegacyDevQueryPrivate
 		return World ? World->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
 	}
 
-	bool IsPawnBridgePhysicalDriveActive(const AActor* Owner)
-	{
-		const UDIVESessionSubsystem* DiveSubsystem = GetDiveSubsystem(Owner);
-		return DiveSubsystem && DiveSubsystem->IsPawnPhysicalDriveActive();
-	}
-
 	bool ShouldDeferMouseWheelToGrip(const AActor* Owner)
 	{
 #if DIVE_WITH_GRIP
@@ -75,7 +69,8 @@ bool DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(const AActor* Owner, con
 		return false;
 	}
 
-	if (DIVEGripLegacyDevQueryPrivate::IsPawnBridgePhysicalDriveActive(Owner))
+	const UDIVESessionSubsystem* DiveSubsystem = DIVEGripLegacyDevQueryPrivate::GetDiveSubsystem(Owner);
+	if (DiveSubsystem && DiveSubsystem->IsPawnPhysicalDriveActive())
 	{
 		APawn* Pawn = const_cast<APawn*>(Cast<APawn>(Owner));
 		if (IDIVEPawnPhysicalDrive* Drive = DIVEPawnPhysicalDriveResolve::FindOnPawn(Pawn))
@@ -89,14 +84,10 @@ bool DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(const AActor* Owner, con
 	}
 
 #if DIVE_WITH_GRIP
-	TInlineComponentArray<UActorComponent*> Components(Owner);
-	for (UActorComponent* Component : Components)
+	if (UGRIPRigComponent* Rig = Owner->FindComponentByClass<UGRIPRigComponent>())
 	{
-		if (UGRIPInputComponent* GripInput = Cast<UGRIPInputComponent>(Component))
-		{
-			GripInput->HandleGrabHoldDistanceScroll(WheelDelta);
-			return true;
-		}
+		Rig->HandleGrabHoldDistanceScroll(WheelDelta);
+		return true;
 	}
 #else
 	(void)Owner;

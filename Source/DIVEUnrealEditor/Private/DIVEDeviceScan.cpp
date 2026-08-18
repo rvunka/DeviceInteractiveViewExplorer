@@ -72,17 +72,7 @@ FDIVEDeviceScanReport DIVEDeviceScan::ScanActor(AActor* DeviceActor)
 	Inspectable->BuildSemanticRegistry();
 
 	TArray<UDIVEAnchorComponent*> Anchors;
-	DIVE::ForEachDeviceActor(DeviceActor, [&Anchors](AActor* Actor)
-	{
-		if (!Actor)
-		{
-			return;
-		}
-
-		TArray<UDIVEAnchorComponent*> ActorAnchors;
-		Actor->GetComponents<UDIVEAnchorComponent>(ActorAnchors);
-		Anchors.Append(ActorAnchors);
-	});
+	DIVE::CollectDeviceComponents<UDIVEAnchorComponent>(DeviceActor, Anchors);
 	Report.AnchorCount = Anchors.Num();
 
 	TMap<FName, UDIVEAnchorComponent*> PartIdOwners;

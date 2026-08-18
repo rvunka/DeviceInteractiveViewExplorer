@@ -330,40 +330,19 @@ float UDIVEInspectableComponent::GetEffectiveDefaultOrbitDistance() const
 	return GetEffectiveCameraSettings().DefaultOrbitDistance;
 }
 
-FDIVECameraEffectiveSettings UDIVEInspectableComponent::GetEffectiveCameraSettings() const
+FDIVECameraSettings UDIVEInspectableComponent::GetEffectiveCameraSettings() const
 {
-	FDIVECameraEffectiveSettings Settings;
-	Settings.OrbitSensitivity = OrbitSensitivity;
-	Settings.ZoomSensitivity = ZoomSensitivity;
-	Settings.bScaleZoomWithOrbitDistance = bScaleZoomWithOrbitDistance;
-	Settings.ZoomDistanceReferenceCm = ZoomDistanceReferenceCm;
-	Settings.MinOrbitDistanceCm = MinOrbitDistanceCm;
-	Settings.MaxOrbitDistanceCm = MaxOrbitDistanceCm;
-	Settings.FocusOrbitFitMultiplier = FocusOrbitFitMultiplier;
-	Settings.FocusNearPaddingFactor = FocusNearPaddingFactor;
-	Settings.DefaultOrbitDistance = DefaultOrbitDistance;
-	Settings.FocusBlendDuration = FocusBlendDuration;
-
 	if (bUseDeviceDefinitionSettings && DeviceDefinition)
 	{
-		Settings.OrbitSensitivity = DeviceDefinition->OrbitSensitivity;
-		Settings.ZoomSensitivity = DeviceDefinition->ZoomSensitivity;
-		Settings.bScaleZoomWithOrbitDistance = DeviceDefinition->bScaleZoomWithOrbitDistance;
-		Settings.ZoomDistanceReferenceCm = DeviceDefinition->ZoomDistanceReferenceCm;
-		Settings.MinOrbitDistanceCm = DeviceDefinition->MinOrbitDistanceCm;
-		Settings.MaxOrbitDistanceCm = DeviceDefinition->MaxOrbitDistanceCm;
-		Settings.FocusOrbitFitMultiplier = DeviceDefinition->FocusOrbitFitMultiplier;
-		Settings.FocusNearPaddingFactor = DeviceDefinition->FocusNearPaddingFactor;
-		Settings.DefaultOrbitDistance = DeviceDefinition->DefaultOrbitDistance;
-		Settings.FocusBlendDuration = DeviceDefinition->FocusBlendDuration;
+		return DeviceDefinition->CameraSettings;
 	}
 
-	return Settings;
+	return CameraSettings;
 }
 
 float UDIVEInspectableComponent::ComputeOrbitDistanceForFocus(const FDIVEFocusTarget& Target) const
 {
-	const FDIVECameraEffectiveSettings Settings = GetEffectiveCameraSettings();
+	const FDIVECameraSettings Settings = GetEffectiveCameraSettings();
 	const float MinDistance = Settings.MinOrbitDistanceCm;
 	const float MaxDistance = FMath::Max(Settings.MaxOrbitDistanceCm, MinDistance);
 
@@ -503,9 +482,21 @@ bool UDIVEInspectableComponent::FindAnchorNode(FName PartId, FDIVEPartNode& OutN
 	return bResolved;
 }
 
+bool UDIVEInspectableComponent::IsSessionActive() const
+{
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>())
+		{
+			return Subsystem->IsSessionActive() && Subsystem->GetActiveInspectable() == this;
+		}
+	}
+
+	return false;
+}
+
 void UDIVEInspectableComponent::NotifySessionLifecycle(bool bActive)
 {
-	bSessionActive = bActive;
 	OnSessionLifecycle.Broadcast(bActive);
 }
 
@@ -1237,17 +1228,7 @@ void UDIVEInspectableComponent::AppendDeviceAuthoringValidation(FDataValidationC
 
 	// PartId bindings: each MatchValue must resolve to an anchor that has attached primitives.
 	TArray<UDIVEAnchorComponent*> Anchors;
-	DIVE::ForEachDeviceActor(Owner, [&Anchors](AActor* Actor)
-	{
-		if (!Actor)
-		{
-			return;
-		}
-
-		TArray<UDIVEAnchorComponent*> ActorAnchors;
-		Actor->GetComponents<UDIVEAnchorComponent>(ActorAnchors);
-		Anchors.Append(ActorAnchors);
-	});
+	DIVE::CollectDeviceComponents<UDIVEAnchorComponent>(Owner, Anchors);
 
 	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
 	{
@@ -1337,33 +1318,40 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 
 	if (!bUseDeviceDefinitionSettings)
 	{
-		if (OrbitSensitivity <= 0.f)
+		if (CameraSettings.OrbitSensitivity <= 0.f)
 		{
 			Context.AddError(FText::FromString(TEXT("OrbitSensitivity must be greater than zero.")));
 			Result = EDataValidationResult::Invalid;
 		}
 
-		if (ZoomSensitivity <= 0.f)
+		if (CameraSettings.ZoomSensitivity <= 0.f)
 		{
 			Context.AddError(FText::FromString(TEXT("ZoomSensitivity must be greater than zero.")));
 			Result = EDataValidationResult::Invalid;
 		}
 
-		if (DefaultOrbitDistance <= 0.f)
+		if (CameraSettings.DefaultOrbitDistance <= 0.f)
 		{
 			Context.AddError(FText::FromString(TEXT("DefaultOrbitDistance must be greater than zero.")));
 			Result = EDataValidationResult::Invalid;
 		}
 
-		if (MinOrbitDistanceCm <= 0.f || MaxOrbitDistanceCm < MinOrbitDistanceCm)
+		if (CameraSettings.MinOrbitDistanceCm <= 0.f
+			|| CameraSettings.MaxOrbitDistanceCm < CameraSettings.MinOrbitDistanceCm)
 		{
 			Context.AddError(FText::FromString(TEXT("Orbit distance limits must satisfy 0 < Min <= Max.")));
 			Result = EDataValidationResult::Invalid;
 		}
 
-		if (bScaleZoomWithOrbitDistance && ZoomDistanceReferenceCm <= 0.f)
+		if (CameraSettings.bScaleZoomWithOrbitDistance && CameraSettings.ZoomDistanceReferenceCm <= 0.f)
 		{
 			Context.AddError(FText::FromString(TEXT("ZoomDistanceReferenceCm must be greater than zero.")));
+			Result = EDataValidationResult::Invalid;
+		}
+
+		if (CameraSettings.FocusBlendDuration < 0.f)
+		{
+			Context.AddError(FText::FromString(TEXT("FocusBlendDuration must be greater than or equal to zero.")));
 			Result = EDataValidationResult::Invalid;
 		}
 	}
@@ -1374,7 +1362,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 	}
 
 	TArray<UDIVEAnchorComponent*> Anchors;
-	Owner->GetComponents<UDIVEAnchorComponent>(Anchors);
+	DIVE::CollectDeviceComponents<UDIVEAnchorComponent>(Owner, Anchors);
 
 	TMap<FName, UDIVEAnchorComponent*> PartIdOwners;
 	for (UDIVEAnchorComponent* Anchor : Anchors)

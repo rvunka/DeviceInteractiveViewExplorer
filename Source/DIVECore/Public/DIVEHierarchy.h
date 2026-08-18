@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Containers/Set.h"
 #include "Templates/Function.h"
+#include "Components/ActorComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/Actor.h"
@@ -39,16 +40,26 @@ inline void ForEachDeviceActor(AActor* DeviceHost, TFunctionRef<void(AActor*)> V
 	}
 }
 
+template<typename ComponentType>
+inline void CollectDeviceComponents(AActor* DeviceHost, TArray<ComponentType*>& OutComponents)
+{
+	OutComponents.Reset();
+	ForEachDeviceActor(DeviceHost, [&OutComponents](AActor* Actor)
+	{
+		if (!Actor)
+		{
+			return;
+		}
+
+		TArray<ComponentType*> ActorComponents;
+		Actor->GetComponents<ComponentType>(ActorComponents);
+		OutComponents.Append(ActorComponents);
+	});
+}
+
 inline void CollectDevicePrimitives(AActor* DeviceHost, TArray<UPrimitiveComponent*>& OutPrimitives)
 {
-	OutPrimitives.Reset();
-	ForEachDeviceActor(DeviceHost, [&OutPrimitives](AActor* Actor)
-	{
-		// GetComponents resets its output array — collect per-actor then append.
-		TArray<UPrimitiveComponent*> ActorPrimitives;
-		Actor->GetComponents<UPrimitiveComponent>(ActorPrimitives);
-		OutPrimitives.Append(ActorPrimitives);
-	});
+	CollectDeviceComponents<UPrimitiveComponent>(DeviceHost, OutPrimitives);
 }
 
 inline int32 GetAttachDepthToAncestor(const USceneComponent* Component, const USceneComponent* Ancestor)

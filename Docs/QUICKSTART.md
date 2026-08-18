@@ -12,7 +12,7 @@ On the **device actor** (the thing being inspected):
 
 ### Camera zoom (small parts)
 
-**DIVE Inspectable → DIVE | Camera** (or Device Definition when `bUseDeviceDefinitionSettings`):
+**DIVE Inspectable → DIVE | Camera → Camera Settings** (or Device Definition `CameraSettings` when `bUseDeviceDefinitionSettings`):
 
 | Property | Default | Purpose |
 |----------|---------|---------|
@@ -98,9 +98,9 @@ Example — tagged bolts → continuous unscrew BP:
 - **Context menu:** click row → `BeginInteraction` (modal drag without hold) → finish with next primary click / Escape / self-complete. Same LMB-up that confirms the menu row is ignored so the gesture is not cancelled immediately.
 - Session marks the action active after a successful `Begin`. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
 
-Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on Context Menu UI). Device `IDIVEProxyDrive` / continuous actions feed it; **pawn GRIP bridge drag does not** (cursor-pull has no normalized value).
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Device `IDIVEProxyDrive` / continuous actions feed it; **pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
 
-Interaction parameters live on the action instance; device domain state lives on the device (see `DeviceInteractionModel.md`).
+Interaction parameters live on the action instance; device domain state lives on the device (see `Additional/DeviceInteractionModel.md`).
 
 ### Default mode: hover highlight
 
@@ -123,12 +123,12 @@ Alternative: tag meshes with **Skip Component Tag** (`DIVE.Skip` by default) to 
 
 ```text
 Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_MyDevice)
-├─ DIVE Input                                           ├─ DIVE Inspectable  ← Action Catalog + Bindings
-├─ DIVE Context Menu UI  ← draws menu on screen        └─ (optional) BP subclasses of UDIVEDeviceAction
-└─ (GRIP / bridge as needed)
+├─ DIVE Player  ← sole pawn DIVE ActorComponent        ├─ DIVE Inspectable  ← Action Catalog + Bindings
+│                                                      └─ (optional) BP subclasses of UDIVEDeviceAction
+└─ (optional) GRIP Rig (slots Player + Dive) for Physical
 ```
 
-**Player character** — menu open + UI. Already handled by the plugin if components and IMC are set up (§4). **You do not add device actions here.**
+**Player character** — menu open + UI. Already handled by the plugin if **DIVE Player** and IMC are set up (§4). **You do not add device actions here.**
 
 **Device actor** — **Action Catalog + Bindings** + action instances (defaults Focus/Isolate/Admin and/or your BP/C++ subclasses).
 
@@ -136,14 +136,14 @@ Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_M
 
 ```text
 IA_DIVE_ContextMenu (project IMC — e.g. RMB in Legacy PIE)
- → DIVE Input::HandleContextMenuRequested()     ← C++ entry, no BP wiring for device actions
+ → DIVE Player::HandleContextMenuRequested()  ← C++ entry, no BP wiring for device actions
  → Session subsystem builds rows, stores pick
- → DIVE Context Menu UI shows widget at cursor
+ → DIVE Player shows the context menu widget at cursor
 ```
 
-`HandleContextMenuRequested` is **not** your hook for device actions. It only opens/toggles the menu. It is called from **DIVE Input** on the **player character**, not from the device Blueprint.
+`HandleContextMenuRequested` is **not** your hook for device actions. It only opens/toggles the menu. It is called from **DIVE Player** on the **player character**, not from the device Blueprint.
 
-`DIVE Context Menu UI` on the player character only **shows** the widget; it does not execute actions.
+DIVE Player on the player character **shows** the widget; it does not execute device actions.
 
 ### Menu click path
 
@@ -159,7 +159,7 @@ Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryAct
 
 ```text
 IA_DIVE_PrimaryAction Started
- → DIVE Input::HandlePrimaryActionPressed()
+ → DIVE Player::HandlePrimaryActionPressed()
  → Session::ExecutePrimaryActionAtScreenPosition (Default mode)
  → most-specific matching binding PrimaryActionIndex → UDIVEDeviceAction::Execute / BeginInteraction
 ```
@@ -190,17 +190,17 @@ Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional **Show Vie
 1. `SetInteractionMode(Physical)` (`IA_DIVE_SetMode_Physical`; Legacy PIE: **Tab** cycles Default ↔ Physical).
 2. Register via `IDIVEDeviceControlRegistry` or implement `IDIVEProxyDrive` on a **control component** (not raw mesh).
 
-**Generic simulating-mesh drag** — pawn bridge (no device component):
+**Generic simulating-mesh drag** — pawn physical drive (no device component):
 
-1. Player character: `UGRIPHandComponent` (`GrabPolicy = AllowSimulatingPhysics`) + `UDIVEGRIPBridgeComponent`.
+1. Player character: **GRIP Rig** with slots **Player** and **Dive** (Hand is not in Add Component; Rig creates or adopts `GRIP Hand` / `GRIP Hand Dive`). `UDIVEPlayerComponent` creates the GRIP Physical Drive UObject when DIVEGRIPBridge is enabled. Provider resolves Dive via picker → `GetHand(Dive)` → name.
 2. Admin context menu → **Simulate Physics** on a mesh.
 3. Physical mode → primary-action hold drag moves the body via GRIP PD. Legacy PIE: **LMB** + drag; **hold R** + mouse move rotates the grabbed body.
 
-See `DeviceInteractionModel.md` §6–§7 and `../../DIVEGRIPBridge/README.md`.
+See `Additional/DeviceInteractionModel.md` §6–§7 and `../../DIVEGRIPBridge/README.md`.
 
 ### Camera sensitivity
 
-On `UDIVEInspectableComponent` → **DIVE | Camera**, or shared `UDIVEDeviceDefinitionAsset`.
+On `UDIVEInspectableComponent` → **DIVE | Camera → Camera Settings**, or the same `FDIVECameraSettings` on `UDIVEDeviceDefinitionAsset` when `bUseDeviceDefinitionSettings`.
 
 ## 3. ACTS entry (optional)
 
@@ -214,22 +214,24 @@ Do not wire this in the game module C++ — Content/Blueprint on the device is t
 
 ## 4. Player character input
 
-Components on **the player character** (not the device):
+Recommended on **the locally controlled pawn** (not the device):
 
 ```text
-UDIVEInputComponent              ← input handlers (including open menu)
-UDIVEContextMenuUIComponent      ← menu widget host
-UGRIPHandComponent               (GrabPolicy = AllowSimulatingPhysics)
-UDIVEGRIPBridgeComponent         (generic Physical drag)
+UDIVEPlayerComponent             ← sole DIVE ActorComponent (Handle*, chrome, menu, optional Physical)
+                                 ← auto GRIP Physical Drive UObject when DIVEGRIPBridge is enabled
+UGRIPRigComponent                ← optional Physical + GRIP: slots Player + Dive (CDO has Player; add Dive).
+                                 ← Hand is not in Add Component (Rig creates it).
 ```
 
-`UDIVEInputComponent` auto-finds `UDIVEContextMenuUIComponent` on the same actor. Optional PIE-only: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`).
+Optional PIE-only: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — Player does **not** create it.
+
+`HandleExitSession` with the context menu open is intentional (Exit is not blocked by the menu).
 
 ### Enhanced Input (host Content)
 
 Map once on the player character's IMC — **not** on the device:
 
-| Input Action | Call on **DIVE Input** (player character) |
+| Input Action | Call on **DIVE Player** |
 |--------------|-------------------------------------------|
 | `IA_DIVE_Orbit` Started / Completed / Triggered | `HandleOrbitPressed` / `Released` / `HandleOrbitDelta` |
 | `IA_DIVE_Zoom` | `HandleZoomIn` / `HandleZoomOut` |
@@ -245,7 +247,7 @@ Map once on the player character's IMC — **not** on the device:
 |-----|--------|
 | MMB + drag | Orbit |
 | Wheel | Zoom |
-| **RMB** | Context menu (`HandleContextMenuRequested` via Legacy → DIVE Input) |
+| **RMB** | Context menu (`HandleContextMenuRequested` via Legacy → DIVE Player) |
 | **LMB** | `HandlePrimaryActionPressed` / `Released` (widget dismisses menu on pointer down outside panel) |
 | **G** | Focus under cursor |
 | **Tab** | Cycle Default ↔ Physical |
@@ -270,4 +272,4 @@ Use the dump when menu rows are missing: check **Bindings + Catalog** and per-pr
 
 ## 6. Compliance
 
-Runtime input: `UDIVEInputComponent` **Handle\*** only (no `BindKey` in `DIVERuntime`). Legacy KBM in `DIVERuntimeDev` for PIE. Physical keys and `IA_*` assets live in **host Content** — see `../../../Docs/Plugin_Architecture_Principles.md`.
+Runtime input: **`UDIVEPlayerComponent`** `Handle*` (no `BindKey` in `DIVERuntime`). Legacy KBM in `DIVERuntimeDev` for PIE. Physical keys and `IA_*` assets live in **host Content** — see `../../../Docs/Plugin_Architecture_Principles.md`.

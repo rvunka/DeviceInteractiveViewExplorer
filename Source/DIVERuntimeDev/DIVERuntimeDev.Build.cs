@@ -2,9 +2,9 @@
 
 using UnrealBuildTool;
 using System;
-using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
+using EpicGames.Core;
+using UnrealBuildBase;
 
 public class DIVERuntimeDev : ModuleRules
 {
@@ -20,11 +20,12 @@ public class DIVERuntimeDev : ModuleRules
 			"InputCore",
 			"DIVECore",
 			"DIVERuntime",
+			"DIVEUncooked",
 			"SharedPluginUtils"
 		});
 
-		// Co-location only (§6.2.9): enable check, not Directory.Exists alone.
-		if (IsSiblingPluginEnabled(Target, ModuleDirectory, "GraspRigidbodyInertialPhysics", "GRIPRuntime"))
+		// §6.2.9: UBT plugin enablement (ProjectDescriptor / ReadAvailablePlugins).
+		if (IsPluginEnabledForTarget(Target, "GraspRigidbodyInertialPhysics"))
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=1");
 			PrivateDependencyModuleNames.Add("GRIPRuntime");
@@ -33,21 +34,15 @@ public class DIVERuntimeDev : ModuleRules
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=0");
 		}
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("DataValidation");
+		}
 	}
 
-	static bool IsSiblingPluginEnabled(
-		ReadOnlyTargetRules Target,
-		string ModuleDir,
-		string PluginName,
-		string RuntimeModuleFolderName)
+	static bool IsPluginEnabledForTarget(ReadOnlyTargetRules Target, string PluginName)
 	{
-		string RuntimePath = Path.GetFullPath(Path.Combine(
-			ModuleDir, "..", "..", "..", PluginName, "Source", RuntimeModuleFolderName));
-		if (!Directory.Exists(RuntimePath))
-		{
-			return false;
-		}
-
 		if (Target.DisablePlugins != null
 			&& Target.DisablePlugins.Any(Name =>
 				string.Equals(Name, PluginName, StringComparison.OrdinalIgnoreCase)))
@@ -55,35 +50,41 @@ public class DIVERuntimeDev : ModuleRules
 			return false;
 		}
 
-		if (Target.ProjectFile != null && File.Exists(Target.ProjectFile.FullName))
+		if (Target.EnablePlugins != null
+			&& Target.EnablePlugins.Any(Name =>
+				string.Equals(Name, PluginName, StringComparison.OrdinalIgnoreCase)))
 		{
-			string Text = File.ReadAllText(Target.ProjectFile.FullName);
-			if (IsPluginExplicitlyDisabled(Text, PluginName))
+			return true;
+		}
+
+		if (Target.ProjectFile == null)
+		{
+			return false;
+		}
+
+		ProjectDescriptor Project = ProjectDescriptor.FromFile(Target.ProjectFile);
+		if (Project.Plugins != null)
+		{
+			foreach (PluginReferenceDescriptor Plugin in Project.Plugins)
 			{
-				return false;
+				if (string.Equals(Plugin.Name, PluginName, StringComparison.OrdinalIgnoreCase))
+				{
+					return Plugin.bEnabled;
+				}
 			}
 		}
 
-		return true;
-	}
-
-	static bool IsPluginExplicitlyDisabled(string UProjectJson, string PluginName)
-	{
-		int NameIdx = UProjectJson.IndexOf("\"" + PluginName + "\"", StringComparison.OrdinalIgnoreCase);
-		if (NameIdx < 0)
+		System.Collections.Generic.List<PluginInfo> Available = Plugins.ReadAvailablePlugins(
+			Unreal.EngineDirectory,
+			Target.ProjectFile.Directory,
+			Project.AdditionalPluginDirectories);
+		PluginInfo Found = Available.FirstOrDefault(Plugin =>
+			string.Equals(Plugin.Name, PluginName, StringComparison.OrdinalIgnoreCase));
+		if (Found == null)
 		{
 			return false;
 		}
 
-		int BlockStart = UProjectJson.LastIndexOf('{', NameIdx);
-		int BlockEnd = UProjectJson.IndexOf('}', NameIdx);
-		if (BlockStart < 0 || BlockEnd < 0 || BlockEnd <= BlockStart)
-		{
-			return false;
-		}
-
-		string Block = UProjectJson.Substring(BlockStart, BlockEnd - BlockStart + 1);
-		return Block.IndexOf("\"Enabled\"", StringComparison.OrdinalIgnoreCase) >= 0
-			&& Regex.IsMatch(Block, "\"Enabled\"\\s*:\\s*false", RegexOptions.IgnoreCase);
+		return Found.IsEnabledByDefault(!Project.DisableEnginePluginsByDefault);
 	}
 }

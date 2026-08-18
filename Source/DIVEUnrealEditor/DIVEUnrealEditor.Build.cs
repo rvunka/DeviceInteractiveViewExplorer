@@ -28,7 +28,7 @@ public class DIVEUnrealEditor : ModuleRules
 			"DataValidation",
 			"PropertyEditor",
 			"InputCore",
-			"DIVERuntimeDev"
+			"DIVEUncooked"
 		});
 	}
 }

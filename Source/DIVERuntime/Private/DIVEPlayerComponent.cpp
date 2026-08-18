@@ -1,40 +1,79 @@
 // Copyright (c) 2026. All Rights Reserved.
 
-#include "Input/DIVEInputComponent.h"
+#include "DIVEPlayerComponent.h"
 
-#include "DIVESessionSubsystem.h"
 #include "DIVEInspectableComponent.h"
-#include "DIVELog.h"
+#include "DIVEPawnPhysicalDrive.h"
+#include "DIVEDeviceAction.h"
+#include "DIVESessionSubsystem.h"
+#include "Blueprint/UserWidget.h"
 #include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "UI/DIVEContextMenuUIComponent.h"
+#include "Widgets/Layout/Anchors.h"
+#include "UI/DIVEContextMenuWidget.h"
 #include "UI/DIVESessionChromeWidget.h"
-#include "Utils/SharedComponentResolve.h"
+#include "UI/DIVEValueReadoutWidget.h"
 
-UDIVEInputComponent::UDIVEInputComponent()
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
+namespace
+{
+constexpr float IdleLocalControlTickInterval = 0.15f;
+
+UObject* PhysicalDriveInterfaceObject(UDIVEPawnPhysicalDriveProvider* Provider)
+{
+	return (Provider && Provider->Implements<UDIVEPawnPhysicalDrive>()) ? Provider : nullptr;
+}
+}
+
+UDIVEPlayerComponent::UDIVEPlayerComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
+	PrimaryComponentTick.bStartWithTickEnabled = true;
+	PrimaryComponentTick.TickInterval = IdleLocalControlTickInterval;
+	ValueReadoutWidgetClass = UDIVEValueReadoutWidget::StaticClass();
 }
 
-void UDIVEInputComponent::BeginPlay()
+void UDIVEPlayerComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	SetComponentTickEnabled(false);
-	ResolveComponentReferences();
+
+	if (!PhysicalDriveProvider && bAutoCreatePhysicalDriveProvider)
+	{
+		if (UClass* ProviderClass = DIVEPhysicalDriveExtension::GetRegisteredProviderClass())
+		{
+			PhysicalDriveProvider = NewObject<UDIVEPawnPhysicalDriveProvider>(
+				this,
+				ProviderClass,
+				TEXT("PhysicalDriveProvider"));
+		}
+	}
+
+	if (PhysicalDriveProvider)
+	{
+		PhysicalDriveProvider->InitializeOnPawn(GetOwner());
+	}
+
+	SetComponentTickEnabled(true);
+	bHasLocalControlSample = false;
 	BindSessionDelegates();
+	RefreshLocalControlState();
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		if (Subsystem->IsSessionActive())
+		if (Subsystem->IsSessionActive() && IsLocallyControlledOwner() && !bSessionPresentationActive)
 		{
 			HandleSessionStarted(Subsystem->GetActiveDeviceHost(), Subsystem->GetActiveInspectable());
 		}
 	}
 }
 
-void UDIVEInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void UDIVEPlayerComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	UnbindSessionDelegates();
 
@@ -54,15 +93,25 @@ void UDIVEInputComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 
+	HideContextMenu();
+	HideValueReadout();
+	if (PhysicalDriveProvider)
+	{
+		PhysicalDriveProvider->ShutdownOnPawn();
+	}
+
 	SetComponentTickEnabled(false);
 	bOrbitKeyHeld = false;
 	bHasLastOrbitMousePosition = false;
+	bHasLocalControlSample = false;
 	Super::EndPlay(EndPlayReason);
 }
 
-void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	RefreshLocalControlState();
 
 	if (!IsLocallyControlledOwner())
 	{
@@ -105,57 +154,126 @@ void UDIVEInputComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		Subsystem->ClearPickHover();
 	}
-}
 
-void UDIVEInputComponent::BindSessionDelegates()
-{
-	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	if (PhysicalDriveProvider)
 	{
-		Subsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
-		Subsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
-		Subsystem->OnInteractionModeChanged.AddUniqueDynamic(this, &UDIVEInputComponent::HandleInteractionModeChanged);
+		PhysicalDriveProvider->TickDrive(DeltaTime);
 	}
 }
 
-void UDIVEInputComponent::UnbindSessionDelegates()
+void UDIVEPlayerComponent::BindSessionDelegates()
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		Subsystem->OnSessionStarted.RemoveDynamic(this, &UDIVEInputComponent::HandleSessionStarted);
-		Subsystem->OnSessionEnded.RemoveDynamic(this, &UDIVEInputComponent::HandleSessionEnded);
-		Subsystem->OnInteractionModeChanged.RemoveDynamic(this, &UDIVEInputComponent::HandleInteractionModeChanged);
+		Subsystem->OnSessionStarted.AddUniqueDynamic(this, &UDIVEPlayerComponent::HandleSessionStarted);
+		Subsystem->OnSessionEnded.AddUniqueDynamic(this, &UDIVEPlayerComponent::HandleSessionEnded);
+		Subsystem->OnInteractionModeChanged.AddUniqueDynamic(this, &UDIVEPlayerComponent::HandleInteractionModeChanged);
+		Subsystem->OnContextMenuVisibilityChanged.AddUniqueDynamic(this, &UDIVEPlayerComponent::HandleContextMenuVisibilityChanged);
+		Subsystem->OnInteractionValueChanged.AddUniqueDynamic(this, &UDIVEPlayerComponent::HandleInteractionValueChanged);
+
+		if (Subsystem->IsContextMenuOpen())
+		{
+			HandleContextMenuVisibilityChanged(true);
+		}
 	}
 }
 
-void UDIVEInputComponent::HandleSessionStarted(AActor* /*DeviceHost*/, UDIVEInspectableComponent* /*Inspectable*/)
+void UDIVEPlayerComponent::UnbindSessionDelegates()
+{
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		Subsystem->OnSessionStarted.RemoveDynamic(this, &UDIVEPlayerComponent::HandleSessionStarted);
+		Subsystem->OnSessionEnded.RemoveDynamic(this, &UDIVEPlayerComponent::HandleSessionEnded);
+		Subsystem->OnInteractionModeChanged.RemoveDynamic(this, &UDIVEPlayerComponent::HandleInteractionModeChanged);
+		Subsystem->OnContextMenuVisibilityChanged.RemoveDynamic(this, &UDIVEPlayerComponent::HandleContextMenuVisibilityChanged);
+		Subsystem->OnInteractionValueChanged.RemoveDynamic(this, &UDIVEPlayerComponent::HandleInteractionValueChanged);
+	}
+}
+
+void UDIVEPlayerComponent::HandleSessionStarted(AActor* /*DeviceHost*/, UDIVEInspectableComponent* /*Inspectable*/)
 {
 	if (!IsLocallyControlledOwner())
 	{
 		return;
 	}
 
-	SetComponentTickEnabled(true);
 	BeginSessionPresentation();
 }
 
-void UDIVEInputComponent::HandleSessionEnded(EDIVESessionEndReason /*Reason*/, AActor* /*DeviceHost*/)
+void UDIVEPlayerComponent::HandleSessionEnded(EDIVESessionEndReason /*Reason*/, AActor* /*DeviceHost*/)
 {
-	if (!IsLocallyControlledOwner())
+	APlayerController* PlayerController = SessionPresentationController.Get();
+	if (!PlayerController)
+	{
+		PlayerController = GetLocalPlayerController();
+	}
+
+	ClearSessionPresentation(PlayerController);
+	bOrbitKeyHeld = false;
+	bHasLastOrbitMousePosition = false;
+	HideContextMenu();
+	HideValueReadout();
+}
+
+void UDIVEPlayerComponent::RefreshLocalControlState()
+{
+	const bool bNowLocal = IsLocallyControlledOwner();
+	if (!bHasLocalControlSample)
+	{
+		bHasLocalControlSample = true;
+		bWasLocallyControlled = bNowLocal;
+		if (bNowLocal)
+		{
+			HandleGainedLocalControl();
+		}
+		return;
+	}
+
+	if (bNowLocal == bWasLocallyControlled)
 	{
 		return;
 	}
 
-	if (APlayerController* PlayerController = GetLocalPlayerController())
+	bWasLocallyControlled = bNowLocal;
+	if (bNowLocal)
 	{
-		ClearSessionPresentation(PlayerController);
+		HandleGainedLocalControl();
 	}
-
-	bOrbitKeyHeld = false;
-	bHasLastOrbitMousePosition = false;
-	SetComponentTickEnabled(false);
+	else
+	{
+		HandleLostLocalControl();
+	}
 }
 
-void UDIVEInputComponent::BeginSessionPresentation()
+void UDIVEPlayerComponent::HandleGainedLocalControl()
+{
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	if (Subsystem && Subsystem->IsSessionActive() && !bSessionPresentationActive)
+	{
+		BeginSessionPresentation();
+	}
+}
+
+void UDIVEPlayerComponent::HandleLostLocalControl()
+{
+	APlayerController* PlayerController = SessionPresentationController.Get();
+	if (!PlayerController)
+	{
+		PlayerController = GetLocalPlayerController();
+	}
+
+	ClearSessionPresentation(PlayerController);
+
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		if (Subsystem->IsSessionActive())
+		{
+			Subsystem->EndSession(EDIVESessionEndReason::Forced);
+		}
+	}
+}
+
+void UDIVEPlayerComponent::BeginSessionPresentation()
 {
 	if (bSessionPresentationActive)
 	{
@@ -179,10 +297,12 @@ void UDIVEInputComponent::BeginSessionPresentation()
 	}
 
 	bSessionPresentationActive = true;
+	SessionPresentationController = PlayerController;
+	PrimaryComponentTick.TickInterval = 0.f;
 	ShowSessionChrome();
 }
 
-UDIVESessionSubsystem* UDIVEInputComponent::GetSessionSubsystem() const
+UDIVESessionSubsystem* UDIVEPlayerComponent::GetSessionSubsystem() const
 {
 	if (UWorld* World = GetWorld())
 	{
@@ -192,41 +312,19 @@ UDIVESessionSubsystem* UDIVEInputComponent::GetSessionSubsystem() const
 	return nullptr;
 }
 
-APlayerController* UDIVEInputComponent::GetLocalPlayerController() const
+APlayerController* UDIVEPlayerComponent::GetLocalPlayerController() const
 {
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	return OwnerPawn ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
 }
 
-bool UDIVEInputComponent::IsLocallyControlledOwner() const
+bool UDIVEPlayerComponent::IsLocallyControlledOwner() const
 {
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	return OwnerPawn && OwnerPawn->IsLocallyControlled();
 }
 
-void UDIVEInputComponent::ResolveComponentReferences()
-{
-	ContextMenuUIComponent = SharedComponentResolve::FindComponentByNameOrClass<UDIVEContextMenuUIComponent>(
-		GetOwner(),
-		ContextMenuUIComponentName);
-}
-
-void UDIVEInputComponent::WarnMissingContextMenuUIOnce()
-{
-	if (bLoggedMissingContextMenuUI || ContextMenuUIComponent)
-	{
-		return;
-	}
-
-	bLoggedMissingContextMenuUI = true;
-	UE_LOG(
-		LogDIVE,
-		Warning,
-		TEXT("DIVE Input on '%s': no UDIVEContextMenuUIComponent found on the pawn — add it to show the context menu widget."),
-		*GetNameSafe(GetOwner()));
-}
-
-void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
+void UDIVEPlayerComponent::ApplyPrimaryActionDragFromMouse()
 {
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	if (!Subsystem || !Subsystem->IsProxyDriving())
@@ -264,7 +362,7 @@ void UDIVEInputComponent::ApplyPrimaryActionDragFromMouse()
 	}
 }
 
-bool UDIVEInputComponent::TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const
+bool UDIVEPlayerComponent::TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const
 {
 	if (const APlayerController* PlayerController = GetLocalPlayerController())
 	{
@@ -293,7 +391,7 @@ bool UDIVEInputComponent::TryGetCursorScreenPosition(FVector2D& OutScreenPositio
 	return false;
 }
 
-void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosition)
+void UDIVEPlayerComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosition)
 {
 	if (ShouldSuppressSessionInput())
 	{
@@ -343,7 +441,7 @@ void UDIVEInputComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosit
 	}
 }
 
-void UDIVEInputComponent::RoutePrimaryActionReleased()
+void UDIVEPlayerComponent::RoutePrimaryActionReleased()
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
@@ -371,7 +469,7 @@ void UDIVEInputComponent::RoutePrimaryActionReleased()
 
 }
 
-void UDIVEInputComponent::CapturePreSessionInputState(APlayerController* PlayerController)
+void UDIVEPlayerComponent::CapturePreSessionInputState(APlayerController* PlayerController)
 {
 	if (!PlayerController || bHasPreservedInputState)
 	{
@@ -398,7 +496,7 @@ void UDIVEInputComponent::CapturePreSessionInputState(APlayerController* PlayerC
 	bHasPreservedInputState = true;
 }
 
-void UDIVEInputComponent::RestorePreSessionInputState(APlayerController* PlayerController)
+void UDIVEPlayerComponent::RestorePreSessionInputState(APlayerController* PlayerController)
 {
 	if (!PlayerController || !bHasPreservedInputState)
 	{
@@ -440,7 +538,7 @@ void UDIVEInputComponent::RestorePreSessionInputState(APlayerController* PlayerC
 	bHasPreservedInputState = false;
 }
 
-void UDIVEInputComponent::ApplySessionInputMode(APlayerController* PlayerController)
+void UDIVEPlayerComponent::ApplySessionInputMode(APlayerController* PlayerController)
 {
 	if (!PlayerController)
 	{
@@ -466,7 +564,7 @@ void UDIVEInputComponent::ApplySessionInputMode(APlayerController* PlayerControl
 	MaintainSessionInputFlags(PlayerController);
 }
 
-void UDIVEInputComponent::MaintainSessionInputFlags(APlayerController* PlayerController)
+void UDIVEPlayerComponent::MaintainSessionInputFlags(APlayerController* PlayerController)
 {
 	if (!PlayerController)
 	{
@@ -476,7 +574,7 @@ void UDIVEInputComponent::MaintainSessionInputFlags(APlayerController* PlayerCon
 	PlayerController->bShowMouseCursor = bShowMouseCursorInSession;
 }
 
-void UDIVEInputComponent::ClearSessionPresentation(APlayerController* PlayerController)
+void UDIVEPlayerComponent::ClearSessionPresentation(APlayerController* PlayerController)
 {
 	if (!bSessionPresentationActive)
 	{
@@ -512,9 +610,11 @@ void UDIVEInputComponent::ClearSessionPresentation(APlayerController* PlayerCont
 	HideSessionChrome();
 	bSessionPresentationActive = false;
 	bSessionAppliedInputFlags = false;
+	SessionPresentationController.Reset();
+	PrimaryComponentTick.TickInterval = IdleLocalControlTickInterval;
 }
 
-void UDIVEInputComponent::ApplyOrbitFromMouseDelta()
+void UDIVEPlayerComponent::ApplyOrbitFromMouseDelta()
 {
 	if (ShouldSuppressSessionInput())
 	{
@@ -566,7 +666,7 @@ void UDIVEInputComponent::ApplyOrbitFromMouseDelta()
 	}
 }
 
-void UDIVEInputComponent::HandleOrbitPressed()
+void UDIVEPlayerComponent::HandleOrbitPressed()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -583,7 +683,7 @@ void UDIVEInputComponent::HandleOrbitPressed()
 	bHasLastOrbitMousePosition = false;
 }
 
-void UDIVEInputComponent::HandleOrbitReleased()
+void UDIVEPlayerComponent::HandleOrbitReleased()
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -601,7 +701,7 @@ void UDIVEInputComponent::HandleOrbitReleased()
 	}
 }
 
-void UDIVEInputComponent::HandleOrbitDelta(FVector2D Delta)
+void UDIVEPlayerComponent::HandleOrbitDelta(FVector2D Delta)
 {
 	if (!IsLocallyControlledOwner() || bOrbitKeyHeld || ShouldSuppressSessionInput())
 	{
@@ -617,7 +717,7 @@ void UDIVEInputComponent::HandleOrbitDelta(FVector2D Delta)
 	}
 }
 
-void UDIVEInputComponent::HandleZoomIn()
+void UDIVEPlayerComponent::HandleZoomIn()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -633,7 +733,7 @@ void UDIVEInputComponent::HandleZoomIn()
 	}
 }
 
-void UDIVEInputComponent::HandleZoomOut()
+void UDIVEPlayerComponent::HandleZoomOut()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -649,7 +749,7 @@ void UDIVEInputComponent::HandleZoomOut()
 	}
 }
 
-void UDIVEInputComponent::HandlePrimaryActionPressed()
+void UDIVEPlayerComponent::HandlePrimaryActionPressed()
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -676,7 +776,7 @@ void UDIVEInputComponent::HandlePrimaryActionPressed()
 	RoutePrimaryActionPressed(ScreenPosition);
 }
 
-void UDIVEInputComponent::HandlePrimaryActionReleased()
+void UDIVEPlayerComponent::HandlePrimaryActionReleased()
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -700,7 +800,7 @@ void UDIVEInputComponent::HandlePrimaryActionReleased()
 	RoutePrimaryActionReleased();
 }
 
-void UDIVEInputComponent::HandleManualRotatePressed()
+void UDIVEPlayerComponent::HandleManualRotatePressed()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -716,7 +816,7 @@ void UDIVEInputComponent::HandleManualRotatePressed()
 	Subsystem->HandleActivePawnPhysicalManualRotatePressed();
 }
 
-void UDIVEInputComponent::HandleManualRotateReleased()
+void UDIVEPlayerComponent::HandleManualRotateReleased()
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -735,7 +835,7 @@ void UDIVEInputComponent::HandleManualRotateReleased()
 	}
 }
 
-void UDIVEInputComponent::HandleFocusUnderCursor()
+void UDIVEPlayerComponent::HandleFocusUnderCursor()
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -761,7 +861,7 @@ void UDIVEInputComponent::HandleFocusUnderCursor()
 	}
 }
 
-EDIVESessionInteractionMode UDIVEInputComponent::GetInteractionMode() const
+EDIVESessionInteractionMode UDIVEPlayerComponent::GetInteractionMode() const
 {
 	if (const UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
@@ -771,7 +871,7 @@ EDIVESessionInteractionMode UDIVEInputComponent::GetInteractionMode() const
 	return EDIVESessionInteractionMode::Default;
 }
 
-void UDIVEInputComponent::ReapplySessionInputMode()
+void UDIVEPlayerComponent::ReapplySessionInputMode()
 {
 	if (!IsLocallyControlledOwner() || !bSessionPresentationActive)
 	{
@@ -784,7 +884,7 @@ void UDIVEInputComponent::ReapplySessionInputMode()
 	}
 }
 
-void UDIVEInputComponent::HandleInteractionModeChanged(EDIVESessionInteractionMode NewMode)
+void UDIVEPlayerComponent::HandleInteractionModeChanged(EDIVESessionInteractionMode NewMode)
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -794,7 +894,7 @@ void UDIVEInputComponent::HandleInteractionModeChanged(EDIVESessionInteractionMo
 	UpdateSessionChromeMode(NewMode);
 }
 
-void UDIVEInputComponent::ShowSessionChrome()
+void UDIVEPlayerComponent::ShowSessionChrome()
 {
 	if (!bShowSessionChrome || !bSessionPresentationActive)
 	{
@@ -836,7 +936,7 @@ void UDIVEInputComponent::ShowSessionChrome()
 	SessionChromeWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
-void UDIVEInputComponent::HideSessionChrome()
+void UDIVEPlayerComponent::HideSessionChrome()
 {
 	if (SessionChromeWidget)
 	{
@@ -845,7 +945,7 @@ void UDIVEInputComponent::HideSessionChrome()
 	}
 }
 
-void UDIVEInputComponent::UpdateSessionChromeMode(EDIVESessionInteractionMode NewMode)
+void UDIVEPlayerComponent::UpdateSessionChromeMode(EDIVESessionInteractionMode NewMode)
 {
 	if (SessionChromeWidget && SessionChromeWidget->IsInViewport())
 	{
@@ -853,7 +953,7 @@ void UDIVEInputComponent::UpdateSessionChromeMode(EDIVESessionInteractionMode Ne
 	}
 }
 
-void UDIVEInputComponent::SetInteractionMode(EDIVESessionInteractionMode NewMode)
+void UDIVEPlayerComponent::SetInteractionMode(EDIVESessionInteractionMode NewMode)
 {
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
@@ -861,7 +961,7 @@ void UDIVEInputComponent::SetInteractionMode(EDIVESessionInteractionMode NewMode
 	}
 }
 
-void UDIVEInputComponent::HandleCycleInteractionMode()
+void UDIVEPlayerComponent::HandleCycleInteractionMode()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -875,7 +975,7 @@ void UDIVEInputComponent::HandleCycleInteractionMode()
 			: EDIVESessionInteractionMode::Default);
 }
 
-void UDIVEInputComponent::HandleNavigateBack()
+void UDIVEPlayerComponent::HandleNavigateBack()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -891,7 +991,7 @@ void UDIVEInputComponent::HandleNavigateBack()
 	}
 }
 
-void UDIVEInputComponent::HandleExitSession()
+void UDIVEPlayerComponent::HandleExitSession()
 {
 	if (!IsLocallyControlledOwner())
 	{
@@ -907,7 +1007,7 @@ void UDIVEInputComponent::HandleExitSession()
 	}
 }
 
-void UDIVEInputComponent::HandleToggleIsolate()
+void UDIVEPlayerComponent::HandleToggleIsolate()
 {
 	if (!IsLocallyControlledOwner() || ShouldSuppressSessionInput())
 	{
@@ -923,23 +1023,16 @@ void UDIVEInputComponent::HandleToggleIsolate()
 	}
 }
 
-bool UDIVEInputComponent::ShouldSuppressSessionInput() const
+bool UDIVEPlayerComponent::ShouldSuppressSessionInput() const
 {
 	const UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
 	return Subsystem && Subsystem->IsContextMenuOpen();
 }
 
-void UDIVEInputComponent::HandleContextMenuRequested()
+void UDIVEPlayerComponent::HandleContextMenuRequested()
 {
 	if (!IsLocallyControlledOwner())
 	{
-		return;
-	}
-
-	ResolveComponentReferences();
-	if (!ContextMenuUIComponent)
-	{
-		WarnMissingContextMenuUIOnce();
 		return;
 	}
 
@@ -968,5 +1061,238 @@ void UDIVEInputComponent::HandleContextMenuRequested()
 	{
 		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
 		Subsystem->EndProxyDrive(false);
+	}
+}
+
+#if WITH_EDITOR
+EDataValidationResult UDIVEPlayerComponent::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = EDataValidationResult::Valid;
+
+	AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return Result;
+	}
+
+	if (!Owner->IsA<APawn>())
+	{
+		Context.AddError(FText::FromString(TEXT(
+			"DIVE Player must be owned by an APawn (locally controlled player character).")));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	TArray<UDIVEPlayerComponent*> Roots;
+	Owner->GetComponents<UDIVEPlayerComponent>(Roots);
+	if (Roots.Num() > 1)
+	{
+		Context.AddError(FText::FromString(TEXT(
+			"Multiple DIVE Player components on the same actor — keep a single DIVE Player.")));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	return Result;
+}
+#endif
+
+void UDIVEPlayerComponent::HandleContextMenuVisibilityChanged(const bool bIsOpen)
+{
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (bIsOpen)
+	{
+		ShowContextMenu();
+	}
+	else
+	{
+		HideContextMenu();
+	}
+}
+
+void UDIVEPlayerComponent::HandleContextMenuEntrySelected(
+	UDIVEDeviceAction* Action,
+	FName TargetKey,
+	FName BindingId)
+{
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		Subsystem->ExecuteContextMenuAction(Action, TargetKey, BindingId);
+	}
+}
+
+void UDIVEPlayerComponent::HandleContextMenuDismissed()
+{
+	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
+	{
+		Subsystem->CloseContextMenu();
+	}
+}
+
+void UDIVEPlayerComponent::HandleInteractionValueChanged(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	float NormalizedValue)
+{
+	(void)Context;
+	if (!IsLocallyControlledOwner())
+	{
+		return;
+	}
+
+	if (!Action)
+	{
+		if (ValueReadoutWidget)
+		{
+			ValueReadoutWidget->ClearReadout();
+		}
+		return;
+	}
+
+	EnsureValueReadoutWidget();
+	if (ValueReadoutWidget)
+	{
+		ValueReadoutWidget->SetReadout(Action->GetResolvedDisplayName(), NormalizedValue);
+	}
+}
+
+void UDIVEPlayerComponent::EnsureValueReadoutWidget()
+{
+	if (ValueReadoutWidget)
+	{
+		return;
+	}
+
+	APlayerController* PlayerController = GetLocalPlayerController();
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	TSubclassOf<UDIVEValueReadoutWidget> WidgetClass = ValueReadoutWidgetClass;
+	if (!*WidgetClass)
+	{
+		WidgetClass = UDIVEValueReadoutWidget::StaticClass();
+	}
+
+	ValueReadoutWidget = CreateWidget<UDIVEValueReadoutWidget>(PlayerController, WidgetClass);
+	if (ValueReadoutWidget && !ValueReadoutWidget->IsInViewport())
+	{
+		ValueReadoutWidget->AddToViewport(ValueReadoutZOrder);
+	}
+}
+
+void UDIVEPlayerComponent::HideValueReadout()
+{
+	if (ValueReadoutWidget)
+	{
+		ValueReadoutWidget->ClearReadout();
+		ValueReadoutWidget->RemoveFromParent();
+		ValueReadoutWidget = nullptr;
+	}
+}
+
+void UDIVEPlayerComponent::ShowContextMenu()
+{
+	APlayerController* PlayerController = GetLocalPlayerController();
+	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
+	if (!PlayerController || !Subsystem)
+	{
+		return;
+	}
+
+	if (!ContextMenuWidget)
+	{
+		TSubclassOf<UDIVEContextMenuWidget> WidgetClass = ContextMenuWidgetClass;
+		if (!*WidgetClass)
+		{
+			WidgetClass = UDIVEContextMenuWidget::StaticClass();
+		}
+		ContextMenuWidget = CreateWidget<UDIVEContextMenuWidget>(PlayerController, WidgetClass);
+		if (ContextMenuWidget)
+		{
+			ContextMenuWidget->OnEntrySelected.AddDynamic(this, &UDIVEPlayerComponent::HandleContextMenuEntrySelected);
+			ContextMenuWidget->OnDismissed.AddDynamic(this, &UDIVEPlayerComponent::HandleContextMenuDismissed);
+		}
+	}
+
+	if (!ContextMenuWidget)
+	{
+		return;
+	}
+
+	ContextMenuWidget->SetStyle(MenuStyle);
+	ContextMenuWidget->SetEntries(Subsystem->GetContextMenuEntries());
+	ContextMenuWidget->SetScreenPosition(Subsystem->GetContextMenuScreenPosition());
+
+	if (!ContextMenuWidget->IsInViewport())
+	{
+		ContextMenuWidget->AddToViewport(ViewportZOrder);
+	}
+
+	ContextMenuWidget->SetAnchorsInViewport(FAnchors(0.f, 0.f, 1.f, 1.f));
+	ContextMenuWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+	ContextMenuWidget->SetVisibility(ESlateVisibility::Visible);
+	ContextMenuWidget->SetKeyboardFocus();
+}
+
+void UDIVEPlayerComponent::HideContextMenu()
+{
+	if (ContextMenuWidget)
+	{
+		ContextMenuWidget->RemoveFromParent();
+		ContextMenuWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+bool UDIVEPlayerComponent::CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) const
+{
+	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
+	{
+		return IDIVEPawnPhysicalDrive::Execute_CanBeginPawnPhysicalDrive(DriveObject, Context);
+	}
+	return false;
+}
+
+bool UDIVEPlayerComponent::BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context)
+{
+	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
+	{
+		return IDIVEPawnPhysicalDrive::Execute_BeginPawnPhysicalDrive(DriveObject, Context);
+	}
+	return false;
+}
+
+void UDIVEPlayerComponent::EndPawnPhysicalDrive_Implementation(const bool bCommit)
+{
+	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
+	{
+		IDIVEPawnPhysicalDrive::Execute_EndPawnPhysicalDrive(DriveObject, bCommit);
+	}
+}
+
+void UDIVEPlayerComponent::HandlePawnPhysicalManualRotatePressed_Implementation()
+{
+	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
+	{
+		IDIVEPawnPhysicalDrive::Execute_HandlePawnPhysicalManualRotatePressed(DriveObject);
+	}
+}
+
+void UDIVEPlayerComponent::HandlePawnPhysicalManualRotateReleased_Implementation()
+{
+	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
+	{
+		IDIVEPawnPhysicalDrive::Execute_HandlePawnPhysicalManualRotateReleased(DriveObject);
+	}
+}
+
+void UDIVEPlayerComponent::HandlePawnPhysicalGrabHoldDistanceScroll_Implementation(const float WheelDelta)
+{
+	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
+	{
+		IDIVEPawnPhysicalDrive::Execute_HandlePawnPhysicalGrabHoldDistanceScroll(DriveObject, WheelDelta);
 	}
 }

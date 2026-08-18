@@ -8,7 +8,7 @@
 
 #include "DIVELegacyKbmInputComponent.generated.h"
 
-class UDIVEInputComponent;
+class UDIVEPlayerComponent;
 class UInputComponent;
 class UDIVEInspectableComponent;
 
@@ -66,9 +66,9 @@ public:
 	void ContextMenuPressed();
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input", meta = (
-		DisplayName = "Input Component",
-		ToolTip = "Leave empty to auto-find DIVE Input on the owner. Requires UDIVEInputComponent on the pawn."))
-	FName InputComponentName;
+		DisplayName = "DIVE Player",
+		ToolTip = "Leave empty to auto-find DIVE Player on the owner."))
+	FName PlayerComponentName;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE|Input")
 	bool bBindOrbitInput = true;
@@ -137,21 +137,21 @@ public:
 
 protected:
 	UPROPERTY(Transient)
-	TObjectPtr<UDIVEInputComponent> InputComponent;
+	TObjectPtr<UDIVEPlayerComponent> DivePlayer;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UInputComponent> LegacyInputComponent;
 
 	bool bInputBound = false;
-	bool bLoggedMissingInput = false;
+	bool bLoggedMissingPlayer = false;
 
 	void ResolveComponentReferences();
-	void EnsureInputReady();
+	void EnsurePlayerReady();
 	void BindInput();
 	void UnbindInput();
 	void ClearLegacyKeyBindings();
 	bool TryRouteZoomWheel(float WheelDelta);
-	void WarnMissingInputOnce();
+	void WarnMissingPlayerOnce();
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();
 	void RefreshSessionInputBindings();

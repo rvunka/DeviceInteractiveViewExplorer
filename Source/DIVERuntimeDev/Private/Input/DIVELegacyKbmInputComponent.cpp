@@ -7,7 +7,7 @@
 #include "DIVESessionSubsystem.h"
 #include "DIVETypes.h"
 #include "DIVEInspectableComponent.h"
-#include "Input/DIVEInputComponent.h"
+#include "DIVEPlayerComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -38,9 +38,9 @@ void UDIVELegacyKbmInputComponent::BeginPlay()
 	Super::BeginPlay();
 
 	ResolveComponentReferences();
-	if (!InputComponent)
+	if (!DivePlayer)
 	{
-		WarnMissingInputOnce();
+		WarnMissingPlayerOnce();
 	}
 
 	BindSessionDelegates();
@@ -123,29 +123,29 @@ void UDIVELegacyKbmInputComponent::HandleDiveSessionEnded(
 
 void UDIVELegacyKbmInputComponent::ResolveComponentReferences()
 {
-	InputComponent = SharedComponentResolve::FindComponentByNameOrClass<UDIVEInputComponent>(
+	DivePlayer = SharedComponentResolve::FindComponentByNameOrClass<UDIVEPlayerComponent>(
 		GetOwner(),
-		InputComponentName);
+		PlayerComponentName);
 }
 
-void UDIVELegacyKbmInputComponent::WarnMissingInputOnce()
+void UDIVELegacyKbmInputComponent::WarnMissingPlayerOnce()
 {
-	if (bLoggedMissingInput)
+	if (bLoggedMissingPlayer)
 	{
 		return;
 	}
 
-	bLoggedMissingInput = true;
+	bLoggedMissingPlayer = true;
 	UE_LOG(
 		LogDIVE,
 		Warning,
-		TEXT("DIVE Legacy KBM Input on '%s': no DIVE Input component found. Link Input Component or add UDIVEInputComponent to the pawn."),
+		TEXT("DIVE Legacy KBM Input on '%s': no DIVE Player component found. Add UDIVEPlayerComponent to the pawn."),
 		*GetNameSafe(GetOwner()));
 }
 
-void UDIVELegacyKbmInputComponent::EnsureInputReady()
+void UDIVELegacyKbmInputComponent::EnsurePlayerReady()
 {
-	if (!InputComponent)
+	if (!DivePlayer)
 	{
 		ResolveComponentReferences();
 	}
@@ -158,21 +158,21 @@ void UDIVELegacyKbmInputComponent::EnsureInputReady()
 
 void UDIVELegacyKbmInputComponent::OrbitPressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleOrbitPressed();
+		DivePlayer->HandleOrbitPressed();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::OrbitReleased()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleOrbitReleased();
+		DivePlayer->HandleOrbitReleased();
 	}
 }
 
@@ -200,133 +200,133 @@ bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
 
 void UDIVELegacyKbmInputComponent::ZoomIn()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
 	if (TryRouteZoomWheel(1.0f))
 	{
 		return;
 	}
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleZoomIn();
+		DivePlayer->HandleZoomIn();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::ZoomOut()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
 	if (TryRouteZoomWheel(-1.0f))
 	{
 		return;
 	}
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleZoomOut();
+		DivePlayer->HandleZoomOut();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::SelectPressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandlePrimaryActionPressed();
+		DivePlayer->HandlePrimaryActionPressed();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::SelectReleased()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandlePrimaryActionReleased();
+		DivePlayer->HandlePrimaryActionReleased();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::ManualRotatePressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleManualRotatePressed();
+		DivePlayer->HandleManualRotatePressed();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::ManualRotateReleased()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleManualRotateReleased();
+		DivePlayer->HandleManualRotateReleased();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::FocusUnderCursorPressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleFocusUnderCursor();
+		DivePlayer->HandleFocusUnderCursor();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::CycleInteractionModePressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (!InputComponent)
+	if (!DivePlayer)
 	{
 		return;
 	}
 
-	InputComponent->HandleCycleInteractionMode();
+	DivePlayer->HandleCycleInteractionMode();
 }
 
 void UDIVELegacyKbmInputComponent::NavigateBackPressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleNavigateBack();
+		DivePlayer->HandleNavigateBack();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::ExitSessionPressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleExitSession();
+		DivePlayer->HandleExitSession();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::ToggleIsolatePressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleToggleIsolate();
+		DivePlayer->HandleToggleIsolate();
 	}
 }
 
 void UDIVELegacyKbmInputComponent::ContextMenuPressed()
 {
-	EnsureInputReady();
+	EnsurePlayerReady();
 
-	if (InputComponent)
+	if (DivePlayer)
 	{
-		InputComponent->HandleContextMenuRequested();
+		DivePlayer->HandleContextMenuRequested();
 	}
 }
 

@@ -2,7 +2,7 @@
 
 > **Audience:** device authors, DIVE maintainers.  
 > **Status:** historical — Role-based catalog (v0.7). **Superseded** by object-based actions in v0.8 (`UDIVEDeviceAction` + `UDIVEActionCatalogAsset`). See [`Audit_DeviceActions_Architecture.md`](Audit_DeviceActions_Architecture.md) and [`QUICKSTART.md`](QUICKSTART.md) §1.  
-> **Related:** `QUICKSTART.md` §1 (custom context menu), `DeviceInteractionModel.md`, `ARCHITECTURE.md`.
+> **Related:** `QUICKSTART.md` §1 (custom context menu), `DeviceInteractionModel.md` (this folder), `ARCHITECTURE.md`.
 
 ---
 

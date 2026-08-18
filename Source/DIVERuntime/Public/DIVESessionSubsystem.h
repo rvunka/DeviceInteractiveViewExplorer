@@ -69,7 +69,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsIsolationActiveForTarget(const FDIVEFocusTarget& Target) const;
 
-	/** True while proxy drive, pawn bridge, or continuous device action is active. */
+	/** True while device proxy drive or pawn physical drive is active. */
 	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
 	bool IsProxyDriving() const { return bProxyDriving; }
 
@@ -146,7 +146,7 @@ public:
 	bool NavigateBack();
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
-	bool CanNavigateBack() const { return FocusStack.Num() > 1; }
+	bool CanNavigateBack() const { return IsSessionActive() && FocusStack.Num() > 1; }
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|ContextMenu")
 	bool IsContextMenuOpen() const { return bContextMenuOpen; }
@@ -222,7 +222,7 @@ private:
 	enum class EDIVEActivePhysicalDriveKind : uint8
 	{
 		None,
-		PawnBridge,
+		PawnDrive,
 		ContinuousAction
 	};
 

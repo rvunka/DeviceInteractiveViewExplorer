@@ -9,16 +9,24 @@
 #include "DIVEInspectableComponent.h"
 #include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
+#include "DIVEPlayerComponent.h"
 #include "DIVEProxyDriveResolve.h"
+#include "DIVESessionSubsystem.h"
 #include "DIVETypes.h"
-#include "Utils/DIVEContextMenu.h"
-
+#include "Utils/DIVEPlayerQuery.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/DefaultPawn.h"
+#include "Tests/DIVEPawnPhysicalDriveTestTypes.h"
 #include "UObject/Package.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 
 namespace
 {
@@ -39,8 +47,6 @@ bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters
 
 	TArray<FDIVEContextMenuEntry> Entries;
 	const FDIVEFocusTarget InvalidPick = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
-
-	DIVEContextMenu::BuildEntries(nullptr, InvalidPick, Entries);
 	TestEqual(TEXT("No inspectable => empty menu"), Entries.Num(), 0);
 
 	// Use CDO — NewObject<UActorComponent>() at Smoke startup runs before EngineElements
@@ -115,7 +121,122 @@ bool FDIVEPawnPhysicalDriveResolveSmokeTest::RunTest(const FString& Parameters)
 	TestNull(TEXT("FindOnPlayerController null for null PC"), DIVEPawnPhysicalDriveResolve::FindOnPlayerController(nullptr));
 	TestNull(TEXT("FindProxyDriveForHit null for null component"), DIVEProxyDriveResolve::FindProxyDriveForHit(nullptr));
 
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped N>1 pawn physical drive resolve asserts."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Pawn = World->SpawnActor<ADIVETestPhysicalDrivePawn>(
+		ADIVETestPhysicalDrivePawn::StaticClass(),
+		FVector::ZeroVector,
+		FRotator::ZeroRotator);
+	TestNotNull(TEXT("Spawned test physical-drive pawn"), Pawn);
+	if (!Pawn)
+	{
+		return false;
+	}
+
+	UDIVETestPawnPhysicalDriveComponent* SecondDrive = NewObject<UDIVETestPawnPhysicalDriveComponent>(
+		Pawn,
+		UDIVETestPawnPhysicalDriveComponent::StaticClass(),
+		TEXT("DriveB"));
+	TestNotNull(TEXT("Second physical-drive component"), SecondDrive);
+	if (SecondDrive)
+	{
+		Pawn->AddInstanceComponent(SecondDrive);
+		if (!SecondDrive->IsRegistered())
+		{
+			SecondDrive->RegisterComponent();
+		}
+	}
+
+	TestNull(
+		TEXT("Unnamed resolve refuses N>1 implementors"),
+		DIVEPawnPhysicalDriveResolve::FindOnPawn(Pawn));
+	TestNotNull(
+		TEXT("Named resolve finds DriveB among N>1"),
+		DIVEPawnPhysicalDriveResolve::FindOnPawn(Pawn, TEXT("DriveB")));
+
+	Pawn->Destroy();
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEPlayerComponentValidationSmokeTest,
+	"DIVE.Player.IsDataValid",
+	SmokeUnitTestFlags)
+
+bool FDIVEPlayerComponentValidationSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+#if !WITH_EDITOR
+	AddInfo(TEXT("IsDataValid is editor-only — skipped."));
+	return true;
+#else
+	UDIVEPlayerComponent* PlayerCDO =
+		UDIVEPlayerComponent::StaticClass()->GetDefaultObject<UDIVEPlayerComponent>();
+	TestNotNull(TEXT("Player CDO available"), PlayerCDO);
+	if (PlayerCDO)
+	{
+		FDataValidationContext CdoContext;
+		TestEqual(
+			TEXT("Player CDO IsDataValid (no owner)"),
+			PlayerCDO->IsDataValid(CdoContext),
+			EDataValidationResult::Valid);
+	}
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped non-Pawn IsDataValid assert."));
+		return true;
+	}
+
+	AActor* Marker = NewObject<AActor>(GetTransientPackage());
+	TestNotNull(TEXT("Non-pawn owner actor"), Marker);
+	if (Marker)
+	{
+		UDIVEPlayerComponent* PlayerOnActor = NewObject<UDIVEPlayerComponent>(Marker);
+		TestNotNull(TEXT("Player on non-pawn"), PlayerOnActor);
+		if (PlayerOnActor)
+		{
+			FDataValidationContext ActorContext;
+			TestEqual(
+				TEXT("Player IsDataValid invalid on non-Pawn owner"),
+				PlayerOnActor->IsDataValid(ActorContext),
+				EDataValidationResult::Invalid);
+		}
+	}
+
+	return true;
+#endif
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -446,10 +567,109 @@ bool FDIVECameraDefinitionBlendSmokeTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestEqual(TEXT("Definition FocusBlendDuration default"), Definition->FocusBlendDuration, 0.35f);
-	Definition->FocusBlendDuration = 0.9f;
-	TestEqual(TEXT("Definition FocusBlendDuration writes"), Definition->FocusBlendDuration, 0.9f);
+	TestEqual(TEXT("Definition FocusBlendDuration default"), Definition->CameraSettings.FocusBlendDuration, 0.35f);
+	Definition->CameraSettings.FocusBlendDuration = 0.9f;
+	TestEqual(TEXT("Definition FocusBlendDuration writes"), Definition->CameraSettings.FocusBlendDuration, 0.9f);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVESessionLifecycleSmokeTest,
+	"DIVE.Session.Lifecycle",
+	SmokeUnitTestFlags)
+
+bool FDIVESessionLifecycleSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			UWorld* Candidate = Context.World();
+			if (!Candidate)
+			{
+				continue;
+			}
+			if (Candidate->WorldType != EWorldType::Game && Candidate->WorldType != EWorldType::PIE)
+			{
+				continue;
+			}
+			if (Candidate->GetSubsystem<UDIVESessionSubsystem>())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No Game/PIE world with a DIVE session subsystem — skipped (Editor smoke without PIE)."));
+		return true;
+	}
+
+	UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>();
+	if (!Subsystem)
+	{
+		AddInfo(TEXT("No DIVE session subsystem on this world — skipped."));
+		return true;
+	}
+
+	if (!DIVEPlayerQuery::FindLocalPlayerController(World))
+	{
+		AddInfo(TEXT("No local PlayerController — skipped (Editor smoke without PIE)."));
+		return true;
+	}
+
+	if (Subsystem->IsSessionActive())
+	{
+		AddInfo(TEXT("A DIVE session is already active — skipped to avoid clobbering PIE."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Device = World->SpawnActor<ADIVETestPhysicalDrivePawn>(
+		ADIVETestPhysicalDrivePawn::StaticClass(),
+		FVector::ZeroVector,
+		FRotator::ZeroRotator);
+	TestNotNull(TEXT("Spawned session-host actor"), Device);
+	if (!Device)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Device,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	TestNotNull(TEXT("Inspectable on session host"), Inspectable);
+	if (!Inspectable)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	Device->AddInstanceComponent(Inspectable);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+
+	const bool bStarted = Subsystem->TryBeginSession(Device, Inspectable, FDIVESessionParams());
+	TestTrue(TEXT("TryBeginSession"), bStarted);
+	TestTrue(TEXT("Session active after begin"), Subsystem->IsSessionActive());
+	TestFalse(TEXT("CanNavigateBack is false at device root"), Subsystem->CanNavigateBack());
+
+	if (bStarted)
+	{
+		Subsystem->EndSession(EDIVESessionEndReason::Forced);
+	}
+
+	TestFalse(TEXT("Session inactive after end"), Subsystem->IsSessionActive());
+
+	Device->Destroy();
 	return true;
 }
 

@@ -72,40 +72,48 @@ struct DIVECORE_API FDIVEFocusTarget
 	static FDIVEFocusTarget FromAnchor(USceneComponent* InAnchor, FName InSemanticPartId);
 };
 
-/** Resolved orbit/zoom/focus camera parameters (Inspectable or DeviceDefinition). */
+/** Authored and resolved orbit/zoom/focus camera parameters (Inspectable or Device Definition). */
 USTRUCT(BlueprintType)
-struct DIVECORE_API FDIVECameraEffectiveSettings
+struct DIVECORE_API FDIVECameraSettings
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.01"))
 	float OrbitSensitivity = 2.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.01"))
 	float ZoomSensitivity = 40.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ToolTip = "Scale zoom step with orbit distance (finer near, coarser far)."))
 	bool bScaleZoomWithOrbitDistance = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ClampMin = "1.0",
+		EditCondition = "bScaleZoomWithOrbitDistance",
+		ToolTip = "Orbit distance (cm) where Zoom Sensitivity maps 1:1."))
 	float ZoomDistanceReferenceCm = DIVE::kDefaultZoomDistanceReference;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0"))
 	float MinOrbitDistanceCm = DIVE::kDefaultMinOrbitDistance;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0"))
 	float MaxOrbitDistanceCm = DIVE::kDefaultMaxOrbitDistance;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ClampMin = "1.0",
+		ToolTip = "Focus orbit distance ≈ SphereRadius × this."))
 	float FocusOrbitFitMultiplier = DIVE::kDefaultFocusOrbitFitMultiplier;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (
+		ClampMin = "0.0",
+		ToolTip = "Near zoom floor ≈ SphereRadius × this while focused."))
 	float FocusNearPaddingFactor = DIVE::kDefaultFocusNearPaddingFactor;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "1.0"))
 	float DefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|Camera", meta = (ClampMin = "0.0"))
 	float FocusBlendDuration = 0.35f;
 };
 

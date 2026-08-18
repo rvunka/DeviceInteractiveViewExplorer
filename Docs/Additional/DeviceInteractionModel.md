@@ -168,7 +168,7 @@ Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_P
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
 | **Default** | Binding `PrimaryActionIndex` when configured (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh |
-| **Physical** | Begin/update/end drive on hit control (`IDIVEProxyDrive` via `InternalProxyDriveAction`, or pawn bridge via ATSEP) |
+| **Physical** | Begin/update/end drive on hit control (`IDIVEProxyDrive` via `InternalProxyDriveAction`, or pawn physical drive via DIVEGRIPBridge) |
 | **Logical** | Planned (v1 roadmap); not yet in the enum |
 
 Drag delta while held is driven by the same action lifecycle + tick/Triggered axis if needed — still **semantic**, not «mouse moved».
@@ -176,7 +176,7 @@ Drag delta while held is driven by the same action lifecycle + tick/Triggered ax
 ### 4.5. Layer diagram (target)
 
 ```text
-  IMC (ATSEP)          IA_DIVE_*  ──►  UDIVEInputComponent::Handle*
+  IMC (ATSEP)          IA_DIVE_*  ──►  UDIVEPlayerComponent::Handle*
                                               │
                     ┌─────────────────────────┴─────────────────────────┐
                     │     EDIVESessionInteractionMode (session policy)     │
@@ -262,16 +262,15 @@ GRIP is a **hand / grab engine**, not a **slider constraint engine**. Constraint
 
 ```text
 DIVERuntime          GRIPRuntime          DIVEGRIPBridge (sibling plugin)
-(self-contained)     (self-contained)     pawn component only
+(self-contained)     (self-contained)     UObject provider on DIVE Player
      │                    │                        │
      │  pick / session    │  hand / grab           │
      └────────────────────┴────────────────────────┘
                           │
               Pawn setup (game or ATSEP)
-              - UGRIPHandComponent + UGRIPHandAimComponent
-              - UDIVEGRIPBridgeComponent (generic Physical drag)
-              - UDIVEInputComponent
-              - VR: two UGRIPHandComponent, no DIVE grab
+              - UGRIPRigComponent (slots Player + Dive; Hand is not Add Component)
+              - UDIVEPlayerComponent (GRIP Physical Drive auto-created)
+              - VR: Rig slots only, no extra DIVE grab Hand from the picker
 ```
 
 **Option A — Device proxy drive (sliders / hinged panels)**
@@ -280,17 +279,17 @@ DIVERuntime          GRIPRuntime          DIVEGRIPBridge (sibling plugin)
 2. In **Physical** mode, session routes pick → device `IDIVEProxyDrive` **first** (deterministic DOF).
 3. GRIP not involved on monitor for these controls; VR still uses GRIP on the same mesh.
 
-**Option B — Pawn GRIP bridge (generic simulating-mesh drag)**
+**Option B — Pawn physical drive (generic simulating-mesh drag)**
 
-1. Pawn keeps **two** grip instances when DIVE must not steal the player hand:
-   - `GRIP Hand` / `GRIP Hand Player` — gameplay grab
-   - `GRIP Hand Dive` — Physical drag (+ matching Aim if needed)
-   - `UDIVEGRIPBridgeComponent`: prefer **GRIP Hand** / **GRIP Hand Aim** component pickers; names (`GRIP Hand Dive`) are fallback
-2. Single-Hand fallback: leave Dive name empty only when there is **one** Hand on the pawn (legacy hijack + warning).
+1. Pawn keeps **two** grip instances when DIVE must not steal the player hand — author them as **GRIP Rig** slots, not as Hand from Add Component:
+   - Slot **Player** → `GRIP Hand` — gameplay grab
+   - Slot **Dive** → `GRIP Hand Dive` — Physical drag
+   - DIVE Player **Physical Drive Provider**: picker → `UGRIPRigComponent::GetHand(Dive)` (property **GRIP Rig Slot**, default `Dive`) → name `GRIP Hand Dive` (no sole-Hand fallback)
+2. Single-Hand fallback: unresolved Dive picker/slot/name + **one** Hand on the pawn → provider uses that Hand once and logs a warning.
 3. In **Physical** mode, if no device proxy handles the pick, session falls back to `IDIVEPawnPhysicalDrive` on the pawn.
-4. Bridge calls GRIP Hand API (`TryGrabFromHit`, `SetHandWorldTransform`, aim suppress **on the Dive Aim**) — see GRIP `INTEGRATION.md` / multi-hand slots.
-5. Cursor-follow drag: bridge deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate. The session does **not** push `ScreenDelta`; value HUD / `OnInteractionValueChanged` are not fed from this path (device `IDIVEProxyDrive` still is).
-6. **Do not** add bridge components to device actors; one bridge per pawn.
+4. Provider calls GRIP Hand API (`TryGrabFromHit`, `SetHandWorldTransform`, aim suppress via Rig `SetSlotAimSuppressed` on Dive) — see GRIP `INTEGRATION.md` / multi-hand slots.
+5. Cursor-follow drag: provider deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate. The session does **not** push `ScreenDelta`; value HUD / `OnInteractionValueChanged` are not fed from this path (device `IDIVEProxyDrive` still is).
+6. Do not add a Physical-drive ActorComponent; the provider is a UObject on DIVE Player.
 
 See GRIP [`ARCHITECTURE.md`](../../GraspRigidbodyInertialPhysics/Docs/ARCHITECTURE.md) § Grip instances and [`MultiInstance_Anchor_Architecture.md`](../../GraspRigidbodyInertialPhysics/Docs/MultiInstance_Anchor_Architecture.md).
 
@@ -299,7 +298,7 @@ Use **B** for «grab and pull» on simulating bodies (admin **Simulate Physics**
 **Routing priority in Physical mode**
 
 ```text
-Pick hit → IDIVEProxyDrive (device) → IDIVEPawnPhysicalDrive (pawn bridge) → fail (Warning log)
+Pick hit → IDIVEProxyDrive (device) → IDIVEPawnPhysicalDrive (pawn physical drive) → fail (Warning log)
 ```
 
 ### Dependency summary

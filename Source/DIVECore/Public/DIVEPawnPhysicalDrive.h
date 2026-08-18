@@ -15,7 +15,7 @@ class UDIVEPawnPhysicalDrive : public UInterface
 };
 
 /**
- * Pawn-side Physical drive backend (e.g. DIVEGRIPBridge).
+ * Pawn-side Physical drive backend (e.g. DIVE GRIP Physical Drive on DIVE Player).
  * Cursor motion is owned by the backend (cursor-pull / tick) — the session does not push screen deltas.
  */
 class DIVECORE_API IDIVEPawnPhysicalDrive
@@ -39,7 +39,7 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
 	void HandlePawnPhysicalManualRotateReleased();
 
-	/** Optional: wheel while pawn-bridge grab is active (e.g. GRIP hold distance). No-op if unsupported. */
+	/** Optional: wheel while pawn physical drive is active (e.g. GRIP hold distance). No-op if unsupported. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|PawnPhysicalDrive")
 	void HandlePawnPhysicalGrabHoldDistanceScroll(float WheelDelta);
 };
