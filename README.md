@@ -9,7 +9,7 @@ DIVE provides:
 - Orbit camera rig for device-focused sessions
 - **Explicit focus** — context menu or `HandleFocusUnderCursor` (not the default meaning of primary action in Interact mode)
 - **Interaction modes** — Interact (catalog primary / knobs) / Physical (GRIP grab of free bodies)
-- **In-session context menu** — component **Bindings** (Focus/Isolate; Admin if Seed Admin Defaults) + **Action Catalog** (`UDIVEDeviceAction`). Standing-VR reuses the same action graph via a host action host — it does **not** open the camera session (see `Docs/Design_PhysicalControls_OneState_TwoInputs.md` §8–§10).
+- **In-session context menu** — component **Bindings** (Focus/Isolate/Simulate/Delete) + **Action Catalog** (`UDIVEDeviceAction`). Standing-VR reuses the same action graph via a host action host — it does **not** open the camera session (see `Docs/Design_PhysicalControls_OneState_TwoInputs.md` §8–§10).
 - **Primary action** — `PrimaryActionIndex` on binding; among matches LMB uses specificity (Name > PartId > Tag > Any), ties keep earlier Bindings entry (`IA_DIVE_PrimaryAction` → `HandlePrimaryAction*`); hover overlay under **DIVE | Pick | Hover**
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
 - **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** — monitor adapter for the interact verb (tier 2; host implements; zero in-plugin backends)

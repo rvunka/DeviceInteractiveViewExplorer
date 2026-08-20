@@ -3,7 +3,7 @@
 > **Дата:** 2026-08-20 · **Ревизия 3** (ревизия 2 = два глагола; здесь: VR не открывает камеру DIVE, а подтягивает **граф действий**; world-меню на хите; три пояса ACTS / панель / GRIP).
 > **Статус:** дизайн-решение для яруса 2 и standing-VR (см. аудит DIVE 2026-08-19 §10.8). Ярус 1 (кинематические continuous-действия в Interact) не отменяется. Код яруса 2 / action host **не** начинать без триггера.
 > **Затрагивает:** слой устройств (control-компоненты), GRIP (хват тел), DIVE (сессия **и** граф действий), DIVEGRIPBridge, хост IMC / будущий VR-интерактор.
-> **Related:** [`Additional/DeviceInteractionModel.md`](Additional/DeviceInteractionModel.md).
+> **Related:** [`Additional/DeviceInteractionModel.md`](Additional/DeviceInteractionModel.md), [`Plugin_Architecture_Principles.md`](../../../Docs/Plugin_Architecture_Principles.md).
 
 ---
 

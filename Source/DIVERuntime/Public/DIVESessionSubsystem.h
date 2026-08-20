@@ -29,8 +29,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	Action,
 	const FDIVEActionContext&,
 	Context,
-	float,
-	NormalizedValue);
+	const FDIVEInteractionValue&,
+	Value);
 
 struct FDIVESessionFocusOps;
 struct FDIVESessionIsolationOps;
@@ -206,14 +206,17 @@ public:
 
 	bool TryBeginContinuousAction(UDIVEContinuousDeviceAction* Action, const FDIVEActionContext& Context);
 
-	void NotifyInteractionValueChanged(UDIVEDeviceAction* Action, const FDIVEActionContext& Context, float NormalizedValue);
+	void NotifyInteractionValueChanged(
+		UDIVEDeviceAction* Action,
+		const FDIVEActionContext& Context,
+		const FDIVEInteractionValue& Value);
 	void HandleWorldBeginTearDown(UWorld* InWorld);
 
 	UFUNCTION()
 	void HandleContinuousActionValueChanged(
 		UDIVEDeviceAction* Action,
 		const FDIVEActionContext& Context,
-		float NormalizedValue);
+		const FDIVEInteractionValue& Value);
 
 	friend struct FDIVESessionFocusOps;
 	friend struct FDIVESessionIsolationOps;

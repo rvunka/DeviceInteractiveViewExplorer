@@ -3,6 +3,7 @@
 #include "DIVEDeviceAction.h"
 
 #include "Engine/World.h"
+#include "Internationalization/Text.h"
 
 bool UDIVEActionCondition::Evaluate_Implementation(const FDIVEActionContext& Context) const
 {
@@ -108,9 +109,78 @@ void UDIVEContinuousDeviceAction::MarkInteractionActive(const FDIVEActionContext
 	ActiveInteractionContext = Context;
 }
 
+namespace
+{
+FDIVEInteractionValue ClampNormalized(FDIVEInteractionValue Value)
+{
+	Value.Normalized = FMath::Clamp(Value.Normalized, 0.f, 1.f);
+	return Value;
+}
+
+FText FormatNumber(const float Number, const int32 MaxFractionDigits)
+{
+	FNumberFormattingOptions Options;
+	Options.MinimumFractionalDigits = 0;
+	Options.MaximumFractionalDigits = MaxFractionDigits;
+	Options.RoundingMode = ERoundingMode::HalfFromZero;
+	return FText::AsNumber(Number, &Options);
+}
+}
+
+FText DIVE::FormatInteractionValueReadout(const FText& Label, const FDIVEInteractionValue& Value)
+{
+	switch (Value.Unit)
+	{
+	case EDIVEInteractionValueUnit::Degrees:
+		return FText::Format(
+			NSLOCTEXT("DIVE", "ValueReadoutDegrees", "{0}: {1}°"),
+			Label,
+			FormatNumber(Value.Absolute, 1));
+	case EDIVEInteractionValueUnit::Turns:
+		if (Value.AbsoluteMax > KINDA_SMALL_NUMBER)
+		{
+			return FText::Format(
+				NSLOCTEXT("DIVE", "ValueReadoutTurnsSpan", "{0}: {1} / {2}"),
+				Label,
+				FormatNumber(Value.Absolute, 2),
+				FormatNumber(Value.AbsoluteMax, 2));
+		}
+		return FText::Format(
+			NSLOCTEXT("DIVE", "ValueReadoutTurns", "{0}: {1}"),
+			Label,
+			FormatNumber(Value.Absolute, 2));
+	case EDIVEInteractionValueUnit::Centimeters:
+		if (Value.AbsoluteMax > KINDA_SMALL_NUMBER)
+		{
+			return FText::Format(
+				NSLOCTEXT("DIVE", "ValueReadoutCentimetersSpan", "{0}: {1} / {2} cm"),
+				Label,
+				FormatNumber(Value.Absolute, 2),
+				FormatNumber(Value.AbsoluteMax, 2));
+		}
+		return FText::Format(
+			NSLOCTEXT("DIVE", "ValueReadoutCentimeters", "{0}: {1} cm"),
+			Label,
+			FormatNumber(Value.Absolute, 2));
+	case EDIVEInteractionValueUnit::None:
+	default:
+		return FText::Format(
+			NSLOCTEXT("DIVE", "ValueReadoutNormalized", "{0}: {1}"),
+			Label,
+			FormatNumber(Value.Normalized, 2));
+	}
+}
+
 void UDIVEContinuousDeviceAction::NotifyValueChanged(const float NormalizedValue)
 {
-	OnValueChanged.Broadcast(this, ActiveInteractionContext, FMath::Clamp(NormalizedValue, 0.f, 1.f));
+	FDIVEInteractionValue Value;
+	Value.Normalized = NormalizedValue;
+	NotifyInteractionValue(Value);
+}
+
+void UDIVEContinuousDeviceAction::NotifyInteractionValue(const FDIVEInteractionValue& Value)
+{
+	OnValueChanged.Broadcast(this, ActiveInteractionContext, ClampNormalized(Value));
 }
 
 void UDIVEContinuousDeviceAction::NotifyInteractionCompleted()

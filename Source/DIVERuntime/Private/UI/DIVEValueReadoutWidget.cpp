@@ -5,7 +5,6 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
-#include "UI/SharedUmgStyle.h"
 
 UDIVEValueReadoutWidget::UDIVEValueReadoutWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -32,17 +31,21 @@ void UDIVEValueReadoutWidget::NativeOnInitialized()
 	PanelBorder->SetContent(LabelText);
 }
 
-void UDIVEValueReadoutWidget::SetReadout(FText Label, float NormalizedValue)
+void UDIVEValueReadoutWidget::SetReadout(FText Label, const FDIVEInteractionValue& Value)
 {
 	if (LabelText)
 	{
-		LabelText->SetText(FText::Format(
-			NSLOCTEXT("DIVE", "ValueReadoutFormat", "{0}: {1}"),
-			Label,
-			FText::AsNumber(NormalizedValue)));
+		LabelText->SetText(DIVE::FormatInteractionValueReadout(Label, Value));
 	}
 
 	SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UDIVEValueReadoutWidget::SetNormalizedReadout(FText Label, const float NormalizedValue)
+{
+	FDIVEInteractionValue Value;
+	Value.Normalized = FMath::Clamp(NormalizedValue, 0.f, 1.f);
+	SetReadout(MoveTemp(Label), Value);
 }
 
 void UDIVEValueReadoutWidget::ClearReadout()

@@ -44,6 +44,7 @@ private:
 
 	const FDIVETargetQuery* GetTargetQuery() const;
 	UDIVEInspectableComponent* ResolvePreviewInspectable() const;
+	UDIVEInspectableComponent* ResolveLiveInspectable() const;
 	void InvalidateMatchedPreview();
 	void EnsureMatchedPreview() const;
 	void CollectMatchingPrimitives(TArray<UPrimitiveComponent*>& OutPrimitives) const;

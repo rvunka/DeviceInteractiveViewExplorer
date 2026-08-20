@@ -75,6 +75,40 @@ struct DIVECORE_API FDIVEActionDisplayState
 	bool bChecked = false;
 };
 
+UENUM(BlueprintType)
+enum class EDIVEInteractionValueUnit : uint8
+{
+	None UMETA(DisplayName = "None"),
+	Degrees UMETA(DisplayName = "Degrees"),
+	Turns UMETA(DisplayName = "Turns"),
+	Centimeters UMETA(DisplayName = "Centimeters")
+};
+
+/** Numeric payload for a continuous gesture. Normalized is always 0..1; Absolute is the domain number. */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEInteractionValue
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	float Normalized = 0.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	float Absolute = 0.f;
+
+	/** 0 = readout omits a max (e.g. unlimited rotary). */
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	float AbsoluteMax = 0.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	EDIVEInteractionValueUnit Unit = EDIVEInteractionValueUnit::None;
+};
+
+namespace DIVE
+{
+	DIVECORE_API FText FormatInteractionValueReadout(const FText& Label, const FDIVEInteractionValue& Value);
+}
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FOnDIVEActionExecuted,
 	UDIVEDeviceAction*,
@@ -88,8 +122,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	Action,
 	const FDIVEActionContext&,
 	Context,
-	float,
-	NormalizedValue);
+	const FDIVEInteractionValue&,
+	Value);
 
 UCLASS(Abstract, Blueprintable, BlueprintType, EditInlineNew, DefaultToInstanced,
 	meta = (DisplayName = "DIVE Action Condition"))
@@ -200,12 +234,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action")
 	bool IsInteractionActive() const { return bInteractionActive; }
 
-	/** Called by the session before Begin so NotifyValueChanged in Begin has Context. */
+	/** Called by the session before Begin so NotifyInteractionValue / NotifyValueChanged in Begin has Context. */
 	void MarkInteractionActive(const FDIVEActionContext& Context = FDIVEActionContext());
 
 	UFUNCTION(BlueprintCallable, Category = "Action", meta = (
-		ToolTip = "Broadcast OnValueChanged (feeds the session value HUD). Context is the one from Begin."))
+		ToolTip = "Broadcast OnValueChanged with Normalized only (Unit = None). Context is the one from Begin."))
 	void NotifyValueChanged(float NormalizedValue);
+
+	UFUNCTION(BlueprintCallable, Category = "Action", meta = (
+		ToolTip = "Broadcast OnValueChanged with Absolute + Unit for the value HUD. Normalized is clamped 0..1."))
+	void NotifyInteractionValue(const FDIVEInteractionValue& Value);
 
 	UFUNCTION(BlueprintCallable, Category = "Action", meta = (
 		ToolTip = "Self-complete; session closes the continuous slot on the next update."))

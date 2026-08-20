@@ -28,7 +28,8 @@ public class DIVEUnrealEditor : ModuleRules
 			"PropertyEditor",
 			// Slate SComboBox in DIVEActionBindingCustomization instantiates EKeys (LNK2019 without this).
 			"InputCore",
-			"DIVEUncooked"
+			"DIVEUncooked",
+			"Kismet"
 		});
 	}
 }

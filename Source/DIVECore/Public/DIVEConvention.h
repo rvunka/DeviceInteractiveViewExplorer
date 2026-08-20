@@ -20,5 +20,11 @@ inline const FName kSectionAdmin = TEXT("Admin");
 inline const FName kBindingBuiltInStandard = TEXT("BuiltIn.Standard");
 inline const FName kBindingBuiltInAdmin = TEXT("BuiltIn.Admin");
 
+/** Named inners created by Inspectable seed / Add Admin Defaults. Must never exist on the native CDO. */
+inline constexpr TCHAR kSeededFocusAction[] = TEXT("DefaultFocusAction");
+inline constexpr TCHAR kSeededIsolateAction[] = TEXT("DefaultIsolateAction");
+inline constexpr TCHAR kSeededSimulatePhysicsAction[] = TEXT("DefaultSimulatePhysicsAction");
+inline constexpr TCHAR kSeededDeleteMeshAction[] = TEXT("DefaultDeleteMeshAction");
+
 DIVECORE_API FString NormalizeComponentToken(FString Token);
 }

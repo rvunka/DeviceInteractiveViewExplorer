@@ -81,19 +81,21 @@ public:
 		ToolTip = "Shared Data Asset bindings/sections; merged with component Bindings."))
 	TObjectPtr<UDIVEActionCatalogAsset> ActionCatalog;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
-		DisplayName = "Seed Admin Defaults",
-		ToolTip = "When Bindings are empty at first init, also seed Simulate Physics / Delete Mesh. Uncheck in Details to remove the seeded Admin binding (custom Admin rows with another BindingId are kept). Hidden in Shipping regardless."))
-	bool bSeedAdminDefaults = true;
+#if WITH_EDITOR
+	UFUNCTION(CallInEditor, Category = "DIVE|Actions", meta = (
+		DisplayName = "Add Admin Defaults",
+		ToolTip = "Puts Simulate Physics and Delete Mesh into Bindings. Creates the Admin binding if missing, or fills it if you deleted those actions. Safe to click again if they are already there."))
+	void AddAdminDefaultBindings();
+#endif
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
 		DisplayName = "Bindings",
-		ToolTip = "Local bindings (defaults: Focus/Isolate; Admin if Seed Admin Defaults). Clear for none."))
+		ToolTip = "Filled when you add the component (Focus, Isolate, Simulate Physics, Delete Mesh). Delete any binding or action to drop it."))
 	TArray<FDIVEActionBinding> Bindings;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
 		DisplayName = "Sections",
-		ToolTip = "Menu sections for local Bindings (Standard; Admin if Seed Admin Defaults)."))
+		ToolTip = "Menu sections for local Bindings (Standard, Admin)."))
 	TArray<FDIVEMenuSection> Sections;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
@@ -263,19 +265,19 @@ public:
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 
+	virtual void OnRegister() override;
+	virtual void OnComponentCreated() override;
 	virtual void PostInitProperties() override;
-
-#if WITH_EDITOR
-	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
-#endif
+	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
 
 private:
 	UPROPERTY(Transient)
 	mutable FDIVEPartTree SemanticRegistry;
 
+	bool ShouldSkipDefaultBindingSeed() const;
 	void SeedDefaultBindingsIfNeeded();
 	void EnsureSeededAdminDefaults();
-	void RemoveSeededAdminDefaults();
+	void InstanceForeignPrivateActions();
 
 	FName ResolveTargetKeyForQuery(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
 	bool MatchesComponentNameValue(const UPrimitiveComponent* Primitive, FName MatchValue) const;

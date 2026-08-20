@@ -5,7 +5,6 @@
 #include "Actions/DIVEBuiltInActions.h"
 #include "DIVECameraRig.h"
 #include "DIVEInspectableComponent.h"
-#include "DIVELog.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/DIVESessionFocusOps.h"
@@ -588,7 +587,7 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 		return false;
 	}
 
-	// Mark + HUD subscribe before Begin: Begin's NotifyValueChanged must have Context and a listener.
+	// Mark + HUD subscribe before Begin: Begin's NotifyInteractionValue must have Context and a listener.
 	Action->MarkInteractionActive(Context);
 	Action->OnValueChanged.AddUniqueDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
 
@@ -596,6 +595,7 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 	{
 		Action->OnValueChanged.RemoveDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
 		Action->EndInteraction(false);
+		NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), FDIVEInteractionValue());
 		return false;
 	}
 
@@ -615,17 +615,17 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 void UDIVESessionSubsystem::HandleContinuousActionValueChanged(
 	UDIVEDeviceAction* Action,
 	const FDIVEActionContext& Context,
-	float NormalizedValue)
+	const FDIVEInteractionValue& Value)
 {
-	NotifyInteractionValueChanged(Action, Context, NormalizedValue);
+	NotifyInteractionValueChanged(Action, Context, Value);
 }
 
 void UDIVESessionSubsystem::NotifyInteractionValueChanged(
 	UDIVEDeviceAction* Action,
 	const FDIVEActionContext& Context,
-	float NormalizedValue)
+	const FDIVEInteractionValue& Value)
 {
-	OnInteractionValueChanged.Broadcast(Action, Context, NormalizedValue);
+	OnInteractionValueChanged.Broadcast(Action, Context, Value);
 }
 
 void UDIVESessionSubsystem::HandleActivePawnPhysicalManualRotatePressed()

@@ -192,7 +192,7 @@ protected:
 	void HandleInteractionValueChanged(
 		UDIVEDeviceAction* Action,
 		const FDIVEActionContext& Context,
-		float NormalizedValue);
+		const FDIVEInteractionValue& Value);
 
 	void BindSessionDelegates();
 	void UnbindSessionDelegates();

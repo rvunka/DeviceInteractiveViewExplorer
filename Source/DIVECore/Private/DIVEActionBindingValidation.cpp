@@ -16,8 +16,7 @@ bool ValidateSections(
 	FDataValidationContext& Context)
 {
 	// Built-ins are implicitly valid for bindings even when absent from Sections.
-	// Do not pre-seed them into the duplicate set: the default Inspectable seed
-	// (and catalogs that declare a Header) author Standard/Admin rows on purpose.
+	// Do not pre-seed them into the duplicate set: Inspectable / catalogs may author Standard/Admin rows.
 	bool bValid = true;
 	for (int32 SectionIndex = 0; SectionIndex < Sections.Num(); ++SectionIndex)
 	{

@@ -7,7 +7,7 @@
 
 #include "DIVEValueReadoutWidget.generated.h"
 
-/** Minimal on-screen value readout for continuous actions. Host may replace via UI component class override. */
+/** On-screen value readout. Formats FDIVEInteractionValue; host may replace via ValueReadoutWidgetClass. */
 UCLASS()
 class DIVERUNTIME_API UDIVEValueReadoutWidget : public UUserWidget
 {
@@ -17,7 +17,10 @@ public:
 	UDIVEValueReadoutWidget(const FObjectInitializer& ObjectInitializer);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
-	void SetReadout(FText Label, float NormalizedValue);
+	void SetReadout(FText Label, const FDIVEInteractionValue& Value);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
+	void SetNormalizedReadout(FText Label, float NormalizedValue);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
 	void ClearReadout();

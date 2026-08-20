@@ -91,7 +91,7 @@ Legacy PIE (`UDIVELegacyKbmInputComponent`): **RMB** = context menu, **G** = foc
 
 ### Context menu
 
-In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; **Seed Admin Defaults** seeds Simulate/Delete; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`** (winner = most specific Match Mode: Name > PartId > Tag > Any; equal specificity keeps the earlier binding in the Bindings array; menu/section order follows those arrays). Binding Details shows **Targets: N** for the current Match query (Select highlights matching primitives on a placed device). Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEPlayerComponent`** on the player character owns the menu widget. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
+In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal **Bindings** on `UDIVEInspectableComponent` (editable/removable; **Add Admin Defaults** restores Simulate/Delete if missing; Admin hidden in Shipping). Device ops from **Action Catalog** (Content Browser → **DIVE → Action Catalog**) and/or extra component Bindings. Create action / continuous / condition Blueprints via **DIVE → Device Action / Continuous Device Action / Action Condition**. Optional section **Header** labels above separators. **PrimaryActionIndex** on a matching binding drives **`HandlePrimaryActionPressed`** (winner = most specific Match Mode: Name > PartId > Tag > Any; equal specificity keeps the earlier binding in the Bindings array; menu/section order follows those arrays). Binding Details shows **Matched: N** for the current Match query (**Select** highlights matching primitives on a placed device or Blueprint viewport preview). Hover: **DIVE | Pick | Hover**. Exclusions: **Pick Interaction Exclusions**. **`UDIVEPlayerComponent`** on the player character owns the menu widget. Focus stack undo: `IA_DIVE_Back`. Pick resolves to **primitives** (or device root); anchors are viewpoints / PartIds, not a separate primary-pick focus path.
 
 ## Device interaction (direct manipulation)
 
@@ -138,12 +138,12 @@ Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.Bindin
 
 | Smoke | What it covers |
 |-------|----------------|
-| `DIVE.ContextMenu.DefaultBindings` | CDO Bindings, Focus, AnyPrimitive, Admin header |
+| `DIVE.ContextMenu.DefaultBindings` | Native CDO Bindings empty; instance seeds public Focus/Admin; register instances foreign private actions |
 | `DIVE.Actions.BindingResolve` | Primary index, specificity, continuous/notify, Focus `CanExecute` |
 | `DIVE.Actions.ExecutionWorld` | Catalog action world injection |
 | `DIVE.Actions.CollectMatchingPrimitives` | CDO Collect empty; live owner + tagged sphere when a world exists |
 | `DIVE.Actions.ComponentNameMatch` | Name normalize / FocusId is not a name match |
-| `DIVE.Inspectable.IsDataValid` | Authored Standard+Admin valid; duplicate SectionId fails; live Inspectable Valid; Seed Admin Defaults off removes BuiltIn.Admin |
+| `DIVE.Inspectable.IsDataValid` | Authored Standard+Admin valid; duplicate SectionId fails; live Inspectable Valid; Add Admin Defaults restores BuiltIn.Admin |
 | `DIVE.Drive.Mapping` | Camera-basis angle / travel helpers |
 | `DIVE.Drive.BuiltInActions` | Rotary/Threaded begin-update-cancel on a live primitive |
 | `DIVE.ProxyDrive.ResolveHierarchy` | Registry on root resolves a child-actor hit; N>1 registries → null |
@@ -161,7 +161,7 @@ Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.Bindin
 
 **DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (`ProjectDescriptor` / `Plugins.ReadAvailablePlugins` in `DIVEGRIPBridge.Build.cs` and `DIVERuntimeDev.Build.cs`). Unlisted project plugins still follow `IsEnabledByDefault` (GRIP is not required in the host `.uproject`). Without GRIP the bridge compiles as a no-op stub. DIVE `.uplugin` must **not** depend on `DIVEGRIPBridge` (cycle) or Optional GRIP (GRIP is owned by the bridge / host). No Enhanced Input assets or `BindKey` in production Runtime modules.
 
-**Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn drive. Production resolve requires **exactly one** implementor (N>1 unnamed → nullptr). Pawn-drive drag does not broadcast `OnInteractionValueChanged` / value HUD. Device `IDIVEProxyDrive` (when implemented) receives deltas; `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta; continuous actions call `NotifyValueChanged` to feed the HUD.
+**Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn drive. Production resolve requires **exactly one** implementor (N>1 unnamed → nullptr). Pawn-drive drag does not broadcast `OnInteractionValueChanged` / value HUD. Device `IDIVEProxyDrive` (when implemented) receives deltas; `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta; rotary/threaded call `NotifyInteractionValue` (`FDIVEInteractionValue`); proxy forward uses `NotifyValueChanged` (Normalized only).
 
 **Diagnostics:** `DIVE.DumpDevice` / `DIVE.DumpAll` live in **`DIVEUncooked`** (editor menu + file write). Console commands are registered from **`DIVERuntimeDev`**. `DIVEUnrealEditor` does not link RuntimeDev.
 

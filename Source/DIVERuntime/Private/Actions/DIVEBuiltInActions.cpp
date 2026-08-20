@@ -6,7 +6,6 @@
 #include "DIVEDriveMapping.h"
 #include "DIVEProxyDrive.h"
 #include "DIVEProxyDriveResolve.h"
-#include "DIVEProxyDriveTypes.h"
 #include "DIVESessionSubsystem.h"
 #include "Engine/World.h"
 
@@ -321,7 +320,7 @@ bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 	StartRelativeRotation = Target->GetRelativeRotation();
 	ViewRotation = Context.ViewRotation;
 	AccumulatedDegrees = 0.f;
-	NotifyValueChanged(GetNormalizedValue());
+	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
 
@@ -354,7 +353,7 @@ void UDIVERotaryDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDe
 	}
 
 	ApplyAccumulated();
-	NotifyValueChanged(GetNormalizedValue());
+	NotifyInteractionValue(MakeInteractionValue());
 }
 
 void UDIVERotaryDriveAction::EndInteraction_Implementation(const bool bCommit)
@@ -401,6 +400,16 @@ float UDIVERotaryDriveAction::GetNormalizedValue() const
 	return (AccumulatedDegrees - Lo) / Span;
 }
 
+FDIVEInteractionValue UDIVERotaryDriveAction::MakeInteractionValue() const
+{
+	FDIVEInteractionValue Value;
+	Value.Normalized = GetNormalizedValue();
+	Value.Absolute = AccumulatedDegrees;
+	Value.AbsoluteMax = 0.f;
+	Value.Unit = EDIVEInteractionValueUnit::Degrees;
+	return Value;
+}
+
 UDIVEThreadedDriveAction::UDIVEThreadedDriveAction()
 {
 	DisplayName = NSLOCTEXT("DIVE", "ThreadedDrive", "Unscrew");
@@ -429,7 +438,7 @@ bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEAction
 	ViewRotation = Context.ViewRotation;
 	AccumulatedTurns = 0.f;
 	bReleased = false;
-	NotifyValueChanged(0.f);
+	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
 
@@ -451,7 +460,7 @@ void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(FVector2D Screen
 	AccumulatedTurns = FMath::Clamp(AccumulatedTurns + SignedTurns, 0.f, TurnsToRelease);
 
 	ApplyAccumulated();
-	NotifyValueChanged(GetNormalizedValue());
+	NotifyInteractionValue(MakeInteractionValue());
 
 	if (AccumulatedTurns >= TurnsToRelease - KINDA_SMALL_NUMBER)
 	{
@@ -505,7 +514,7 @@ void UDIVEThreadedDriveAction::ReleaseTarget()
 	bReleased = true;
 	Target->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	Target->SetSimulatePhysics(true);
-	NotifyValueChanged(1.f);
+	NotifyInteractionValue(MakeInteractionValue());
 	NotifyInteractionCompleted();
 }
 
@@ -516,4 +525,14 @@ float UDIVEThreadedDriveAction::GetNormalizedValue() const
 		return 1.f;
 	}
 	return FMath::Clamp(AccumulatedTurns / TurnsToRelease, 0.f, 1.f);
+}
+
+FDIVEInteractionValue UDIVEThreadedDriveAction::MakeInteractionValue() const
+{
+	FDIVEInteractionValue Value;
+	Value.Normalized = GetNormalizedValue();
+	Value.Absolute = AccumulatedTurns;
+	Value.AbsoluteMax = TurnsToRelease;
+	Value.Unit = EDIVEInteractionValueUnit::Turns;
+	return Value;
 }

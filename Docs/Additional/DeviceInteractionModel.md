@@ -99,7 +99,7 @@ IDIVEProxyDrive (DIVECore) — contract-goal for monitor interact (0 in-plugin i
 - **Interact (tier 1):** Interact-mode primary / menu hold-drag on the built-in drive actions.
 - **Interact (tier 2):** session pick → `BeginProxyDrive` / `ApplyProxyDriveDelta`. Standing-VR: host action host on the same Catalog / Bindings (no camera).
 - **Grab:** GRIP (bridge cursor-pull / VR grip button) on free bodies only.
-- **Sounds:** device component when value/angle actually changes (tier 2); or action/device event from `NotifyValueChanged` / K2 Action Event (tier 1).
+- **Sounds:** device component when value/angle actually changes (tier 2); or action/device event from `NotifyInteractionValue` / `NotifyValueChanged` / K2 Action Event (tier 1).
 
 ### DIVE plugin (stays thin)
 
@@ -174,7 +174,7 @@ Switch mode via `SetInteractionMode` from ATSEP (`IA_DIVE_SetMode_*` or cycle ac
 Flow:
 
 1. `HandleContextMenuRequested` → pick at screen position → build entry list.
-2. **Default entries**: component **Bindings** (Focus, Isolate; Admin if **Seed Admin Defaults** / unless removed; hidden in Shipping).
+2. **Default entries**: component **Bindings** (Focus, Isolate, Simulate Physics, Delete Mesh unless removed; hidden in Shipping).
 3. **Device extensions**: **Action Catalog** (and/or extra Bindings) — `UDIVEDeviceAction` instances.
 4. Custom row click → **`UDIVEDeviceAction::Execute`** / continuous **`BeginInteraction`**. See **`QUICKSTART.md`** §1.
 5. Display state (enabled / checked / visible / label) comes from **`GetDisplayState`** on the action — no `Is_*` reflection. Default: `CanExecute` false → gray; **Condition** false → hidden.
@@ -222,7 +222,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 |-------------------|-------|
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Interact / Physical |
 | `HandlePrimaryAction*` | Interact → binding `PrimaryActionIndex` (when set); hover overlay; Physical → pawn GRIP grab (code today also tries device proxy first) |
-| Context menu + widget | Focus, Isolate (Bindings); Admin if Seed Admin Defaults (hidden in Shipping); custom from Catalog |
+| Context menu + widget | Focus, Isolate, Simulate, Delete (Bindings; Admin hidden in Shipping); custom from Catalog |
 | Action Catalog / Bindings + `UDIVEDeviceAction` | Object actions; continuous via shared interaction slot |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
 | `UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` | Interact-mode knobs/nuts; author on the device via Bindings / Catalog |
@@ -263,7 +263,7 @@ Prefer **device registry** at session start (primitive / tag → control compone
 - **Interact (tier 2, target):** same gesture / binding forwards to `IDIVEProxyDrive` / registry. Not yet the Physical-mode pick path.
 - **Grab (Physical):** GRIP bridge cursor-pull / VR grip button on free bodies.
 - **Physical pick (code today, pre-rev2):** `HandlePrimaryAction*` → registry or `IDIVEProxyDrive` first, then pawn GRIP. Move proxy off this path when tier 2 starts.
-- **Value HUD:** `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta. Continuous actions call `NotifyValueChanged`.
+- **Value HUD:** `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta (`NotifyValueChanged`). Rotary/Threaded send `FDIVEInteractionValue` via `NotifyInteractionValue` (signed Absolute + Unit; widget formats).
 - **Sounds / MESS:** only in device component when value changes.
 
 **Do not** hang the interface on `UStaticMeshComponent` — put it on a **control component** on the actor and register which primitives it owns.

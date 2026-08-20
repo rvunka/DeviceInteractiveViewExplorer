@@ -8,7 +8,6 @@
 #include "DIVEPawnPhysicalDrive.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
 #include "DIVEProxyDriveResolve.h"
-#include "DIVEProxyDriveTypes.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVECameraRig.h"
 #include "DIVESessionSubsystem.h"
@@ -59,7 +58,7 @@ void FDIVESessionPhysicalDriveOps::ClearProxyDrive(UDIVESessionSubsystem& Sessio
 
 	EndActivePhysicalDrive(Session, false);
 	ResetPhysicalDriveState(Session);
-	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), 0.f);
+	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), FDIVEInteractionValue());
 }
 
 bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
@@ -201,7 +200,7 @@ void FDIVESessionPhysicalDriveOps::EndProxyDrive(UDIVESessionSubsystem& Session,
 
 	EndActivePhysicalDrive(Session, bCommit);
 	ResetPhysicalDriveState(Session);
-	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), 0.f);
+	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), FDIVEInteractionValue());
 }
 
 void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotatePressed(UDIVESessionSubsystem& Session)

@@ -14,12 +14,29 @@
 #include "Materials/MaterialInterface.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/ShapeComponent.h"
+#include "UObject/ObjectSaveContext.h"
+#include "UObject/Package.h"
 
 #if WITH_EDITOR
 #include "DIVEActionBindingValidation.h"
 #include "Misc/DataValidation.h"
 #include "UObject/UnrealType.h"
 #endif
+
+namespace
+{
+template <typename TAction>
+TAction* GetOrCreateNamedAction(UObject* Outer, const TCHAR* Name)
+{
+	if (TAction* Existing = FindObject<TAction>(Outer, Name))
+	{
+		Existing->SetFlags(RF_Public | RF_Transactional);
+		return Existing;
+	}
+
+	return NewObject<TAction>(Outer, Name, RF_Public | RF_Transactional);
+}
+}
 
 UDIVEInspectableComponent::UDIVEInspectableComponent()
 {
@@ -32,29 +49,35 @@ void UDIVEInspectableComponent::PostInitProperties()
 	SeedDefaultBindingsIfNeeded();
 }
 
-#if WITH_EDITOR
-void UDIVEInspectableComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void UDIVEInspectableComponent::OnComponentCreated()
 {
-	Super::PostEditChangeProperty(PropertyChangedEvent);
-
-	const FName PropertyName = PropertyChangedEvent.GetMemberPropertyName();
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, bSeedAdminDefaults))
-	{
-		if (bSeedAdminDefaults)
-		{
-			EnsureSeededAdminDefaults();
-		}
-		else
-		{
-			RemoveSeededAdminDefaults();
-		}
-	}
+	Super::OnComponentCreated();
+	SeedDefaultBindingsIfNeeded();
 }
-#endif
+
+void UDIVEInspectableComponent::OnRegister()
+{
+	Super::OnRegister();
+	InstanceForeignPrivateActions();
+}
+
+void UDIVEInspectableComponent::PreSave(FObjectPreSaveContext SaveContext)
+{
+	InstanceForeignPrivateActions();
+	Super::PreSave(SaveContext);
+}
+
+bool UDIVEInspectableComponent::ShouldSkipDefaultBindingSeed() const
+{
+	const UPackage* Package = GetOutermost();
+	return HasAnyFlags(RF_ClassDefaultObject | RF_NeedLoad)
+		|| !Package
+		|| Package->HasAnyPackageFlags(PKG_CompiledIn);
+}
 
 void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 {
-	if (!Bindings.IsEmpty())
+	if (ShouldSkipDefaultBindingSeed() || !Bindings.IsEmpty())
 	{
 		return;
 	}
@@ -66,8 +89,11 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 		Sections.Add(StandardSection);
 	}
 
-	UDIVEFocusAction* FocusAction = NewObject<UDIVEFocusAction>(this, TEXT("DefaultFocusAction"));
-	UDIVEIsolateAction* IsolateAction = NewObject<UDIVEIsolateAction>(this, TEXT("DefaultIsolateAction"));
+	// RF_Public: placed map instances may legally reference these inners on the BP template.
+	UDIVEFocusAction* FocusAction =
+		GetOrCreateNamedAction<UDIVEFocusAction>(this, DIVE::kSeededFocusAction);
+	UDIVEIsolateAction* IsolateAction =
+		GetOrCreateNamedAction<UDIVEIsolateAction>(this, DIVE::kSeededIsolateAction);
 
 	FDIVEActionBinding StandardBinding;
 	StandardBinding.BindingId = DIVE::kBindingBuiltInStandard;
@@ -76,76 +102,141 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 	StandardBinding.Actions.Add(FocusAction);
 	StandardBinding.Actions.Add(IsolateAction);
 	Bindings.Add(StandardBinding);
-
-	if (bSeedAdminDefaults)
-	{
-		EnsureSeededAdminDefaults();
-	}
+	EnsureSeededAdminDefaults();
 }
 
 void UDIVEInspectableComponent::EnsureSeededAdminDefaults()
 {
-	for (const FDIVEActionBinding& Binding : Bindings)
+	if (ShouldSkipDefaultBindingSeed())
 	{
-		if (Binding.BindingId == DIVE::kBindingBuiltInAdmin)
-		{
-			return;
-		}
+		return;
 	}
 
-	bool bHasAdminSection = false;
-	for (const FDIVEMenuSection& Section : Sections)
+	auto EnsureAdminSection = [this]()
 	{
-		if (Section.SectionId == DIVE::kSectionAdmin)
+		for (const FDIVEMenuSection& Section : Sections)
 		{
-			bHasAdminSection = true;
-			break;
+			if (Section.SectionId == DIVE::kSectionAdmin)
+			{
+				return;
+			}
 		}
-	}
-	if (!bHasAdminSection)
-	{
+
 		FDIVEMenuSection AdminSection;
 		AdminSection.SectionId = DIVE::kSectionAdmin;
 		AdminSection.Header = NSLOCTEXT("DIVE", "SectionAdminHeader", "Admin");
 		Sections.Add(AdminSection);
+	};
+
+	auto BindingHasActionClass = [](const FDIVEActionBinding& Binding, const UClass* ActionClass) -> bool
+	{
+		for (const TObjectPtr<UDIVEDeviceAction>& Action : Binding.Actions)
+		{
+			if (Action && Action->IsA(ActionClass))
+			{
+				return true;
+			}
+		}
+		return false;
+	};
+
+	for (FDIVEActionBinding& Binding : Bindings)
+	{
+		if (Binding.BindingId != DIVE::kBindingBuiltInAdmin)
+		{
+			continue;
+		}
+
+		EnsureAdminSection();
+		if (!BindingHasActionClass(Binding, UDIVESimulatePhysicsAction::StaticClass()))
+		{
+			Binding.Actions.Add(
+				GetOrCreateNamedAction<UDIVESimulatePhysicsAction>(
+					this, DIVE::kSeededSimulatePhysicsAction));
+		}
+		if (!BindingHasActionClass(Binding, UDIVEDeleteMeshAction::StaticClass()))
+		{
+			Binding.Actions.Add(
+				GetOrCreateNamedAction<UDIVEDeleteMeshAction>(
+					this, DIVE::kSeededDeleteMeshAction));
+		}
+		return;
 	}
 
-	UDIVESimulatePhysicsAction* SimulatePhysicsAction =
-		NewObject<UDIVESimulatePhysicsAction>(this, TEXT("DefaultSimulatePhysicsAction"));
-	UDIVEDeleteMeshAction* DeleteMeshAction =
-		NewObject<UDIVEDeleteMeshAction>(this, TEXT("DefaultDeleteMeshAction"));
+	EnsureAdminSection();
 
 	FDIVEActionBinding AdminBinding;
 	AdminBinding.BindingId = DIVE::kBindingBuiltInAdmin;
 	AdminBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	AdminBinding.SectionId = DIVE::kSectionAdmin;
-	AdminBinding.Actions.Add(SimulatePhysicsAction);
-	AdminBinding.Actions.Add(DeleteMeshAction);
+	AdminBinding.Actions.Add(
+		GetOrCreateNamedAction<UDIVESimulatePhysicsAction>(this, DIVE::kSeededSimulatePhysicsAction));
+	AdminBinding.Actions.Add(
+		GetOrCreateNamedAction<UDIVEDeleteMeshAction>(this, DIVE::kSeededDeleteMeshAction));
 	Bindings.Add(AdminBinding);
 }
 
-void UDIVEInspectableComponent::RemoveSeededAdminDefaults()
+#if WITH_EDITOR
+void UDIVEInspectableComponent::AddAdminDefaultBindings()
 {
-	Bindings.RemoveAll([](const FDIVEActionBinding& Binding)
+	Modify();
+	if (AActor* Owner = GetOwner())
 	{
-		return Binding.BindingId == DIVE::kBindingBuiltInAdmin;
-	});
-
-	bool bAdminSectionStillUsed = false;
-	for (const FDIVEActionBinding& Binding : Bindings)
-	{
-		if (Binding.SectionId == DIVE::kSectionAdmin)
-		{
-			bAdminSectionStillUsed = true;
-			break;
-		}
+		Owner->Modify();
 	}
-	if (!bAdminSectionStillUsed)
+
+	EnsureSeededAdminDefaults();
+
+	auto NotifyProperty = [this](const FName PropertyName)
 	{
-		Sections.RemoveAll([](const FDIVEMenuSection& Section)
+		if (FProperty* Prop = FindFProperty<FProperty>(StaticClass(), PropertyName))
 		{
-			return Section.SectionId == DIVE::kSectionAdmin;
-		});
+			FPropertyChangedEvent ChangeEvent(Prop, EPropertyChangeType::ValueSet);
+			PostEditChangeProperty(ChangeEvent);
+		}
+	};
+	NotifyProperty(GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, Bindings));
+	NotifyProperty(GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, Sections));
+}
+#endif
+
+void UDIVEInspectableComponent::InstanceForeignPrivateActions()
+{
+	if (HasAnyFlags(RF_NeedLoad))
+	{
+		return;
+	}
+
+	const UPackage* Package = GetOutermost();
+	if (!Package || Package->HasAnyPackageFlags(PKG_CompiledIn))
+	{
+		return;
+	}
+
+	for (FDIVEActionBinding& Binding : Bindings)
+	{
+		for (TObjectPtr<UDIVEDeviceAction>& Action : Binding.Actions)
+		{
+			UDIVEDeviceAction* Existing = Action.Get();
+			if (!Existing || Existing->IsIn(this))
+			{
+				continue;
+			}
+
+			// Same package: private inners are legal exports. Catalog / CDO: public shared refs.
+			if (Existing->GetOutermost() == Package
+				|| Existing->HasAnyFlags(RF_Public | RF_ClassDefaultObject))
+			{
+				continue;
+			}
+
+			UDIVEDeviceAction* InstancedAction = DuplicateObject<UDIVEDeviceAction>(Existing, this);
+			if (InstancedAction)
+			{
+				InstancedAction->SetFlags(RF_Public | RF_Transactional);
+				Action = InstancedAction;
+			}
+		}
 	}
 }
 

@@ -97,39 +97,141 @@ bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters
 {
 	(void)Parameters;
 
-	// Use CDO — NewObject<UActorComponent>() at Smoke startup runs before EngineElements
-	// registers Typed Element type "Components" and asserts in PostInitProperties.
-	const UDIVEInspectableComponent* Inspectable =
+	// Native CDO must stay empty: seeding named NewObject actions on it makes device BPs
+	// save-illegal (private Default__DIVEInspectableComponent:DefaultDeleteMeshAction refs).
+	const UDIVEInspectableComponent* InspectableCdo =
 		UDIVEInspectableComponent::StaticClass()->GetDefaultObject<UDIVEInspectableComponent>();
-	TestNotNull(TEXT("Inspectable CDO available"), Inspectable);
-	if (!Inspectable)
+	TestNotNull(TEXT("Inspectable CDO available"), InspectableCdo);
+	if (!InspectableCdo)
 	{
 		return false;
 	}
-	TestTrue(TEXT("CDO-seeded Bindings present"), Inspectable->Bindings.Num() >= 1);
+	TestTrue(TEXT("Native Inspectable CDO has no Bindings"), InspectableCdo->Bindings.IsEmpty());
+	TestFalse(TEXT("CDO has no hover overlay authored"), InspectableCdo->HasPickHoverOverlay());
+	UDIVEInspectableComponent* MutableCdo =
+		const_cast<UDIVEInspectableComponent*>(InspectableCdo);
+	TestNull(
+		TEXT("CDO has no DefaultFocusAction inner"),
+		FindObject<UDIVEFocusAction>(MutableCdo, DIVE::kSeededFocusAction));
+	TestNull(
+		TEXT("CDO has no DefaultIsolateAction inner"),
+		FindObject<UDIVEIsolateAction>(MutableCdo, DIVE::kSeededIsolateAction));
+	TestNull(
+		TEXT("CDO has no DefaultSimulatePhysicsAction inner"),
+		FindObject<UDIVESimulatePhysicsAction>(MutableCdo, DIVE::kSeededSimulatePhysicsAction));
+	TestNull(
+		TEXT("CDO has no DefaultDeleteMeshAction inner"),
+		FindObject<UDIVEDeleteMeshAction>(MutableCdo, DIVE::kSeededDeleteMeshAction));
 
-	bool bFoundFocus = false;
-	bool bAnyPrimitiveBinding = false;
-	for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
+	UWorld* World = nullptr;
+	if (GEngine)
 	{
-		if (Binding.Targets.MatchMode == EDIVETargetMatchMode::AnyPrimitive)
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
 		{
-			bAnyPrimitiveBinding = true;
-		}
-		for (UDIVEDeviceAction* Action : Binding.Actions)
-		{
-			if (Action && Action->IsA<UDIVEFocusAction>())
+			if (UWorld* Candidate = Context.World())
 			{
-				bFoundFocus = true;
+				World = Candidate;
+				break;
 			}
 		}
 	}
-	TestTrue(TEXT("Default Bindings include Focus"), bFoundFocus);
-	TestTrue(TEXT("Default Bindings use AnyPrimitive"), bAnyPrimitiveBinding);
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped instance default-binding asserts."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Host = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Spawned default-bindings host"), Host);
+	if (!Host)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Host,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	TestNotNull(TEXT("Inspectable instance"), Inspectable);
+	if (!Inspectable)
+	{
+		Host->Destroy();
+		return false;
+	}
+
+	Host->AddInstanceComponent(Inspectable);
+
+	TestTrue(TEXT("New Inspectable seeds Bindings"), Inspectable->Bindings.Num() >= 2);
+
+	bool bSeededFocusOwned = false;
+	bool bSeededInnersPublic = true;
+	int32 SeededActionCount = 0;
+	for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
+	{
+		for (UDIVEDeviceAction* Action : Binding.Actions)
+		{
+			if (!Action)
+			{
+				continue;
+			}
+
+			++SeededActionCount;
+			bSeededInnersPublic &= Action->HasAnyFlags(RF_Public);
+			if (Action->IsA<UDIVEFocusAction>())
+			{
+				bSeededFocusOwned = Action->GetOuter() == Inspectable;
+			}
+		}
+	}
+	TestTrue(TEXT("Seeded Focus is owned by the Inspectable"), bSeededFocusOwned);
+	TestTrue(TEXT("Seeded actions are RF_Public"), bSeededInnersPublic);
+	TestTrue(TEXT("New Inspectable seeds Standard+Admin actions"), SeededActionCount >= 4);
+
+	TArray<const FDIVEActionBinding*> GatheredBindings;
+	Inspectable->GatherAuthoredBindings(GatheredBindings);
+
+	bool bFoundFocus = false;
+	bool bAnyPrimitiveBinding = false;
+	bool bFoundAdmin = false;
+	bool bFoundSimulate = false;
+	bool bFoundDelete = false;
+	const FDIVEActionBinding* StandardBinding = nullptr;
+	for (const FDIVEActionBinding* Binding : GatheredBindings)
+	{
+		if (!Binding)
+		{
+			continue;
+		}
+		if (Binding->Targets.MatchMode == EDIVETargetMatchMode::AnyPrimitive)
+		{
+			bAnyPrimitiveBinding = true;
+		}
+		if (Binding->BindingId == DIVE::kBindingBuiltInStandard)
+		{
+			StandardBinding = Binding;
+		}
+		if (Binding->BindingId == DIVE::kBindingBuiltInAdmin)
+		{
+			bFoundAdmin = true;
+		}
+		for (UDIVEDeviceAction* Action : Binding->Actions)
+		{
+			bFoundFocus |= Action && Action->IsA<UDIVEFocusAction>();
+			bFoundSimulate |= Action && Action->IsA<UDIVESimulatePhysicsAction>();
+			bFoundDelete |= Action && Action->IsA<UDIVEDeleteMeshAction>();
+		}
+	}
+	TestTrue(TEXT("Built-in Bindings include Focus"), bFoundFocus);
+	TestTrue(TEXT("Built-in Bindings use AnyPrimitive"), bAnyPrimitiveBinding);
+	TestNotNull(TEXT("Built-in Standard binding present"), StandardBinding);
+	TestTrue(TEXT("Built-in Admin binding present"), bFoundAdmin);
+	TestTrue(TEXT("Built-in Admin includes Simulate Physics"), bFoundSimulate);
+	TestTrue(TEXT("Built-in Admin includes Delete Mesh"), bFoundDelete);
 
 	FDIVEFocusTarget DummyPick = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
 	TestFalse(TEXT("AnyPrimitive does not match invalid primitive pick"),
-		Inspectable->DoesTargetQueryMatchPick(Inspectable->Bindings[0].Targets, DummyPick));
+		StandardBinding && Inspectable->DoesTargetQueryMatchPick(StandardBinding->Targets, DummyPick));
 
 	TArray<FDIVEMenuSection> Sections;
 	Inspectable->GatherAuthoredSections(Sections);
@@ -143,8 +245,68 @@ bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters
 	}
 	TestTrue(TEXT("Default Admin section has Header"), bFoundAdminHeader);
 
-	TestFalse(TEXT("CDO has no hover overlay authored"), Inspectable->HasPickHoverOverlay());
+	UDIVEDeleteMeshAction* ForeignDelete = NewObject<UDIVEDeleteMeshAction>(
+		GetTransientPackage(),
+		UDIVEDeleteMeshAction::StaticClass(),
+		TEXT("ForeignDeleteMesh"));
+	TestNotNull(TEXT("Foreign DeleteMesh action"), ForeignDelete);
+	if (ForeignDelete)
+	{
+		FDIVEActionBinding ForeignBinding;
+		ForeignBinding.BindingId = TEXT("Test.Foreign");
+		ForeignBinding.Actions.Add(ForeignDelete);
+		Inspectable->Bindings.Add(ForeignBinding);
+	}
 
+	if (Inspectable->IsRegistered())
+	{
+		Inspectable->UnregisterComponent();
+	}
+	Inspectable->RegisterComponent();
+
+	const FDIVEActionBinding* ForeignSlot = nullptr;
+	for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
+	{
+		if (Binding.BindingId == TEXT("Test.Foreign"))
+		{
+			ForeignSlot = &Binding;
+			break;
+		}
+	}
+	TestNotNull(TEXT("Inspectable Bindings has the foreign slot"), ForeignSlot);
+	if (ForeignSlot && ForeignSlot->Actions.Num() == 1)
+	{
+		UDIVEDeviceAction* InstancedDelete = ForeignSlot->Actions[0];
+		TestNotNull(TEXT("Instanced DeleteMesh after register"), InstancedDelete);
+		TestEqual(
+			TEXT("Foreign private action is instanced onto the Inspectable"),
+			InstancedDelete ? InstancedDelete->GetOuter() : nullptr,
+			static_cast<UObject*>(Inspectable));
+		TestTrue(
+			TEXT("Instanced DeleteMesh is not the original foreign object"),
+			InstancedDelete != ForeignDelete);
+	}
+
+	GatheredBindings.Reset();
+	Inspectable->GatherAuthoredBindings(GatheredBindings);
+	bool bFocusAfterCustomBinding = false;
+	for (const FDIVEActionBinding* Binding : GatheredBindings)
+	{
+		if (!Binding)
+		{
+			continue;
+		}
+		for (UDIVEDeviceAction* Action : Binding->Actions)
+		{
+			if (Action && Action->IsA<UDIVEFocusAction>())
+			{
+				bFocusAfterCustomBinding = true;
+			}
+		}
+	}
+	TestTrue(TEXT("Built-in Focus remains after a custom Binding"), bFocusAfterCustomBinding);
+
+	Host->Destroy();
 	return true;
 }
 
@@ -723,30 +885,79 @@ bool FDIVEInspectableValidationSmokeTest::RunTest(const FString& Parameters)
 		Inspectable->IsDataValid(OwnerContext),
 		EDataValidationResult::Valid);
 
-	Inspectable->bSeedAdminDefaults = false;
-	if (FProperty* AdminSeedProp = FindFProperty<FProperty>(
-			UDIVEInspectableComponent::StaticClass(),
-			GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, bSeedAdminDefaults)))
+	auto HasBuiltInAdmin = [](UDIVEInspectableComponent* Component) -> bool
 	{
-		FPropertyChangedEvent ChangeEvent(AdminSeedProp);
-		Inspectable->PostEditChangeProperty(ChangeEvent);
-	}
+		TArray<const FDIVEActionBinding*> Gathered;
+		Component->GatherAuthoredBindings(Gathered);
+		for (const FDIVEActionBinding* Binding : Gathered)
+		{
+			if (Binding && Binding->BindingId == DIVE::kBindingBuiltInAdmin)
+			{
+				return true;
+			}
+		}
+		return false;
+	};
 
-	bool bHasSeededAdmin = false;
-	for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
+	TestTrue(TEXT("New Inspectable seeds BuiltIn.Admin"), HasBuiltInAdmin(Inspectable));
+
+	Inspectable->Bindings.RemoveAll([](const FDIVEActionBinding& Binding)
+	{
+		return Binding.BindingId == DIVE::kBindingBuiltInAdmin;
+	});
+	TestFalse(TEXT("Removing BuiltIn.Admin leaves it gone"), HasBuiltInAdmin(Inspectable));
+
+	Inspectable->AddAdminDefaultBindings();
+	TestTrue(TEXT("Add Admin Defaults restores BuiltIn.Admin"), HasBuiltInAdmin(Inspectable));
+
+	for (FDIVEActionBinding& Binding : Inspectable->Bindings)
 	{
 		if (Binding.BindingId == DIVE::kBindingBuiltInAdmin)
 		{
-			bHasSeededAdmin = true;
+			Binding.Actions.Reset();
 			break;
 		}
 	}
-	TestFalse(TEXT("Unchecking Seed Admin Defaults removes BuiltIn.Admin"), bHasSeededAdmin);
+	Inspectable->AddAdminDefaultBindings();
 
-	FDataValidationContext AfterAdminOff;
+	bool bRestoredSimulate = false;
+	bool bRestoredDelete = false;
+	for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
+	{
+		if (Binding.BindingId != DIVE::kBindingBuiltInAdmin)
+		{
+			continue;
+		}
+
+		for (UDIVEDeviceAction* Action : Binding.Actions)
+		{
+			bRestoredSimulate |= Action && Action->IsA<UDIVESimulatePhysicsAction>();
+			bRestoredDelete |= Action && Action->IsA<UDIVEDeleteMeshAction>();
+		}
+	}
+	TestTrue(TEXT("Add Admin Defaults restores Simulate Physics"), bRestoredSimulate);
+	TestTrue(TEXT("Add Admin Defaults restores Delete Mesh"), bRestoredDelete);
+
+	auto CountAdminBindings = [](const UDIVEInspectableComponent* Component) -> int32
+	{
+		int32 Count = 0;
+		for (const FDIVEActionBinding& Binding : Component->Bindings)
+		{
+			if (Binding.BindingId == DIVE::kBindingBuiltInAdmin)
+			{
+				++Count;
+			}
+		}
+		return Count;
+	};
+	TestEqual(TEXT("Add Admin Defaults leaves a single Admin binding"), CountAdminBindings(Inspectable), 1);
+	Inspectable->AddAdminDefaultBindings();
+	TestEqual(TEXT("Add Admin Defaults is idempotent"), CountAdminBindings(Inspectable), 1);
+
+	FDataValidationContext AfterAdminRestore;
 	TestEqual(
-		TEXT("Inspectable still Valid after removing seeded Admin"),
-		Inspectable->IsDataValid(AfterAdminOff),
+		TEXT("Inspectable still Valid after Add Admin Defaults"),
+		Inspectable->IsDataValid(AfterAdminRestore),
 		EDataValidationResult::Valid);
 
 	Host->Destroy();
@@ -782,6 +993,40 @@ bool FDIVEDriveMappingSmokeTest::RunTest(const FString& Parameters)
 		TEXT("Vertical drag projects onto world up as travel"),
 		DIVE::MapScreenDeltaToAxisTravel(FVector2D(0.f, 10.f), FRotator::ZeroRotator, FVector::UpVector, 1.f),
 		-10.f);
+
+	{
+		FDIVEInteractionValue NoneValue;
+		NoneValue.Normalized = 0.42f;
+		const FString NoneText =
+			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Proxy")), NoneValue).ToString();
+		TestTrue(TEXT("None unit readout includes the action label"), NoneText.Contains(TEXT("Proxy")));
+
+		FDIVEInteractionValue DegValue;
+		DegValue.Unit = EDIVEInteractionValueUnit::Degrees;
+		DegValue.Absolute = -10.f;
+		const FString DegText =
+			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Knob")), DegValue).ToString();
+		TestTrue(TEXT("Degrees readout includes the action label"), DegText.Contains(TEXT("Knob")));
+		TestTrue(TEXT("Degrees readout includes the degree glyph"), DegText.Contains(TEXT("°")));
+
+		FDIVEInteractionValue TurnsValue;
+		TurnsValue.Unit = EDIVEInteractionValueUnit::Turns;
+		TurnsValue.Absolute = 2.5f;
+		TurnsValue.AbsoluteMax = 4.f;
+		const FString TurnsText =
+			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Nut")), TurnsValue).ToString();
+		TestTrue(TEXT("Turns readout includes the action label"), TurnsText.Contains(TEXT("Nut")));
+		TestTrue(TEXT("Turns readout with max includes a span separator"), TurnsText.Contains(TEXT("/")));
+
+		FDIVEInteractionValue CmValue;
+		CmValue.Unit = EDIVEInteractionValueUnit::Centimeters;
+		CmValue.Absolute = 1.25f;
+		CmValue.AbsoluteMax = 5.f;
+		const FString CmText =
+			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Slide")), CmValue).ToString();
+		TestTrue(TEXT("Centimeters readout includes the unit suffix"), CmText.Contains(TEXT("cm")));
+		TestTrue(TEXT("Centimeters readout with max includes a span separator"), CmText.Contains(TEXT("/")));
+	}
 
 	return true;
 }
@@ -845,6 +1090,19 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Rotary accumulated yaw from Z-up mapping"),
 			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, -10.f, 0.05f));
+		{
+			const FDIVEInteractionValue RotaryValue = Rotary->MakeInteractionValue();
+			TestEqual(
+				TEXT("Rotary HUD unit is Degrees"),
+				RotaryValue.Unit,
+				EDIVEInteractionValueUnit::Degrees);
+			TestTrue(
+				TEXT("Rotary Absolute keeps signed accumulated degrees"),
+				FMath::IsNearlyEqual(RotaryValue.Absolute, -10.f, 0.05f));
+			TestTrue(
+				TEXT("Unlimited rotary Normalized stays in 0..1"),
+				RotaryValue.Normalized >= 0.f && RotaryValue.Normalized <= 1.f);
+		}
 		Rotary->EndInteraction(false);
 		TestTrue(
 			TEXT("Rotary cancel restores start rotation"),
@@ -869,6 +1127,19 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Threaded half-turn translates along local X"),
 			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 1.f, 0.05f));
+		{
+			const FDIVEInteractionValue ThreadedValue = Threaded->MakeInteractionValue();
+			TestEqual(
+				TEXT("Threaded HUD unit is Turns"),
+				ThreadedValue.Unit,
+				EDIVEInteractionValueUnit::Turns);
+			TestTrue(
+				TEXT("Threaded Absolute is accumulated turns"),
+				FMath::IsNearlyEqual(ThreadedValue.Absolute, 0.5f, 0.05f));
+			TestTrue(
+				TEXT("Threaded AbsoluteMax is TurnsToRelease"),
+				FMath::IsNearlyEqual(ThreadedValue.AbsoluteMax, 1.f, 0.05f));
+		}
 		Threaded->EndInteraction(false);
 		TestTrue(
 			TEXT("Threaded cancel restores start transform"),

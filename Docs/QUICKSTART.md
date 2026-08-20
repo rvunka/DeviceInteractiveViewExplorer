@@ -74,7 +74,7 @@ Default **`GetDisplayState`**: `CanExecute == false` → row **gray** (`bEnabled
 
 On `UDIVEInspectableComponent`:
 
-1. **Bindings** CDO-seed Focus + Isolate. **Seed Admin Defaults** (on by default) also seeds Simulate Physics / Delete Mesh. Uncheck it in Details to drop that seeded Admin binding; Shipping hides Admin rows regardless.
+1. **Bindings** are filled when you add the component: Focus, Isolate, Simulate Physics, Delete Mesh. Any binding or action you delete in Details stays gone. **Add Admin Defaults** puts Simulate Physics + Delete Mesh back (creates the Admin binding or fills it if you emptied the actions). Native CDO stays empty; seeded inners are `RF_Public` so placed map actors can save.
 2. Prefer **Action Catalog** for device-specific ops.
 
 **Where to put logic (no BeginPlay dump):**
@@ -93,14 +93,14 @@ Example — tagged bolts → continuous unscrew BP:
 1. Tag bolt meshes `DIVE.Bolt`.
 2. Content Browser → **DIVE → Continuous Device Action** → `BP_Unscrew` (params + Begin/Update/End; on complete call device interface e.g. `NotifyBoltRemoved`).
 3. **DIVE → Action Catalog** → section `Maintenance`, binding Match=Component Tag `DIVE.Bolt`, add `BP_Unscrew` instance.
-4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Interact mode. Binding Details shows **Matched → Targets: N components** (same pick rules as the session) and **Select** highlights those meshes on a placed device. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
+4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Interact mode. Binding Details shows **Matched → Targets: N components** (same pick rules as the session) and **Select** highlights those meshes on a placed device or in the Blueprint viewport / Components tree. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
 
 **Continuous actions:**
 - **Primary (hold):** press → `BeginInteraction` → drag while held → release → `EndInteraction`.
 - **Context menu:** click row → `BeginInteraction` (modal drag without hold) → finish with next primary click / Escape / self-complete. Same LMB-up that confirms the menu row is ignored so the gesture is not cancelled immediately.
-- Session marks the action active and subscribes to `OnValueChanged` **before** `Begin`, so the initial `NotifyValueChanged` reaches the HUD. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
+- Session marks the action active and subscribes to `OnValueChanged` **before** `Begin`, so the initial `NotifyInteractionValue` / `NotifyValueChanged` reaches the HUD. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
 
-Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Continuous actions feed it via **`NotifyValueChanged`** (BlueprintCallable). `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit). Rotary/Threaded call **`NotifyInteractionValue`**; proxy forward still uses **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
 
 Interaction parameters live on the action instance; device domain state lives on the device (see `Additional/DeviceInteractionModel.md`).
 
@@ -132,7 +132,7 @@ Player character (e.g. BP_FirstPersonCharacter)          Device actor (e.g. BP_M
 
 **Player character** — menu open + UI. Already handled by the plugin if **DIVE Player** and IMC are set up (§4). **You do not add device actions here.**
 
-**Device actor** — **Action Catalog + Bindings** + action instances (defaults Focus/Isolate, Admin if Seed Admin Defaults, and/or your BP/C++ subclasses).
+**Device actor** — **Action Catalog + Bindings** + action instances (defaults Focus/Isolate/Simulate/Delete, and/or your BP/C++ subclasses).
 
 ### Menu open path (already in plugin — do not override for device actions)
 
@@ -168,7 +168,7 @@ IA_DIVE_PrimaryAction Started
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog primary actions.
 
-Default rows come from component **Bindings** (Focus, Isolate, Admin if **Seed Admin Defaults**). Device-specific rows: **Action Catalog** (and/or extra rows in Bindings). To hide Admin in editor, uncheck **Seed Admin Defaults** or remove those actions from Bindings; Shipping hides them automatically.
+Default rows come from component **Bindings** (Focus, Isolate, Simulate Physics, Delete Mesh). Device-specific rows: **Action Catalog** (and/or extra rows in Bindings). To hide Admin in editor, delete that binding or those actions; **Add Admin Defaults** restores them. Shipping hides Admin automatically.
 ---
 
 ## 1b. Anchors (optional)

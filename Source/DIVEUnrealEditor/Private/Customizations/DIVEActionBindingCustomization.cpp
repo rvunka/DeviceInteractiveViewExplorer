@@ -2,19 +2,21 @@
 
 #include "Customizations/DIVEActionBindingCustomization.h"
 
-#include "DIVEActionBinding.h"
 #include "DIVEActionCatalogAsset.h"
 #include "DIVEDeviceAction.h"
 #include "DIVEInspectableComponent.h"
 
+#include "BlueprintEditorModule.h"
 #include "Components/PrimitiveComponent.h"
 #include "Containers/Set.h"
 #include "DetailWidgetRow.h"
 #include "Editor.h"
+#include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 #include "IDetailChildrenBuilder.h"
-#include "Input/Reply.h"
+#include "Modules/ModuleManager.h"
 #include "PropertyHandle.h"
 #include "Selection.h"
 #include "Styling/AppStyle.h"
@@ -24,6 +26,62 @@
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "DIVEActionBindingCustomization"
+
+namespace
+{
+bool IsLiveWorldActor(const AActor* Actor)
+{
+	if (!Actor || Actor->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject))
+	{
+		return false;
+	}
+
+	const UWorld* World = Actor->GetWorld();
+	return World
+		&& (World->WorldType == EWorldType::Editor
+			|| World->WorldType == EWorldType::EditorPreview
+			|| World->WorldType == EWorldType::PIE);
+}
+
+bool IsLevelSelectableWorld(const UWorld* World)
+{
+	return World
+		&& (World->WorldType == EWorldType::Editor || World->WorldType == EWorldType::PIE);
+}
+
+bool TrySelectMatchingInBlueprintEditor(const TArray<UPrimitiveComponent*>& Matching)
+{
+	FBlueprintEditorModule* Kismet = FModuleManager::GetModulePtr<FBlueprintEditorModule>(TEXT("Kismet"));
+	if (!Kismet)
+	{
+		return false;
+	}
+
+	for (const TSharedRef<IBlueprintEditor>& Editor : Kismet->GetBlueprintEditors())
+	{
+		bool bSelectedAny = false;
+		for (UPrimitiveComponent* Primitive : Matching)
+		{
+			if (!Primitive)
+			{
+				continue;
+			}
+
+			if (Editor->FindAndSelectSubobjectEditorTreeNode(Primitive, bSelectedAny).IsValid())
+			{
+				bSelectedAny = true;
+			}
+		}
+
+		if (bSelectedAny)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+}
 
 TSharedRef<IPropertyTypeCustomization> FDIVEActionBindingCustomization::MakeInstance()
 {
@@ -165,7 +223,7 @@ void FDIVEActionBindingCustomization::CustomizeChildren(
 						.Text(LOCTEXT("SelectMatching", "Select"))
 						.ToolTipText(LOCTEXT(
 							"SelectMatchingTooltip",
-							"Select matching pickable components on the device in the viewport."))
+							"Select matching pickable components. Works on a placed device, or the Blueprint viewport preview."))
 						.IsEnabled(TAttribute<bool>::Create(
 							TAttribute<bool>::FGetter::CreateSP(
 								this,
@@ -366,6 +424,94 @@ UDIVEInspectableComponent* FDIVEActionBindingCustomization::ResolvePreviewInspec
 	return nullptr;
 }
 
+UDIVEInspectableComponent* FDIVEActionBindingCustomization::ResolveLiveInspectable() const
+{
+	UDIVEInspectableComponent* Inspectable = ResolvePreviewInspectable();
+	if (!Inspectable)
+	{
+		return nullptr;
+	}
+
+	if (IsLiveWorldActor(Inspectable->GetOwner()))
+	{
+		return Inspectable;
+	}
+
+	UClass* ActorClass = nullptr;
+	if (AActor* Owner = Inspectable->GetOwner())
+	{
+		ActorClass = Owner->GetClass();
+	}
+	else if (UClass* OuterClass = Inspectable->GetTypedOuter<UClass>())
+	{
+		ActorClass = OuterClass->IsChildOf(AActor::StaticClass()) ? OuterClass : nullptr;
+	}
+
+	if (!ActorClass || !ActorClass->IsChildOf(AActor::StaticClass()) || !GEngine)
+	{
+		return nullptr;
+	}
+
+	auto FindInWorldType = [&](const EWorldType::Type WorldType) -> UDIVEInspectableComponent*
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			UWorld* World = Context.World();
+			if (!World || World->WorldType != WorldType)
+			{
+				continue;
+			}
+
+			for (TActorIterator<AActor> It(World, ActorClass); It; ++It)
+			{
+				AActor* Actor = *It;
+				if (!IsLiveWorldActor(Actor))
+				{
+					continue;
+				}
+
+				if (UDIVEInspectableComponent* Live = Actor->FindComponentByClass<UDIVEInspectableComponent>())
+				{
+					return Live;
+				}
+			}
+		}
+
+		return nullptr;
+	};
+
+	if (UDIVEInspectableComponent* Preview = FindInWorldType(EWorldType::EditorPreview))
+	{
+		return Preview;
+	}
+
+	if (GEditor)
+	{
+		if (USelection* SelectedActors = GEditor->GetSelectedActors())
+		{
+			for (FSelectionIterator It(*SelectedActors); It; ++It)
+			{
+				AActor* Actor = Cast<AActor>(*It);
+				if (!Actor || !Actor->IsA(ActorClass) || !IsLiveWorldActor(Actor))
+				{
+					continue;
+				}
+
+				if (UDIVEInspectableComponent* Live = Actor->FindComponentByClass<UDIVEInspectableComponent>())
+				{
+					return Live;
+				}
+			}
+		}
+	}
+
+	if (UDIVEInspectableComponent* Editor = FindInWorldType(EWorldType::Editor))
+	{
+		return Editor;
+	}
+	return FindInWorldType(EWorldType::PIE);
+}
+
 void FDIVEActionBindingCustomization::InvalidateMatchedPreview()
 {
 	MatchedPreview.bValid = false;
@@ -374,7 +520,7 @@ void FDIVEActionBindingCustomization::InvalidateMatchedPreview()
 void FDIVEActionBindingCustomization::EnsureMatchedPreview() const
 {
 	const FDIVETargetQuery* Query = GetTargetQuery();
-	UDIVEInspectableComponent* Inspectable = ResolvePreviewInspectable();
+	UDIVEInspectableComponent* Inspectable = ResolveLiveInspectable();
 	if (!Query || !Inspectable || !Inspectable->GetOwner())
 	{
 		MatchedPreview.bValid = false;
@@ -387,7 +533,19 @@ void FDIVEActionBindingCustomization::EnsureMatchedPreview() const
 		&& MatchedPreview.MatchMode == Query->MatchMode
 		&& MatchedPreview.MatchValues == Query->MatchValues)
 	{
-		return;
+		bool bAllLive = true;
+		for (const TWeakObjectPtr<UPrimitiveComponent>& PrimitiveWeak : MatchedPreview.Primitives)
+		{
+			if (!PrimitiveWeak.IsValid())
+			{
+				bAllLive = false;
+				break;
+			}
+		}
+		if (bAllLive)
+		{
+			return;
+		}
 	}
 
 	TArray<UPrimitiveComponent*> Matching;
@@ -443,7 +601,7 @@ FText FDIVEActionBindingCustomization::GetTargetsPreviewText() const
 		}
 	}
 
-	UDIVEInspectableComponent* Inspectable = ResolvePreviewInspectable();
+	UDIVEInspectableComponent* Inspectable = ResolveLiveInspectable();
 	if (!Inspectable || !Inspectable->GetOwner())
 	{
 		if (bEditingCatalog)
@@ -454,8 +612,8 @@ FText FDIVEActionBindingCustomization::GetTargetsPreviewText() const
 		}
 
 		return LOCTEXT(
-			"TargetsPlaceDevice",
-			"Targets: — (place or select the device)");
+			"TargetsNeedLiveDevice",
+			"Targets: — (open the Blueprint viewport or select a placed device)");
 	}
 
 	const FDIVETargetQuery* Query = GetTargetQuery();
@@ -464,41 +622,23 @@ FText FDIVEActionBindingCustomization::GetTargetsPreviewText() const
 		return LOCTEXT("TargetsUnavailable", "Targets: —");
 	}
 
-	EnsureMatchedPreview();
+	TArray<UPrimitiveComponent*> Matching;
+	CollectMatchingPrimitives(Matching);
 
 	if (Query->MatchMode == EDIVETargetMatchMode::AnyPrimitive)
 	{
 		return FText::Format(
 			LOCTEXT("TargetsAny", "Targets: {0} components (any pickable)"),
-			FText::AsNumber(MatchedPreview.Primitives.Num()));
+			FText::AsNumber(Matching.Num()));
 	}
 
 	return FText::Format(
 		LOCTEXT("TargetsCount", "Targets: {0} components"),
-		FText::AsNumber(MatchedPreview.Primitives.Num()));
+		FText::AsNumber(Matching.Num()));
 }
 
 bool FDIVEActionBindingCustomization::CanSelectMatchingPrimitives() const
 {
-	UDIVEInspectableComponent* Inspectable = ResolvePreviewInspectable();
-	if (!Inspectable)
-	{
-		return false;
-	}
-
-	AActor* Owner = Inspectable->GetOwner();
-	if (!Owner || Owner->HasAnyFlags(RF_ClassDefaultObject))
-	{
-		return false;
-	}
-
-	const UWorld* World = Owner->GetWorld();
-	if (!World
-		|| (World->WorldType != EWorldType::Editor && World->WorldType != EWorldType::PIE))
-	{
-		return false;
-	}
-
 	TArray<UPrimitiveComponent*> Matching;
 	CollectMatchingPrimitives(Matching);
 	return Matching.Num() > 0;
@@ -506,11 +646,6 @@ bool FDIVEActionBindingCustomization::CanSelectMatchingPrimitives() const
 
 FReply FDIVEActionBindingCustomization::OnSelectMatchingPrimitives()
 {
-	if (!GEditor || !CanSelectMatchingPrimitives())
-	{
-		return FReply::Handled();
-	}
-
 	TArray<UPrimitiveComponent*> Matching;
 	CollectMatchingPrimitives(Matching);
 	if (Matching.IsEmpty())
@@ -518,29 +653,35 @@ FReply FDIVEActionBindingCustomization::OnSelectMatchingPrimitives()
 		return FReply::Handled();
 	}
 
-	TSet<AActor*> Owners;
-	for (UPrimitiveComponent* Primitive : Matching)
+	const UWorld* World = Matching[0] ? Matching[0]->GetWorld() : nullptr;
+	if (IsLevelSelectableWorld(World) && GEditor)
 	{
-		if (Primitive && Primitive->GetOwner())
+		TSet<AActor*> Owners;
+		for (UPrimitiveComponent* Primitive : Matching)
 		{
-			Owners.Add(Primitive->GetOwner());
+			if (Primitive && Primitive->GetOwner())
+			{
+				Owners.Add(Primitive->GetOwner());
+			}
 		}
+
+		GEditor->SelectNone(/*bNoteSelectionChange=*/ false, /*bDeselectBSPSurfs=*/ true, /*WarnAboutManyActors=*/ false);
+		for (AActor* Actor : Owners)
+		{
+			GEditor->SelectActor(Actor, /*bInSelected=*/ true, /*bNotify=*/ false, /*bSelectEvenIfHidden=*/ true);
+		}
+		for (UPrimitiveComponent* Primitive : Matching)
+		{
+			if (Primitive)
+			{
+				GEditor->SelectComponent(Primitive, /*bInSelected=*/ true, /*bNotify=*/ false, /*bSelectEvenIfHidden=*/ true);
+			}
+		}
+		GEditor->NoteSelectionChange();
+		return FReply::Handled();
 	}
 
-	GEditor->SelectNone(/*bNoteSelectionChange=*/ false, /*bDeselectBSPSurfs=*/ true, /*WarnAboutManyActors=*/ false);
-	for (AActor* Actor : Owners)
-	{
-		GEditor->SelectActor(Actor, /*bInSelected=*/ true, /*bNotify=*/ false, /*bSelectEvenIfHidden=*/ true);
-	}
-	for (UPrimitiveComponent* Primitive : Matching)
-	{
-		if (Primitive)
-		{
-			GEditor->SelectComponent(Primitive, /*bInSelected=*/ true, /*bNotify=*/ false, /*bSelectEvenIfHidden=*/ true);
-		}
-	}
-	GEditor->NoteSelectionChange();
-
+	TrySelectMatchingInBlueprintEditor(Matching);
 	return FReply::Handled();
 }
 

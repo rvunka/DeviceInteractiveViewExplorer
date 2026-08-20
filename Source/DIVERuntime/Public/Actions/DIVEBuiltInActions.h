@@ -139,6 +139,8 @@ public:
 	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
 	virtual void EndInteraction_Implementation(bool bCommit) override;
 
+	FDIVEInteractionValue MakeInteractionValue() const;
+
 private:
 	void ApplyAccumulated();
 	float GetNormalizedValue() const;
@@ -192,6 +194,8 @@ public:
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
 	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
 	virtual void EndInteraction_Implementation(bool bCommit) override;
+
+	FDIVEInteractionValue MakeInteractionValue() const;
 
 private:
 	void ApplyAccumulated();

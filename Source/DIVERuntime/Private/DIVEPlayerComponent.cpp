@@ -1159,7 +1159,7 @@ void UDIVEPlayerComponent::HandleContextMenuDismissed()
 void UDIVEPlayerComponent::HandleInteractionValueChanged(
 	UDIVEDeviceAction* Action,
 	const FDIVEActionContext& Context,
-	float NormalizedValue)
+	const FDIVEInteractionValue& Value)
 {
 	(void)Context;
 	if (!IsLocallyControlledOwner())
@@ -1179,7 +1179,7 @@ void UDIVEPlayerComponent::HandleInteractionValueChanged(
 	EnsureValueReadoutWidget();
 	if (ValueReadoutWidget)
 	{
-		ValueReadoutWidget->SetReadout(Action->GetResolvedDisplayName(), NormalizedValue);
+		ValueReadoutWidget->SetReadout(Action->GetResolvedDisplayName(), Value);
 	}
 }
 
