@@ -20,9 +20,16 @@ public class DIVERuntimeDev : ModuleRules
 			"InputCore",
 			"DIVECore",
 			"DIVERuntime",
-			"DIVEUncooked",
 			"SharedPluginUtils"
 		});
+
+		// Dump console lives in DIVEUncooked (UnrealEd). Instantiating that module
+		// from a game target constructor pulls UnrealEd and fails makefile generation.
+		if (Target.bBuildEditor)
+		{
+			PublicDependencyModuleNames.Add("DIVEUncooked");
+			PrivateDependencyModuleNames.Add("DataValidation");
+		}
 
 		// §6.2.9: UBT plugin enablement (ProjectDescriptor / ReadAvailablePlugins).
 		if (IsPluginEnabledForTarget(Target, "GraspRigidbodyInertialPhysics"))
@@ -33,11 +40,6 @@ public class DIVERuntimeDev : ModuleRules
 		else
 		{
 			PrivateDefinitions.Add("DIVE_WITH_GRIP=0");
-		}
-
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.Add("DataValidation");
 		}
 	}
 

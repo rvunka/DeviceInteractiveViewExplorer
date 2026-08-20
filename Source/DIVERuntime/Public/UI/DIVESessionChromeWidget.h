@@ -39,5 +39,5 @@ protected:
 	TObjectPtr<class UTextBlock> ModeHint;
 
 	FDIVESessionChromeStyle CachedStyle;
-	EDIVESessionInteractionMode CachedMode = EDIVESessionInteractionMode::Default;
+	EDIVESessionInteractionMode CachedMode = EDIVESessionInteractionMode::Interact;
 };

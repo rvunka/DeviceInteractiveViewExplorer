@@ -15,10 +15,9 @@ bool ValidateSections(
 	TSet<FName>& OutKnownSectionIds,
 	FDataValidationContext& Context)
 {
-	// Built-in IDs are always valid regardless of what the author declares.
-	OutKnownSectionIds.Add(DIVE::kSectionStandard);
-	OutKnownSectionIds.Add(DIVE::kSectionAdmin);
-
+	// Built-ins are implicitly valid for bindings even when absent from Sections.
+	// Do not pre-seed them into the duplicate set: the default Inspectable seed
+	// (and catalogs that declare a Header) author Standard/Admin rows on purpose.
 	bool bValid = true;
 	for (int32 SectionIndex = 0; SectionIndex < Sections.Num(); ++SectionIndex)
 	{
@@ -42,6 +41,9 @@ bool ValidateSections(
 			OutKnownSectionIds.Add(Section.SectionId);
 		}
 	}
+
+	OutKnownSectionIds.Add(DIVE::kSectionStandard);
+	OutKnownSectionIds.Add(DIVE::kSectionAdmin);
 	return bValid;
 }
 

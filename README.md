@@ -7,14 +7,14 @@ Modal detailed inspection sessions for complex devices in ATSEP / ERTOS-style si
 DIVE provides:
 
 - Orbit camera rig for device-focused sessions
-- **Explicit focus** — context menu or `HandleFocusUnderCursor` (not the default meaning of primary action in Default mode)
-- **Interaction modes** — Default (inspect) / Physical (proxy drive on device controls)
-- **In-session context menu** — component **Bindings** (Focus/Isolate/Admin) + **Action Catalog** (`UDIVEDeviceAction`)
+- **Explicit focus** — context menu or `HandleFocusUnderCursor` (not the default meaning of primary action in Interact mode)
+- **Interaction modes** — Interact (catalog primary / knobs) / Physical (GRIP grab of free bodies)
+- **In-session context menu** — component **Bindings** (Focus/Isolate; Admin if Seed Admin Defaults) + **Action Catalog** (`UDIVEDeviceAction`). Standing-VR reuses the same action graph via a host action host — it does **not** open the camera session (see `Docs/Design_PhysicalControls_OneState_TwoInputs.md` §8–§10).
 - **Primary action** — `PrimaryActionIndex` on binding; among matches LMB uses specificity (Name > PartId > Tag > Any), ties keep earlier Bindings entry (`IA_DIVE_PrimaryAction` → `HandlePrimaryAction*`); hover overlay under **DIVE | Pick | Hover**
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
-- **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** for monitor-side physical controls (host implements)
+- **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** — monitor adapter for the interact verb (tier 2; host implements; zero in-plugin backends)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (`FDIVECameraSettings` under DIVE | Camera)
-- Self-contained **DIVERuntime** (no ACTS / MESS); optional **GRIP** via sibling plugin **DIVEGRIPBridge** for Physical-mode pawn grab (§7)
+- Self-contained **DIVERuntime** (no ACTS / MESS); optional **GRIP** via sibling plugin **DIVEGRIPBridge** for Physical-mode pawn grab. DIVE `.uplugin` does **not** list GRIP — `DIVERuntimeDev` / the bridge detect it via UBT `ReadAvailablePlugins`. `DIVE.Dump*` implementation stays in `DIVEUncooked` and is linked from RuntimeDev only in **editor** targets.
 
 **Input:** `UDIVEPlayerComponent` on the **locally controlled pawn** — BlueprintCallable `Handle*` methods (target for Enhanced Input). Session chrome and context menu live on the same component. Legacy dev component forwards `BindKey` only.
 
@@ -35,7 +35,7 @@ DIVE provides:
 4. On the locally controlled pawn: **`UDIVEPlayerComponent`**.
 5. Optional PIE: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — RMB context menu, MMB orbit, etc.
 6. Open session: ACTS `OnActionExecuted` → `TryRequestSessionFromActionId` (`OpenDIVE` / `DIVE::kActionOpenDIVE`), or `RequestSession()` — see `Docs/QUICKSTART.md` §3.
-7. Custom menu: **Action Catalog / Bindings** + action instances — **`Docs/QUICKSTART.md`** §1.
+7. Custom menu: **Action Catalog / Bindings** + action instances — **`Docs/QUICKSTART.md`** §1. Knobs/nuts: Rotary/Threaded drive on a tagged mesh (§2).
 8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `Docs/Additional/DeviceInteractionModel.md` §6). For generic GRIP drag: enable **`DIVEGRIPBridge`**; on the pawn add **GRIP Rig** with slots Player + Dive (not Hand from Add Component). Player auto-creates the GRIP Physical Drive provider.
 
 See `Docs/QUICKSTART.md`, `Docs/ARCHITECTURE.md`, and `Docs/Additional/DeviceInteractionModel.md`.

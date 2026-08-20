@@ -10,6 +10,7 @@
 #include "DIVEHierarchy.h"
 #include "DIVELog.h"
 #include "DIVESessionSubsystem.h"
+#include "DIVECameraRig.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/ShapeComponent.h"
@@ -17,6 +18,7 @@
 #if WITH_EDITOR
 #include "DIVEActionBindingValidation.h"
 #include "Misc/DataValidation.h"
+#include "UObject/UnrealType.h"
 #endif
 
 UDIVEInspectableComponent::UDIVEInspectableComponent()
@@ -30,6 +32,26 @@ void UDIVEInspectableComponent::PostInitProperties()
 	SeedDefaultBindingsIfNeeded();
 }
 
+#if WITH_EDITOR
+void UDIVEInspectableComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	const FName PropertyName = PropertyChangedEvent.GetMemberPropertyName();
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, bSeedAdminDefaults))
+	{
+		if (bSeedAdminDefaults)
+		{
+			EnsureSeededAdminDefaults();
+		}
+		else
+		{
+			RemoveSeededAdminDefaults();
+		}
+	}
+}
+#endif
+
 void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 {
 	if (!Bindings.IsEmpty())
@@ -42,35 +64,89 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 		FDIVEMenuSection StandardSection;
 		StandardSection.SectionId = DIVE::kSectionStandard;
 		Sections.Add(StandardSection);
-
-		FDIVEMenuSection AdminSection;
-		AdminSection.SectionId = DIVE::kSectionAdmin;
-		AdminSection.Header = NSLOCTEXT("DIVE", "SectionAdminHeader", "Admin");
-		Sections.Add(AdminSection);
 	}
 
 	UDIVEFocusAction* FocusAction = NewObject<UDIVEFocusAction>(this, TEXT("DefaultFocusAction"));
 	UDIVEIsolateAction* IsolateAction = NewObject<UDIVEIsolateAction>(this, TEXT("DefaultIsolateAction"));
-	UDIVESimulatePhysicsAction* SimulatePhysicsAction =
-		NewObject<UDIVESimulatePhysicsAction>(this, TEXT("DefaultSimulatePhysicsAction"));
-	UDIVEDeleteMeshAction* DeleteMeshAction =
-		NewObject<UDIVEDeleteMeshAction>(this, TEXT("DefaultDeleteMeshAction"));
 
 	FDIVEActionBinding StandardBinding;
-	StandardBinding.BindingId = TEXT("BuiltIn.Standard");
+	StandardBinding.BindingId = DIVE::kBindingBuiltInStandard;
 	StandardBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	StandardBinding.SectionId = DIVE::kSectionStandard;
 	StandardBinding.Actions.Add(FocusAction);
 	StandardBinding.Actions.Add(IsolateAction);
 	Bindings.Add(StandardBinding);
 
+	if (bSeedAdminDefaults)
+	{
+		EnsureSeededAdminDefaults();
+	}
+}
+
+void UDIVEInspectableComponent::EnsureSeededAdminDefaults()
+{
+	for (const FDIVEActionBinding& Binding : Bindings)
+	{
+		if (Binding.BindingId == DIVE::kBindingBuiltInAdmin)
+		{
+			return;
+		}
+	}
+
+	bool bHasAdminSection = false;
+	for (const FDIVEMenuSection& Section : Sections)
+	{
+		if (Section.SectionId == DIVE::kSectionAdmin)
+		{
+			bHasAdminSection = true;
+			break;
+		}
+	}
+	if (!bHasAdminSection)
+	{
+		FDIVEMenuSection AdminSection;
+		AdminSection.SectionId = DIVE::kSectionAdmin;
+		AdminSection.Header = NSLOCTEXT("DIVE", "SectionAdminHeader", "Admin");
+		Sections.Add(AdminSection);
+	}
+
+	UDIVESimulatePhysicsAction* SimulatePhysicsAction =
+		NewObject<UDIVESimulatePhysicsAction>(this, TEXT("DefaultSimulatePhysicsAction"));
+	UDIVEDeleteMeshAction* DeleteMeshAction =
+		NewObject<UDIVEDeleteMeshAction>(this, TEXT("DefaultDeleteMeshAction"));
+
 	FDIVEActionBinding AdminBinding;
-	AdminBinding.BindingId = TEXT("BuiltIn.Admin");
+	AdminBinding.BindingId = DIVE::kBindingBuiltInAdmin;
 	AdminBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
 	AdminBinding.SectionId = DIVE::kSectionAdmin;
 	AdminBinding.Actions.Add(SimulatePhysicsAction);
 	AdminBinding.Actions.Add(DeleteMeshAction);
 	Bindings.Add(AdminBinding);
+}
+
+void UDIVEInspectableComponent::RemoveSeededAdminDefaults()
+{
+	Bindings.RemoveAll([](const FDIVEActionBinding& Binding)
+	{
+		return Binding.BindingId == DIVE::kBindingBuiltInAdmin;
+	});
+
+	bool bAdminSectionStillUsed = false;
+	for (const FDIVEActionBinding& Binding : Bindings)
+	{
+		if (Binding.SectionId == DIVE::kSectionAdmin)
+		{
+			bAdminSectionStillUsed = true;
+			break;
+		}
+	}
+	if (!bAdminSectionStillUsed)
+	{
+		Sections.RemoveAll([](const FDIVEMenuSection& Section)
+		{
+			return Section.SectionId == DIVE::kSectionAdmin;
+		});
+	}
 }
 
 bool UDIVEInspectableComponent::RequestSession()
@@ -859,6 +935,28 @@ FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
 	Context.PickTarget = PickTarget;
 	Context.ScreenPosition = ScreenPosition;
 	Context.PickHit = PickHit;
+
+	if (UWorld* World = GetWorld())
+	{
+		if (const UDIVESessionSubsystem* Session = World->GetSubsystem<UDIVESessionSubsystem>())
+		{
+			if (const ADIVECameraRig* CameraRig = Session->GetActiveCameraRig())
+			{
+				Context.ViewLocation = CameraRig->GetActorLocation();
+				Context.ViewRotation = CameraRig->GetActorRotation();
+			}
+		}
+	}
+
+	if (PickHit.bBlockingHit || !PickHit.TraceStart.Equals(PickHit.TraceEnd))
+	{
+		Context.PickRayDir = (PickHit.TraceEnd - PickHit.TraceStart).GetSafeNormal();
+	}
+	if (Context.PickRayDir.IsNearlyZero())
+	{
+		Context.PickRayDir = Context.ViewRotation.Vector();
+	}
+
 	return Context;
 }
 

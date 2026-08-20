@@ -32,14 +32,6 @@ void AddError(FDIVEDeviceScanReport& Report, const FString& Text)
 }
 }
 
-bool FDIVEDeviceScanReport::HasErrors() const
-{
-	return Messages.ContainsByPredicate([](const FDIVEDeviceScanMessage& Message)
-	{
-		return Message.Severity == TEXT("Error");
-	});
-}
-
 FString FDIVEDeviceScanReport::ToLogString() const
 {
 	FString Output = FString::Printf(TEXT("DIVE Scan: %s (%d anchors)\n"), *DeviceName, AnchorCount);

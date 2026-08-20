@@ -8,6 +8,7 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Widgets/Layout/Anchors.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -15,6 +16,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "DIVEDeviceAction.h"
 #include "Engine/GameViewportClient.h"
+#include "Engine/Engine.h"
 #include "InputCoreTypes.h"
 #include "UI/SharedUmgStyle.h"
 
@@ -41,6 +43,21 @@ float SnapSlateUnitsToPhysicalPixel(float Value, float ViewportScale)
 float OnePhysicalPixelInSlateUnits(float ViewportScale)
 {
 	return 1.f / ViewportScale;
+}
+
+FVector2D GetViewportSizePixels()
+{
+	FVector2D Size(1920.f, 1080.f);
+	if (GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->GetViewportSize(Size);
+	}
+	return Size;
+}
+
+FVector2D PixelToSlate(const FVector2D Pixel, const float ViewportScale)
+{
+	return Pixel / ViewportScale;
 }
 
 FButtonStyle MakeRowButtonStyle(const FDIVEContextMenuStyle& Style)
@@ -189,16 +206,33 @@ void UDIVEContextMenuWidget::UpdateDismissCaptureSize()
 		return;
 	}
 
-	FVector2D ViewportSize(1920.f, 1080.f);
-	if (GEngine && GEngine->GameViewport)
-	{
-		GEngine->GameViewport->GetViewportSize(ViewportSize);
-	}
-
+	// Stretch-fill the root canvas (slate viewport). Do not assign GetViewportSize pixels —
+	// those are a different space from CanvasPanelSlot at DPI ≠ 1.
 	if (UCanvasPanelSlot* DismissSlot = Cast<UCanvasPanelSlot>(DismissCapture->Slot))
 	{
-		DismissSlot->SetSize(FVector2D(ViewportSize.X, ViewportSize.Y));
+		DismissSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		DismissSlot->SetOffsets(FMargin(0.f));
 	}
+}
+
+void UDIVEContextMenuWidget::ApplyMenuSlotPosition()
+{
+	if (!OuterFrame || !OuterFrame->Slot)
+	{
+		return;
+	}
+
+	UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(OuterFrame->Slot);
+	if (!PanelSlot)
+	{
+		return;
+	}
+
+	const float ViewportScale = GetViewportScaleSafe(this);
+	const FVector2D SlatePosition = ClampPositionToViewport(PixelToSlate(CachedScreenPosition, ViewportScale));
+	PanelSlot->SetPosition(FVector2D(
+		SnapSlateUnitsToPhysicalPixel(SlatePosition.X, ViewportScale),
+		SnapSlateUnitsToPhysicalPixel(SlatePosition.Y, ViewportScale)));
 }
 
 void UDIVEContextMenuWidget::SetStyle(const FDIVEContextMenuStyle& InStyle)
@@ -215,19 +249,9 @@ void UDIVEContextMenuWidget::SetEntries(const TArray<FDIVEContextMenuEntry>& Ent
 
 void UDIVEContextMenuWidget::SetScreenPosition(const FVector2D& InScreenPosition)
 {
-	CachedScreenPosition = ClampPositionToViewport(InScreenPosition);
+	CachedScreenPosition = InScreenPosition;
 	UpdateDismissCaptureSize();
-
-	if (OuterFrame && OuterFrame->Slot)
-	{
-		if (UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(OuterFrame->Slot))
-		{
-			const float ViewportScale = GetViewportScaleSafe(this);
-			PanelSlot->SetPosition(FVector2D(
-				SnapSlateUnitsToPhysicalPixel(CachedScreenPosition.X, ViewportScale),
-				SnapSlateUnitsToPhysicalPixel(CachedScreenPosition.Y, ViewportScale)));
-		}
-	}
+	ApplyMenuSlotPosition();
 }
 
 float UDIVEContextMenuWidget::GetSectionDividerHeight(const FText& Header) const
@@ -265,29 +289,21 @@ float UDIVEContextMenuWidget::GetEstimatedMenuHeight() const
 	return Height;
 }
 
-FVector2D UDIVEContextMenuWidget::ClampPositionToViewport(const FVector2D& ScreenPosition) const
+FVector2D UDIVEContextMenuWidget::ClampPositionToViewport(const FVector2D& SlatePosition) const
 {
-	FVector2D ViewportSize;
-	if (GEngine && GEngine->GameViewport)
-	{
-		GEngine->GameViewport->GetViewportSize(ViewportSize);
-	}
-	else
-	{
-		ViewportSize = FVector2D(1920.f, 1080.f);
-	}
+	const float ViewportScale = GetViewportScaleSafe(this);
+	const FVector2D ViewportSlate = PixelToSlate(GetViewportSizePixels(), ViewportScale);
 
 	const float Margin = 6.f;
 	const float EstimatedWidth = CachedStyle.MenuWidth + CachedStyle.PanelPadding * 2.f + 2.f;
 	const float EstimatedHeight = GetEstimatedMenuHeight();
 
-	const float MaxX = FMath::Max(Margin, ViewportSize.X - EstimatedWidth - Margin);
-	const float MaxY = FMath::Max(Margin, ViewportSize.Y - EstimatedHeight - Margin);
+	const float MaxX = FMath::Max(Margin, ViewportSlate.X - EstimatedWidth - Margin);
+	const float MaxY = FMath::Max(Margin, ViewportSlate.Y - EstimatedHeight - Margin);
 
-	const float ViewportScale = GetViewportScaleSafe(this);
 	const FVector2D ClampedPosition(
-		FMath::Clamp(ScreenPosition.X, Margin, MaxX),
-		FMath::Clamp(ScreenPosition.Y, Margin, MaxY));
+		FMath::Clamp(SlatePosition.X, Margin, MaxX),
+		FMath::Clamp(SlatePosition.Y, Margin, MaxY));
 
 	return FVector2D(
 		SnapSlateUnitsToPhysicalPixel(ClampedPosition.X, ViewportScale),
@@ -479,5 +495,5 @@ void UDIVEContextMenuWidget::RebuildList()
 	}
 
 	UpdateDismissCaptureSize();
-	SetScreenPosition(CachedScreenPosition);
+	ApplyMenuSlotPosition();
 }

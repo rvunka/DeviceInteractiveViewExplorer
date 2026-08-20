@@ -82,13 +82,18 @@ public:
 	TObjectPtr<UDIVEActionCatalogAsset> ActionCatalog;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
+		DisplayName = "Seed Admin Defaults",
+		ToolTip = "When Bindings are empty at first init, also seed Simulate Physics / Delete Mesh. Uncheck in Details to remove the seeded Admin binding (custom Admin rows with another BindingId are kept). Hidden in Shipping regardless."))
+	bool bSeedAdminDefaults = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
 		DisplayName = "Bindings",
-		ToolTip = "Local bindings (defaults: Focus/Isolate/Admin). Clear for none."))
+		ToolTip = "Local bindings (defaults: Focus/Isolate; Admin if Seed Admin Defaults). Clear for none."))
 	TArray<FDIVEActionBinding> Bindings;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
 		DisplayName = "Sections",
-		ToolTip = "Menu sections for local Bindings (Standard / Admin by default)."))
+		ToolTip = "Menu sections for local Bindings (Standard; Admin if Seed Admin Defaults)."))
 	TArray<FDIVEMenuSection> Sections;
 
 	UPROPERTY(BlueprintAssignable, Category = "DIVE")
@@ -260,11 +265,17 @@ public:
 
 	virtual void PostInitProperties() override;
 
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+
 private:
 	UPROPERTY(Transient)
 	mutable FDIVEPartTree SemanticRegistry;
 
 	void SeedDefaultBindingsIfNeeded();
+	void EnsureSeededAdminDefaults();
+	void RemoveSeededAdminDefaults();
 
 	FName ResolveTargetKeyForQuery(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
 	bool MatchesComponentNameValue(const UPrimitiveComponent* Primitive, FName MatchValue) const;

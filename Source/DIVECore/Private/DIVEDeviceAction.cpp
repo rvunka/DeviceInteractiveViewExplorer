@@ -70,7 +70,15 @@ FText UDIVEDeviceAction::GetResolvedDisplayName() const
 	}
 
 	const UClass* ActionClass = GetClass();
-	return ActionClass ? ActionClass->GetDisplayNameText() : FText::GetEmpty();
+	if (!ActionClass)
+	{
+		return FText::GetEmpty();
+	}
+#if WITH_EDITOR
+	return ActionClass->GetDisplayNameText();
+#else
+	return FText::FromName(ActionClass->GetFName());
+#endif
 }
 
 bool UDIVEContinuousDeviceAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
@@ -91,17 +99,24 @@ void UDIVEContinuousDeviceAction::EndInteraction_Implementation(bool bCommit)
 	NotifyInteractionCompleted();
 }
 
-void UDIVEContinuousDeviceAction::MarkInteractionActive()
+void UDIVEContinuousDeviceAction::MarkInteractionActive(const FDIVEActionContext& Context)
 {
 	// Catalog-hosted actions are shared instances: at most one interaction can be active at a time.
 	// If this fires, two concurrent interactions attempted to use the same action object.
 	ensure(!bInteractionActive);
 	bInteractionActive = true;
+	ActiveInteractionContext = Context;
+}
+
+void UDIVEContinuousDeviceAction::NotifyValueChanged(const float NormalizedValue)
+{
+	OnValueChanged.Broadcast(this, ActiveInteractionContext, FMath::Clamp(NormalizedValue, 0.f, 1.f));
 }
 
 void UDIVEContinuousDeviceAction::NotifyInteractionCompleted()
 {
 	bInteractionActive = false;
+	ActiveInteractionContext = FDIVEActionContext();
 }
 
 bool UDIVEContinuousDeviceAction::Execute_Implementation(const FDIVEActionContext& Context)

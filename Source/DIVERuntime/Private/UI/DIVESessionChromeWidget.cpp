@@ -45,14 +45,15 @@ FText UDIVESessionChromeWidget::ResolveModeLabel(EDIVESessionInteractionMode InM
 	{
 	case EDIVESessionInteractionMode::Physical:
 		return NSLOCTEXT("DIVE", "SessionModePhysical", "Physical");
+	case EDIVESessionInteractionMode::Interact:
 	default:
-		return NSLOCTEXT("DIVE", "SessionModeDefault", "Default");
+		return NSLOCTEXT("DIVE", "SessionModeInteract", "Interact");
 	}
 }
 
 FLinearColor UDIVESessionChromeWidget::ResolveModeTextColor(EDIVESessionInteractionMode InMode) const
 {
-	return InMode == EDIVESessionInteractionMode::Physical ? CachedStyle.ModeText : CachedStyle.DefaultModeText;
+	return InMode == EDIVESessionInteractionMode::Physical ? CachedStyle.ModeText : CachedStyle.InteractModeText;
 }
 
 void UDIVESessionChromeWidget::RebuildChrome()

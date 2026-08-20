@@ -3,6 +3,7 @@
 #include "Actions/DIVEBuiltInActions.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "DIVEDriveMapping.h"
 #include "DIVEProxyDrive.h"
 #include "DIVEProxyDriveResolve.h"
 #include "DIVEProxyDriveTypes.h"
@@ -178,7 +179,15 @@ bool UDIVEProxyDriveForwardAction::CanExecute_Implementation(const FDIVEActionCo
 	{
 		if (UObject* ProxyObject = Cast<UObject>(ProxyDrive))
 		{
-			return IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject);
+			FDIVEProxyDriveContext DriveContext;
+			DriveContext.ScreenPosition = Context.ScreenPosition;
+			DriveContext.FocusTarget = Context.PickTarget;
+			DriveContext.HitComponent = Context.Target;
+			DriveContext.PickHit = Context.PickHit;
+			DriveContext.ViewLocation = Context.ViewLocation;
+			DriveContext.ViewRotation = Context.ViewRotation;
+			DriveContext.PickRayDir = Context.PickRayDir;
+			return IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject, DriveContext);
 		}
 	}
 	return false;
@@ -194,16 +203,18 @@ bool UDIVEProxyDriveForwardAction::BeginInteraction_Implementation(const FDIVEAc
 
 	IDIVEProxyDrive* ProxyDrive = DIVEProxyDriveResolve::FindProxyDriveForHit(Context.Target);
 	UObject* ProxyObject = Cast<UObject>(ProxyDrive);
-	if (!ProxyObject || !IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject))
-	{
-		return false;
-	}
-
 	FDIVEProxyDriveContext DriveContext;
 	DriveContext.ScreenPosition = Context.ScreenPosition;
 	DriveContext.FocusTarget = Context.PickTarget;
 	DriveContext.HitComponent = Context.Target;
 	DriveContext.PickHit = Context.PickHit;
+	DriveContext.ViewLocation = Context.ViewLocation;
+	DriveContext.ViewRotation = Context.ViewRotation;
+	DriveContext.PickRayDir = Context.PickRayDir;
+	if (!ProxyObject || !IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject, DriveContext))
+	{
+		return false;
+	}
 
 	if (!IDIVEProxyDrive::Execute_BeginProxyDrive(ProxyObject, DriveContext))
 	{
@@ -211,15 +222,31 @@ bool UDIVEProxyDriveForwardAction::BeginInteraction_Implementation(const FDIVEAc
 	}
 
 	ActiveProxyObject = ProxyObject;
+
+	float NormalizedValue = 0.f;
+	if (IDIVEProxyDrive::Execute_GetProxyDriveNormalizedValue(ProxyObject, NormalizedValue))
+	{
+		NotifyValueChanged(NormalizedValue);
+	}
+
 	return true;
 }
 
 void UDIVEProxyDriveForwardAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
 {
 	(void)DeltaTime;
-	if (UObject* ProxyObject = ActiveProxyObject.Get())
+	UObject* ProxyObject = ActiveProxyObject.Get();
+	if (!ProxyObject)
 	{
-		IDIVEProxyDrive::Execute_ApplyProxyDriveDelta(ProxyObject, ScreenDelta);
+		return;
+	}
+
+	IDIVEProxyDrive::Execute_ApplyProxyDriveDelta(ProxyObject, ScreenDelta);
+
+	float NormalizedValue = 0.f;
+	if (IDIVEProxyDrive::Execute_GetProxyDriveNormalizedValue(ProxyObject, NormalizedValue))
+	{
+		NotifyValueChanged(NormalizedValue);
 	}
 }
 
@@ -246,4 +273,247 @@ bool UDIVENotifyAction::Execute_Implementation(const FDIVEActionContext& Context
 	}
 
 	return true;
+}
+
+namespace
+{
+FVector DriveAxisLocal(const EDIVEDriveAxis Axis)
+{
+	switch (Axis)
+	{
+	case EDIVEDriveAxis::X: return FVector::XAxisVector;
+	case EDIVEDriveAxis::Y: return FVector::YAxisVector;
+	default: return FVector::ZAxisVector;
+	}
+}
+
+FVector DriveAxisWorld(const UPrimitiveComponent* Target, const EDIVEDriveAxis Axis)
+{
+	if (!Target)
+	{
+		return FVector::ZAxisVector;
+	}
+	return Target->GetComponentTransform().TransformVectorNoScale(DriveAxisLocal(Axis)).GetSafeNormal();
+}
+}
+
+UDIVERotaryDriveAction::UDIVERotaryDriveAction()
+{
+	DisplayName = NSLOCTEXT("DIVE", "RotaryDrive", "Rotate");
+}
+
+bool UDIVERotaryDriveAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
+{
+	return Super::CanExecute_Implementation(Context)
+		&& Context.Target != nullptr
+		&& !Context.Target->IsSimulatingPhysics();
+}
+
+bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
+{
+	UPrimitiveComponent* Target = Context.Target.Get();
+	if (!Target || Target->IsSimulatingPhysics())
+	{
+		return false;
+	}
+
+	ActiveTarget = Target;
+	StartRelativeRotation = Target->GetRelativeRotation();
+	ViewRotation = Context.ViewRotation;
+	AccumulatedDegrees = 0.f;
+	NotifyValueChanged(GetNormalizedValue());
+	return true;
+}
+
+void UDIVERotaryDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
+{
+	(void)DeltaTime;
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target || !IsInteractionActive())
+	{
+		return;
+	}
+
+	const float DeltaDeg = DIVE::MapScreenDeltaToAxisAngle(
+		ScreenDelta,
+		ViewRotation,
+		DriveAxisWorld(Target, Axis),
+		DegreesPerPixel);
+	AccumulatedDegrees += DeltaDeg;
+
+	if (DetentStepDegrees > KINDA_SMALL_NUMBER)
+	{
+		AccumulatedDegrees = FMath::GridSnap(AccumulatedDegrees, DetentStepDegrees);
+	}
+
+	if (bLimitAngle)
+	{
+		const float Lo = FMath::Min(MinAngleDegrees, MaxAngleDegrees);
+		const float Hi = FMath::Max(MinAngleDegrees, MaxAngleDegrees);
+		AccumulatedDegrees = FMath::Clamp(AccumulatedDegrees, Lo, Hi);
+	}
+
+	ApplyAccumulated();
+	NotifyValueChanged(GetNormalizedValue());
+}
+
+void UDIVERotaryDriveAction::EndInteraction_Implementation(const bool bCommit)
+{
+	if (!bCommit && bRestoreOnCancel)
+	{
+		if (UPrimitiveComponent* Target = ActiveTarget.Get())
+		{
+			Target->SetRelativeRotation(StartRelativeRotation);
+		}
+	}
+
+	ActiveTarget.Reset();
+	AccumulatedDegrees = 0.f;
+	NotifyInteractionCompleted();
+}
+
+void UDIVERotaryDriveAction::ApplyAccumulated()
+{
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target)
+	{
+		return;
+	}
+
+	const FQuat DeltaQ(DriveAxisLocal(Axis), FMath::DegreesToRadians(AccumulatedDegrees));
+	Target->SetRelativeRotation(FQuat(StartRelativeRotation) * DeltaQ);
+}
+
+float UDIVERotaryDriveAction::GetNormalizedValue() const
+{
+	if (!bLimitAngle)
+	{
+		return FMath::Fmod(FMath::Abs(AccumulatedDegrees), 360.f) / 360.f;
+	}
+
+	const float Lo = FMath::Min(MinAngleDegrees, MaxAngleDegrees);
+	const float Hi = FMath::Max(MinAngleDegrees, MaxAngleDegrees);
+	const float Span = Hi - Lo;
+	if (Span <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+	return (AccumulatedDegrees - Lo) / Span;
+}
+
+UDIVEThreadedDriveAction::UDIVEThreadedDriveAction()
+{
+	DisplayName = NSLOCTEXT("DIVE", "ThreadedDrive", "Unscrew");
+}
+
+bool UDIVEThreadedDriveAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
+{
+	if (!Super::CanExecute_Implementation(Context) || !Context.Target)
+	{
+		return false;
+	}
+
+	return !Context.Target->IsSimulatingPhysics();
+}
+
+bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
+{
+	UPrimitiveComponent* Target = Context.Target.Get();
+	if (!Target || Target->IsSimulatingPhysics())
+	{
+		return false;
+	}
+
+	ActiveTarget = Target;
+	StartRelativeTransform = Target->GetRelativeTransform();
+	ViewRotation = Context.ViewRotation;
+	AccumulatedTurns = 0.f;
+	bReleased = false;
+	NotifyValueChanged(0.f);
+	return true;
+}
+
+void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
+{
+	(void)DeltaTime;
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target || !IsInteractionActive() || bReleased)
+	{
+		return;
+	}
+
+	const float DeltaDeg = DIVE::MapScreenDeltaToAxisAngle(
+		ScreenDelta,
+		ViewRotation,
+		DriveAxisWorld(Target, Axis),
+		DegreesPerPixel);
+	const float SignedTurns = (DeltaDeg / 360.f) * (bPositiveDeltaLoosens ? 1.f : -1.f);
+	AccumulatedTurns = FMath::Clamp(AccumulatedTurns + SignedTurns, 0.f, TurnsToRelease);
+
+	ApplyAccumulated();
+	NotifyValueChanged(GetNormalizedValue());
+
+	if (AccumulatedTurns >= TurnsToRelease - KINDA_SMALL_NUMBER)
+	{
+		ReleaseTarget();
+	}
+}
+
+void UDIVEThreadedDriveAction::EndInteraction_Implementation(const bool bCommit)
+{
+	if (!bCommit && !bReleased)
+	{
+		if (UPrimitiveComponent* Target = ActiveTarget.Get())
+		{
+			Target->SetRelativeTransform(StartRelativeTransform);
+		}
+	}
+
+	ActiveTarget.Reset();
+	AccumulatedTurns = 0.f;
+	bReleased = false;
+	NotifyInteractionCompleted();
+}
+
+void UDIVEThreadedDriveAction::ApplyAccumulated()
+{
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target)
+	{
+		return;
+	}
+
+	const FVector AxisLocal = DriveAxisLocal(Axis);
+	const FQuat DeltaQ(AxisLocal, FMath::DegreesToRadians(AccumulatedTurns * 360.f));
+	const FVector AxisInParent = StartRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
+	const FVector RelOffset = AxisInParent * (AccumulatedTurns * PitchCmPerTurn);
+
+	FTransform NewRel = StartRelativeTransform;
+	NewRel.SetRotation(StartRelativeTransform.GetRotation() * DeltaQ);
+	NewRel.SetTranslation(StartRelativeTransform.GetTranslation() + RelOffset);
+	Target->SetRelativeTransform(NewRel);
+}
+
+void UDIVEThreadedDriveAction::ReleaseTarget()
+{
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target || bReleased)
+	{
+		return;
+	}
+
+	bReleased = true;
+	Target->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	Target->SetSimulatePhysics(true);
+	NotifyValueChanged(1.f);
+	NotifyInteractionCompleted();
+}
+
+float UDIVEThreadedDriveAction::GetNormalizedValue() const
+{
+	if (TurnsToRelease <= KINDA_SMALL_NUMBER)
+	{
+		return 1.f;
+	}
+	return FMath::Clamp(AccumulatedTurns / TurnsToRelease, 0.f, 1.f);
 }

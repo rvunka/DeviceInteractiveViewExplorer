@@ -6,7 +6,6 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "DIVEDeviceAction.h"
 #include "DIVEPawnPhysicalDrive.h"
-#include "DIVEProxyDrive.h"
 #include "DIVETypes.h"
 #include "Engine/HitResult.h"
 #include "DIVESessionSubsystem.generated.h"
@@ -56,6 +55,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	UDIVEInspectableComponent* GetActiveInspectable() const { return ActiveInspectable.Get(); }
+
+	UFUNCTION(BlueprintPure, Category = "DIVE")
+	ADIVECameraRig* GetActiveCameraRig() const { return ActiveCameraRig.Get(); }
 
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	FDIVEFocusTarget GetFocusedTarget() const { return FocusedTarget; }
@@ -252,14 +254,14 @@ private:
 	TWeakObjectPtr<UDIVEContinuousDeviceAction> ActiveContinuousAction;
 
 	/**
-	 * Internal action instance used to route Physical-mode device proxy drive through the standard
-	 * continuous-action slot. Created once per session in TryBeginSession and reused for every
-	 * subsequent Physical-mode pick on an IDIVEProxyDrive primitive.
+	 * Internal action instance that routes Physical-mode IDIVEProxyDrive hits through the standard
+	 * continuous-action slot (pre-rev2). Target: Interact catalog / ForwardAction, not Physical pick.
+	 * Created once per session in TryBeginSession and reused.
 	 */
 	UPROPERTY(Transient)
 	TObjectPtr<UDIVEProxyDriveForwardAction> InternalProxyDriveAction;
 
-	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Default;
+	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Interact;
 
 	float SessionDefaultOrbitDistance = DIVE::kDefaultOrbitDistance;
 

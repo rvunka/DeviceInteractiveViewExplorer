@@ -40,10 +40,6 @@ public:
 	void SyncOrbitFromCurrentView();
 	void SyncOrbitOrientationFromCurrentView();
 
-	float GetOrbitDistance() const { return OrbitDistance; }
-	float GetMinOrbitDistance() const { return MinOrbitDistance; }
-	float GetMaxOrbitDistance() const { return MaxOrbitDistance; }
-
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DIVE")
 	TObjectPtr<UCameraComponent> CameraComponent;

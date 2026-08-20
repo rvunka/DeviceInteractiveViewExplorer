@@ -24,9 +24,9 @@ public class DIVEUnrealEditor : ModuleRules
 			"Slate",
 			"SlateCore",
 			"ToolMenus",
-			"EditorFramework",
 			"DataValidation",
 			"PropertyEditor",
+			// Slate SComboBox in DIVEActionBindingCustomization instantiates EKeys (LNK2019 without this).
 			"InputCore",
 			"DIVEUncooked"
 		});

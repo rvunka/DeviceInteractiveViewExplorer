@@ -61,6 +61,7 @@ protected:
 
 	void RebuildList();
 	void UpdateDismissCaptureSize();
+	void ApplyMenuSlotPosition();
 	void AddActionRow(
 		const FDIVEContextMenuEntry& Entry,
 		const FSlateFontInfo& RowFont,
@@ -94,6 +95,7 @@ protected:
 	TArray<FDIVEContextMenuEntry> CachedEntries;
 
 	FDIVEContextMenuStyle CachedStyle;
+	/** Viewport pixels from GetMousePosition / pick — converted to slate only when applying the slot. */
 	FVector2D CachedScreenPosition = FVector2D::ZeroVector;
 
 	friend class UDIVEContextMenuActionButton;

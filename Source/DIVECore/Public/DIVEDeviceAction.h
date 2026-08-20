@@ -45,6 +45,15 @@ struct DIVECORE_API FDIVEActionContext
 
 	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
 	FHitResult PickHit;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector ViewLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FRotator ViewRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector PickRayDir = FVector::ForwardVector;
 };
 
 USTRUCT(BlueprintType)
@@ -117,7 +126,7 @@ public:
 
 	/** Injected by FDIVEActionWorldScope so catalog-hosted actions have a world during invocation. */
 	void SetExecutionWorld(UWorld* InWorld) { ExecutionWorld = InWorld; }
-	void ClearExecutionWorld()              { ExecutionWorld.Reset(); }
+	UWorld* GetExecutionWorld() const { return ExecutionWorld.Get(); }
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Action")
 	bool CanExecute(const FDIVEActionContext& Context) const;
@@ -137,7 +146,7 @@ private:
 	TWeakObjectPtr<UWorld> ExecutionWorld;
 };
 
-/** RAII: binds Action's execution world for the duration of the scope, then clears it. */
+/** RAII: binds Action's execution world for the duration of the scope, then restores the previous world. */
 struct DIVECORE_API FDIVEActionWorldScope
 {
 	FDIVEActionWorldScope(UDIVEDeviceAction* InAction, UWorld* InWorld)
@@ -145,6 +154,7 @@ struct DIVECORE_API FDIVEActionWorldScope
 	{
 		if (Action)
 		{
+			PreviousWorld = Action->GetExecutionWorld();
 			Action->SetExecutionWorld(InWorld);
 		}
 	}
@@ -153,7 +163,7 @@ struct DIVECORE_API FDIVEActionWorldScope
 	{
 		if (Action)
 		{
-			Action->ClearExecutionWorld();
+			Action->SetExecutionWorld(PreviousWorld.Get());
 		}
 	}
 
@@ -161,7 +171,8 @@ struct DIVECORE_API FDIVEActionWorldScope
 	FDIVEActionWorldScope& operator=(const FDIVEActionWorldScope&) = delete;
 
 private:
-	UDIVEDeviceAction* Action;
+	UDIVEDeviceAction* Action = nullptr;
+	TWeakObjectPtr<UWorld> PreviousWorld;
 };
 
 /** Hold/drag action (Begin / Update / End). */
@@ -189,8 +200,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Action")
 	bool IsInteractionActive() const { return bInteractionActive; }
 
-	/** Called by the session after a successful Begin. */
-	void MarkInteractionActive();
+	/** Called by the session before Begin so NotifyValueChanged in Begin has Context. */
+	void MarkInteractionActive(const FDIVEActionContext& Context = FDIVEActionContext());
+
+	UFUNCTION(BlueprintCallable, Category = "Action", meta = (
+		ToolTip = "Broadcast OnValueChanged (feeds the session value HUD). Context is the one from Begin."))
+	void NotifyValueChanged(float NormalizedValue);
 
 	UFUNCTION(BlueprintCallable, Category = "Action", meta = (
 		ToolTip = "Self-complete; session closes the continuous slot on the next update."))
@@ -201,6 +216,9 @@ public:
 protected:
 	UPROPERTY(Transient)
 	bool bInteractionActive = false;
+
+	UPROPERTY(Transient)
+	FDIVEActionContext ActiveInteractionContext;
 };
 
 USTRUCT(BlueprintType)

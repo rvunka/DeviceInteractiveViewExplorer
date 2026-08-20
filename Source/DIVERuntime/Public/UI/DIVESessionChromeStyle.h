@@ -25,7 +25,7 @@ struct DIVERUNTIME_API FDIVESessionChromeStyle
 	FLinearColor ModeText = FLinearColor(0.95f, 0.88f, 0.35f, 1.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|SessionChrome|Text")
-	FLinearColor DefaultModeText = FLinearColor(0.82f, 0.86f, 0.90f, 1.f);
+	FLinearColor InteractModeText = FLinearColor(0.82f, 0.86f, 0.90f, 1.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DIVE|SessionChrome|Text")
 	FLinearColor HintText = FLinearColor(0.55f, 0.58f, 0.62f, 1.f);

@@ -101,3 +101,6 @@ private:
 	FNodeTextCache CachedTooltip;
 	FNodeTextCache CachedNodeTitle;
 };
+
+void DIVEUncooked_EnsureActionClassMenuRefreshHooks();
+void DIVEUncooked_UninstallActionClassMenuRefreshHooks();

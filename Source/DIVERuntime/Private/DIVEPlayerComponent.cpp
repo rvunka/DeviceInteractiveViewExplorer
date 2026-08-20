@@ -122,7 +122,15 @@ void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	if (bOrbitKeyHeld)
 	{
-		ApplyOrbitFromMouseDelta();
+		if (Subsystem && Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive())
+		{
+			// Same mouse delta drives the gesture; orbiting would steal/double-apply it and desync mapping.
+			bHasLastOrbitMousePosition = false;
+		}
+		else
+		{
+			ApplyOrbitFromMouseDelta();
+		}
 	}
 
 	if (Subsystem && Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive() && !ShouldSuppressSessionInput())
@@ -132,7 +140,7 @@ void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	if (Subsystem
 		&& Subsystem->IsSessionActive()
-		&& Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Default
+		&& Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Interact
 		&& !ShouldSuppressSessionInput()
 		&& !Subsystem->IsProxyDriving())
 	{
@@ -434,7 +442,7 @@ void UDIVEPlayerComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosi
 		return;
 	}
 
-	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Default)
+	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Interact)
 	{
 		Subsystem->ExecutePrimaryActionAtScreenPosition(ScreenPosition, PlayerController);
 		return;
@@ -710,6 +718,11 @@ void UDIVEPlayerComponent::HandleOrbitDelta(FVector2D Delta)
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
+		if (Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive())
+		{
+			return;
+		}
+
 		if (Subsystem->IsSessionActive() && !Delta.IsNearlyZero())
 		{
 			Subsystem->ApplyOrbitInput(Delta);
@@ -726,6 +739,12 @@ void UDIVEPlayerComponent::HandleZoomIn()
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
+		if (Subsystem->IsPawnPhysicalDriveActive())
+		{
+			HandlePawnPhysicalGrabHoldDistanceScroll(1.f);
+			return;
+		}
+
 		if (Subsystem->IsSessionActive() && !Subsystem->IsProxyDriving())
 		{
 			Subsystem->ApplyZoomInput(1.f);
@@ -742,6 +761,12 @@ void UDIVEPlayerComponent::HandleZoomOut()
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
+		if (Subsystem->IsPawnPhysicalDriveActive())
+		{
+			HandlePawnPhysicalGrabHoldDistanceScroll(-1.f);
+			return;
+		}
+
 		if (Subsystem->IsSessionActive() && !Subsystem->IsProxyDriving())
 		{
 			Subsystem->ApplyZoomInput(-1.f);
@@ -868,7 +893,7 @@ EDIVESessionInteractionMode UDIVEPlayerComponent::GetInteractionMode() const
 		return Subsystem->GetInteractionMode();
 	}
 
-	return EDIVESessionInteractionMode::Default;
+	return EDIVESessionInteractionMode::Interact;
 }
 
 void UDIVEPlayerComponent::ReapplySessionInputMode()
@@ -970,9 +995,9 @@ void UDIVEPlayerComponent::HandleCycleInteractionMode()
 
 	const EDIVESessionInteractionMode CurrentMode = GetInteractionMode();
 	SetInteractionMode(
-		CurrentMode == EDIVESessionInteractionMode::Default
+		CurrentMode == EDIVESessionInteractionMode::Interact
 			? EDIVESessionInteractionMode::Physical
-			: EDIVESessionInteractionMode::Default);
+			: EDIVESessionInteractionMode::Interact);
 }
 
 void UDIVEPlayerComponent::HandleNavigateBack()

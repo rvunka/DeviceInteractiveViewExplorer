@@ -62,7 +62,7 @@ bool FDIVESessionPickOps::ExecutePrimaryActionAtScreenPosition(
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController)
 {
-	if (!Session.IsSessionActive() || Session.InteractionMode != EDIVESessionInteractionMode::Default || !PlayerController)
+	if (!Session.IsSessionActive() || Session.InteractionMode != EDIVESessionInteractionMode::Interact || !PlayerController)
 	{
 		return false;
 	}
@@ -105,7 +105,7 @@ void FDIVESessionPickOps::UpdatePickHover(
 	APlayerController* PlayerController)
 {
 	if (!Session.IsSessionActive()
-		|| Session.InteractionMode != EDIVESessionInteractionMode::Default
+		|| Session.InteractionMode != EDIVESessionInteractionMode::Interact
 		|| Session.bContextMenuOpen
 		|| !PlayerController)
 	{

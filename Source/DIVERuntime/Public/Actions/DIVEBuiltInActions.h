@@ -4,6 +4,8 @@
 
 #include "DIVEDeviceAction.h"
 
+class UPrimitiveComponent;
+
 #include "DIVEBuiltInActions.generated.h"
 
 UCLASS(BlueprintType, EditInlineNew, meta = (DisplayName = "DIVE Focus Action"))
@@ -88,4 +90,126 @@ public:
 	UDIVENotifyAction();
 
 	virtual bool Execute_Implementation(const FDIVEActionContext& Context) override;
+};
+
+UENUM(BlueprintType)
+enum class EDIVEDriveAxis : uint8
+{
+	X,
+	Y,
+	Z
+};
+
+/** Stateless mapper: screen drag → rotation around a local axis. State lives on the target transform. */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Rotary Drive Action",
+	ToolTip = "Hold/drag rotates the picked primitive around Axis. Limits and detents are per-instance."))
+class DIVERUNTIME_API UDIVERotaryDriveAction : public UDIVEContinuousDeviceAction
+{
+	GENERATED_BODY()
+
+public:
+	UDIVERotaryDriveAction();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
+	float DegreesPerPixel = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	bool bLimitAngle = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitAngle"))
+	float MinAngleDegrees = -180.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitAngle"))
+	float MaxAngleDegrees = 180.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ClampMin = "0.0",
+		ToolTip = "0 = no detents. Otherwise snap Accumulated angle to this step."))
+	float DetentStepDegrees = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	bool bRestoreOnCancel = true;
+
+	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
+	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
+	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
+	virtual void EndInteraction_Implementation(bool bCommit) override;
+
+private:
+	void ApplyAccumulated();
+	float GetNormalizedValue() const;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
+
+	UPROPERTY(Transient)
+	FRotator StartRelativeRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	FRotator ViewRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	float AccumulatedDegrees = 0.f;
+};
+
+/**
+ * Screen drag unscrews a primitive along its local axis. Progress is encoded in relative
+ * rotation + translation. At TurnsToRelease the part detaches and simulates physics.
+ */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Threaded Drive Action",
+	ToolTip = "Hold/drag unscrews the picked primitive. On complete: detach + Simulate Physics."))
+class DIVERUNTIME_API UDIVEThreadedDriveAction : public UDIVEContinuousDeviceAction
+{
+	GENERATED_BODY()
+
+public:
+	UDIVEThreadedDriveAction();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
+	float DegreesPerPixel = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
+	float TurnsToRelease = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ClampMin = "0.0",
+		ToolTip = "Relative translation along Axis per full turn (cm)."))
+	float PitchCmPerTurn = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ToolTip = "If true, positive mapped delta (typically drag right) loosens toward release."))
+	bool bPositiveDeltaLoosens = true;
+
+	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
+	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
+	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
+	virtual void EndInteraction_Implementation(bool bCommit) override;
+
+private:
+	void ApplyAccumulated();
+	void ReleaseTarget();
+	float GetNormalizedValue() const;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
+
+	UPROPERTY(Transient)
+	FTransform StartRelativeTransform = FTransform::Identity;
+
+	UPROPERTY(Transient)
+	FRotator ViewRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	float AccumulatedTurns = 0.f;
+
+	UPROPERTY(Transient)
+	bool bReleased = false;
 };

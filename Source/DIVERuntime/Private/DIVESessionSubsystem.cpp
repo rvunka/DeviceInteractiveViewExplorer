@@ -68,8 +68,8 @@ bool UDIVESessionSubsystem::TryBeginSession(
 
 	Inspectable->BuildSemanticRegistry();
 
-	// Create the internal proxy-drive action that routes Physical-mode IDIVEProxyDrive hits through
-	// the standard continuous-action slot, avoiding a parallel code path.
+	// Internal proxy-drive action: Physical-mode IDIVEProxyDrive hits share the continuous-action
+	// slot (pre-rev2 routing). Target: Interact verb / catalog ForwardAction, not Physical pick.
 	if (!InternalProxyDriveAction)
 	{
 		InternalProxyDriveAction = NewObject<UDIVEProxyDriveForwardAction>(this, TEXT("InternalProxyDriveAction"));
@@ -80,7 +80,7 @@ bool UDIVESessionSubsystem::TryBeginSession(
 	FocusStack.Reset();
 	FocusStack.Add(FDIVEFocusTarget::MakeDeviceRoot());
 	FocusedTarget = FDIVEFocusTarget::MakeDeviceRoot();
-	InteractionMode = EDIVESessionInteractionMode::Default;
+	InteractionMode = EDIVESessionInteractionMode::Interact;
 
 	if (AActor* CurrentViewTarget = PlayerController->GetViewTarget())
 	{
@@ -149,7 +149,7 @@ void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 	FDIVESessionPhysicalDriveOps::ClearProxyDrive(*this);
 	FDIVESessionIsolationOps::ClearIsolation(*this);
 	FocusStack.Reset();
-	InteractionMode = EDIVESessionInteractionMode::Default;
+	InteractionMode = EDIVESessionInteractionMode::Interact;
 
 	if (UWorld* World = GetWorld())
 	{
@@ -583,19 +583,26 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 	}
 
 	FDIVEActionWorldScope WorldScope(Action, GetWorld());
-	if (!Action->CanExecute(Context) || !Action->BeginInteraction(Context))
+	if (!Action->CanExecute(Context))
 	{
 		return false;
 	}
 
-	Action->MarkInteractionActive();
+	// Mark + HUD subscribe before Begin: Begin's NotifyValueChanged must have Context and a listener.
+	Action->MarkInteractionActive(Context);
+	Action->OnValueChanged.AddUniqueDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
+
+	if (!Action->BeginInteraction(Context))
+	{
+		Action->OnValueChanged.RemoveDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
+		Action->EndInteraction(false);
+		return false;
+	}
 
 	ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::ContinuousAction;
 	ActiveContinuousAction = Action;
 	ActivePawnPhysicalDrive.Reset();
 	bProxyDriving = true;
-
-	Action->OnValueChanged.AddUniqueDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
 
 	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
 	{

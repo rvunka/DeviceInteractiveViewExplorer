@@ -86,8 +86,12 @@ bool DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(const AActor* Owner, con
 #if DIVE_WITH_GRIP
 	if (UGRIPRigComponent* Rig = Owner->FindComponentByClass<UGRIPRigComponent>())
 	{
-		Rig->HandleGrabHoldDistanceScroll(WheelDelta);
-		return true;
+		const FName SlotId = Rig->FindUniqueGrabbingSlotId(true);
+		if (!SlotId.IsNone())
+		{
+			Rig->HandleGrabHoldDistanceScroll(SlotId, WheelDelta);
+			return true;
+		}
 	}
 #else
 	(void)Owner;

@@ -30,11 +30,11 @@ enum class EDIVEFocusKind : uint8
 	Anchor
 };
 
-/** Session policy for routing semantic input (Default / Physical). */
+/** Session policy for routing semantic input (Interact / Physical). */
 UENUM(BlueprintType)
 enum class EDIVESessionInteractionMode : uint8
 {
-	Default UMETA(DisplayName = "Default"),
+	Interact UMETA(DisplayName = "Interact"),
 	Physical UMETA(DisplayName = "Physical")
 };
 

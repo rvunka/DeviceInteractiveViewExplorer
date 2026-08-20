@@ -10,6 +10,7 @@
 #include "DIVEProxyDriveResolve.h"
 #include "DIVEProxyDriveTypes.h"
 #include "DIVEInspectableComponent.h"
+#include "DIVECameraRig.h"
 #include "DIVESessionSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
@@ -28,6 +29,7 @@ void FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(UDIVESessionSubsystem&
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
 		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
 		{
+			FDIVEActionWorldScope WorldScope(Continuous, Session.GetWorld());
 			Continuous->OnValueChanged.RemoveDynamic(
 				&Session,
 				&UDIVESessionSubsystem::HandleContinuousActionValueChanged);
@@ -113,6 +115,19 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 	DriveContext.FocusTarget = PickTarget;
 	DriveContext.HitComponent = HitComponent;
 	DriveContext.PickHit = HitResult;
+	if (const ADIVECameraRig* CameraRig = Session.ActiveCameraRig.Get())
+	{
+		DriveContext.ViewLocation = CameraRig->GetActorLocation();
+		DriveContext.ViewRotation = CameraRig->GetActorRotation();
+	}
+	if (HitResult.bBlockingHit || !HitResult.TraceStart.Equals(HitResult.TraceEnd))
+	{
+		DriveContext.PickRayDir = (HitResult.TraceEnd - HitResult.TraceStart).GetSafeNormal();
+	}
+	if (DriveContext.PickRayDir.IsNearlyZero())
+	{
+		DriveContext.PickRayDir = DriveContext.ViewRotation.Vector();
+	}
 
 	if (IDIVEPawnPhysicalDrive* PawnDrive = DIVEPawnPhysicalDriveResolve::FindOnPlayerController(PlayerController))
 	{
@@ -157,7 +172,10 @@ void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem
 		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
 		{
 			const float DeltaTime = Session.GetWorld() ? Session.GetWorld()->GetDeltaSeconds() : 0.f;
-			Continuous->UpdateInteraction(ScreenDelta, DeltaTime);
+			{
+				FDIVEActionWorldScope WorldScope(Continuous, Session.GetWorld());
+				Continuous->UpdateInteraction(ScreenDelta, DeltaTime);
+			}
 			if (!Continuous->IsInteractionActive())
 			{
 				EndProxyDrive(Session, true);

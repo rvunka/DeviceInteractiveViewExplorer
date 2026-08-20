@@ -26,4 +26,13 @@ struct DIVECORE_API FDIVEProxyDriveContext
 
 	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
 	FHitResult PickHit;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector ViewLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FRotator ViewRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector PickRayDir = FVector::ForwardVector;
 };

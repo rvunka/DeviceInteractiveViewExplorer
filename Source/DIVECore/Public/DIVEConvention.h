@@ -17,6 +17,8 @@ inline constexpr float kDefaultFocusNearPaddingFactor = 1.2f;
 inline const FName kPickProxyTag = TEXT("DIVE.PickProxy");
 inline const FName kSectionStandard = TEXT("Standard");
 inline const FName kSectionAdmin = TEXT("Admin");
+inline const FName kBindingBuiltInStandard = TEXT("BuiltIn.Standard");
+inline const FName kBindingBuiltInAdmin = TEXT("BuiltIn.Admin");
 
 DIVECORE_API FString NormalizeComponentToken(FString Token);
 }

@@ -19,7 +19,6 @@ struct FDIVEDeviceScanReport
 	TArray<FDIVEDeviceScanMessage> Messages;
 	int32 AnchorCount = 0;
 
-	bool HasErrors() const;
 	FString ToLogString() const;
 };
 

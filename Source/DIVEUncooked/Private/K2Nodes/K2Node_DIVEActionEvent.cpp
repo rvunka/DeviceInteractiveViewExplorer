@@ -226,40 +226,11 @@ void CollectActionClassEntries(TArray<UClass*>& OutLoaded, TArray<FSoftClassPath
 	}
 }
 
-void EnsureActionClassMenuRefreshHooks()
-{
-	static bool bHooksInstalled = false;
-	if (bHooksInstalled)
-	{
-		return;
-	}
-	bHooksInstalled = true;
-
-	IAssetRegistry& AssetRegistry =
-		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-
-	auto Refresh = []()
-	{
-		FBlueprintActionDatabase::Get().RefreshClassActions(UK2Node_DIVEActionEvent::StaticClass());
-	};
-
-	if (AssetRegistry.IsLoadingAssets())
-	{
-		AssetRegistry.OnFilesLoaded().AddLambda(Refresh);
-	}
-
-	auto MaybeRefresh = [Refresh](const FAssetData& AssetData)
-	{
-		if (IsDeviceActionBlueprintAsset(AssetData))
-		{
-			Refresh();
-		}
-	};
-
-	AssetRegistry.OnAssetAdded().AddLambda(MaybeRefresh);
-	AssetRegistry.OnAssetRemoved().AddLambda(MaybeRefresh);
-	AssetRegistry.OnAssetUpdated().AddLambda(MaybeRefresh);
-}
+FDelegateHandle GActionClassMenuOnFilesLoadedHandle;
+FDelegateHandle GActionClassMenuOnAssetAddedHandle;
+FDelegateHandle GActionClassMenuOnAssetRemovedHandle;
+FDelegateHandle GActionClassMenuOnAssetUpdatedHandle;
+bool bActionClassMenuHooksInstalled = false;
 
 const UDIVEInspectableComponent* FindInspectableTemplate(const UBlueprint* Blueprint)
 {
@@ -298,6 +269,64 @@ const UDIVEInspectableComponent* FindInspectableTemplate(const UBlueprint* Bluep
 	return nullptr;
 }
 } // namespace
+
+void DIVEUncooked_EnsureActionClassMenuRefreshHooks()
+{
+	if (bActionClassMenuHooksInstalled)
+	{
+		return;
+	}
+	bActionClassMenuHooksInstalled = true;
+
+	IAssetRegistry& AssetRegistry =
+		FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+
+	auto Refresh = []()
+	{
+		FBlueprintActionDatabase::Get().RefreshClassActions(UK2Node_DIVEActionEvent::StaticClass());
+	};
+
+	if (AssetRegistry.IsLoadingAssets())
+	{
+		GActionClassMenuOnFilesLoadedHandle = AssetRegistry.OnFilesLoaded().AddLambda(Refresh);
+	}
+
+	auto MaybeRefresh = [Refresh](const FAssetData& AssetData)
+	{
+		if (IsDeviceActionBlueprintAsset(AssetData))
+		{
+			Refresh();
+		}
+	};
+
+	GActionClassMenuOnAssetAddedHandle = AssetRegistry.OnAssetAdded().AddLambda(MaybeRefresh);
+	GActionClassMenuOnAssetRemovedHandle = AssetRegistry.OnAssetRemoved().AddLambda(MaybeRefresh);
+	GActionClassMenuOnAssetUpdatedHandle = AssetRegistry.OnAssetUpdated().AddLambda(MaybeRefresh);
+}
+
+void DIVEUncooked_UninstallActionClassMenuRefreshHooks()
+{
+	if (!bActionClassMenuHooksInstalled)
+	{
+		return;
+	}
+
+	if (FModuleManager::Get().IsModuleLoaded(TEXT("AssetRegistry")))
+	{
+		IAssetRegistry& AssetRegistry =
+			FModuleManager::GetModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		AssetRegistry.OnFilesLoaded().Remove(GActionClassMenuOnFilesLoadedHandle);
+		AssetRegistry.OnAssetAdded().Remove(GActionClassMenuOnAssetAddedHandle);
+		AssetRegistry.OnAssetRemoved().Remove(GActionClassMenuOnAssetRemovedHandle);
+		AssetRegistry.OnAssetUpdated().Remove(GActionClassMenuOnAssetUpdatedHandle);
+	}
+
+	GActionClassMenuOnFilesLoadedHandle.Reset();
+	GActionClassMenuOnAssetAddedHandle.Reset();
+	GActionClassMenuOnAssetRemovedHandle.Reset();
+	GActionClassMenuOnAssetUpdatedHandle.Reset();
+	bActionClassMenuHooksInstalled = false;
+}
 
 UDIVEActionEventNodeSpawner* UDIVEActionEventNodeSpawner::Create(
 	TSubclassOf<UEdGraphNode> NodeClass,
@@ -798,7 +827,7 @@ void UK2Node_DIVEActionEvent::GetMenuActions(FBlueprintActionDatabaseRegistrar& 
 
 	if (ActionRegistrar.IsOpenForRegistration(GetClass()))
 	{
-		EnsureActionClassMenuRefreshHooks();
+		DIVEUncooked_EnsureActionClassMenuRefreshHooks();
 
 		TArray<UClass*> LoadedClasses;
 		TArray<FSoftClassPath> UnloadedClasses;

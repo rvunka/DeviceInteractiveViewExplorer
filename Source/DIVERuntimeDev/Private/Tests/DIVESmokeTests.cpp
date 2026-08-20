@@ -6,15 +6,18 @@
 #include "DIVEActionBinding.h"
 #include "DIVEConvention.h"
 #include "DIVEDeviceAction.h"
+#include "DIVEDriveMapping.h"
 #include "DIVEInspectableComponent.h"
-#include "DIVEDeviceDefinitionAsset.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
 #include "DIVEPlayerComponent.h"
+#include "DIVEProxyDrive.h"
 #include "DIVEProxyDriveResolve.h"
 #include "DIVESessionSubsystem.h"
 #include "DIVETypes.h"
 #include "Utils/DIVEPlayerQuery.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
+#include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Misc/AutomationTest.h"
 #include "Engine/Engine.h"
@@ -22,10 +25,13 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/DefaultPawn.h"
 #include "Tests/DIVEPawnPhysicalDriveTestTypes.h"
+#include "Tests/DIVEProxyDriveTestTypes.h"
 #include "UObject/Package.h"
 
 #if WITH_EDITOR
+#include "DIVEActionBindingValidation.h"
 #include "Misc/DataValidation.h"
+#include "UObject/UnrealType.h"
 #endif
 
 namespace
@@ -34,6 +40,52 @@ constexpr EAutomationTestFlags SmokeUnitTestFlags =
 	EAutomationTestFlags::EditorContext
 	| EAutomationTestFlags::ClientContext
 	| EAutomationTestFlags::SmokeFilter;
+
+ADIVETestPhysicalDrivePawn* SpawnSmokeHost(UWorld* World)
+{
+	if (!World)
+	{
+		return nullptr;
+	}
+
+	return World->SpawnActor<ADIVETestPhysicalDrivePawn>(
+		ADIVETestPhysicalDrivePawn::StaticClass(),
+		FVector::ZeroVector,
+		FRotator::ZeroRotator);
+}
+
+USphereComponent* MakeSphereOnHost(AActor* Host, const FName Name, const float Radius)
+{
+	if (!Host)
+	{
+		return nullptr;
+	}
+
+	USphereComponent* Sphere = NewObject<USphereComponent>(Host, Name);
+	if (!Sphere)
+	{
+		return nullptr;
+	}
+
+	Sphere->SetSphereRadius(Radius);
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	if (USceneComponent* Root = Host->GetRootComponent())
+	{
+		Sphere->SetupAttachment(Root);
+	}
+	else
+	{
+		Host->SetRootComponent(Sphere);
+	}
+
+	Host->AddInstanceComponent(Sphere);
+	if (!Sphere->IsRegistered())
+	{
+		Sphere->RegisterComponent();
+	}
+
+	return Sphere;
+}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -44,10 +96,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
-
-	TArray<FDIVEContextMenuEntry> Entries;
-	const FDIVEFocusTarget InvalidPick = FDIVEFocusTarget::FromPrimitive(nullptr, NAME_None);
-	TestEqual(TEXT("No inspectable => empty menu"), Entries.Num(), 0);
 
 	// Use CDO — NewObject<UActorComponent>() at Smoke startup runs before EngineElements
 	// registers Typed Element type "Components" and asserts in PostInitProperties.
@@ -96,14 +144,6 @@ bool FDIVEContextMenuDefaultBindingsSmokeTest::RunTest(const FString& Parameters
 	TestTrue(TEXT("Default Admin section has Header"), bFoundAdminHeader);
 
 	TestFalse(TEXT("CDO has no hover overlay authored"), Inspectable->HasPickHoverOverlay());
-
-	TestEqual(
-		TEXT("CDO FocusBlendDuration default"),
-		Inspectable->GetEffectiveCameraSettings().FocusBlendDuration,
-		0.35f);
-
-	TestTrue(TEXT("AnyPrimitive is a distinct match mode"),
-		EDIVETargetMatchMode::AnyPrimitive != EDIVETargetMatchMode::ComponentTag);
 
 	return true;
 }
@@ -260,12 +300,12 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 	UDIVEFocusAction* Focus = NewObject<UDIVEFocusAction>();
 	Binding.Actions.Add(Focus);
 	TestEqual(TEXT("PrimaryAction resolves index 0"), Binding.GetPrimaryAction(), static_cast<UDIVEDeviceAction*>(Focus));
+	TestFalse(
+		TEXT("Focus CanExecute is false without a valid primitive pick"),
+		Focus->CanExecute(FDIVEActionContext()));
 
 	Binding.PrimaryActionIndex = 5;
 	TestNull(TEXT("PrimaryAction null for invalid index"), Binding.GetPrimaryAction());
-
-	TestTrue(TEXT("Standard section id stable"), DIVE::kSectionStandard == FName(TEXT("Standard")));
-	TestTrue(TEXT("Admin section id stable"), DIVE::kSectionAdmin == FName(TEXT("Admin")));
 
 	// CDO, not NewObject — instance UActorComponent asserts in PostInitProperties until
 	// EngineElements registers Typed Element type "Components" (see DefaultBindings smoke).
@@ -294,8 +334,12 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 	if (Continuous)
 	{
 		TestFalse(TEXT("Continuous inactive by default"), Continuous->IsInteractionActive());
-		Continuous->MarkInteractionActive();
+		FDIVEActionContext ContinuousContext;
+		ContinuousContext.BindingId = TEXT("SmokeContinuous");
+		Continuous->MarkInteractionActive(ContinuousContext);
 		TestTrue(TEXT("MarkInteractionActive sets flag"), Continuous->IsInteractionActive());
+		Continuous->NotifyValueChanged(1.5f);
+		Continuous->NotifyValueChanged(-0.25f);
 		Continuous->NotifyInteractionCompleted();
 		TestFalse(TEXT("NotifyInteractionCompleted clears flag"), Continuous->IsInteractionActive());
 	}
@@ -388,10 +432,10 @@ bool FDIVECollectPrimitivesMatchingQuerySmokeTest::RunTest(const FString& Parame
 {
 	(void)Parameters;
 
-	const UDIVEInspectableComponent* Inspectable =
+	const UDIVEInspectableComponent* InspectableCDO =
 		UDIVEInspectableComponent::StaticClass()->GetDefaultObject<UDIVEInspectableComponent>();
-	TestNotNull(TEXT("Inspectable CDO available"), Inspectable);
-	if (!Inspectable)
+	TestNotNull(TEXT("Inspectable CDO available"), InspectableCDO);
+	if (!InspectableCDO)
 	{
 		return false;
 	}
@@ -401,14 +445,65 @@ bool FDIVECollectPrimitivesMatchingQuerySmokeTest::RunTest(const FString& Parame
 	TagQuery.MatchValues = { TEXT("DIVE.Bolt") };
 
 	TArray<UPrimitiveComponent*> Matches;
-	Inspectable->CollectPrimitivesMatchingQuery(TagQuery, Matches);
+	InspectableCDO->CollectPrimitivesMatchingQuery(TagQuery, Matches);
 	TestEqual(TEXT("CDO Collect (no owner) is empty for Tag"), Matches.Num(), 0);
 
 	FDIVETargetQuery AnyQuery;
 	AnyQuery.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
-	Inspectable->CollectPrimitivesMatchingQuery(AnyQuery, Matches);
+	InspectableCDO->CollectPrimitivesMatchingQuery(AnyQuery, Matches);
 	TestEqual(TEXT("CDO Collect (no owner) is empty for AnyPrimitive"), Matches.Num(), 0);
 
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped owned CollectPrimitivesMatchingQuery assert."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Host = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Spawned collect-query host"), Host);
+	if (!Host)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Host,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	USphereComponent* Sphere = MakeSphereOnHost(Host, TEXT("BoltSphere"), 12.f);
+	if (!Inspectable || !Sphere)
+	{
+		Host->Destroy();
+		return false;
+	}
+
+	Host->AddInstanceComponent(Inspectable);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+	Sphere->ComponentTags.Add(TEXT("DIVE.Bolt"));
+
+	Inspectable->CollectPrimitivesMatchingQuery(TagQuery, Matches);
+	TestTrue(TEXT("Owned Collect finds tagged sphere"), Matches.Contains(Sphere));
+
+	Inspectable->CollectPrimitivesMatchingQuery(AnyQuery, Matches);
+	TestTrue(TEXT("Owned Collect AnyPrimitive includes sphere"), Matches.Contains(Sphere));
+
+	Host->Destroy();
 	return true;
 }
 
@@ -508,8 +603,13 @@ bool FDIVEActionWorldContextSmokeTest::RunTest(const FString& Parameters)
 	if (World)
 	{
 		{
-			FDIVEActionWorldScope Scope(Action, World);
+			FDIVEActionWorldScope Outer(Action, World);
 			TestEqual(TEXT("ExecutionWorld injected via scope"), Action->GetWorld(), World);
+			{
+				FDIVEActionWorldScope Inner(Action, World);
+				TestEqual(TEXT("Nested WorldScope keeps injected world"), Action->GetWorld(), World);
+			}
+			TestEqual(TEXT("Nested WorldScope restores outer world"), Action->GetWorld(), World);
 		}
 		TestNull(TEXT("ExecutionWorld cleared after scope"), Action->GetWorld());
 	}
@@ -528,49 +628,380 @@ bool FDIVEActionWorldContextSmokeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FDIVEActionCanExecuteGateSmokeTest,
-	"DIVE.Actions.CanExecuteGate",
+	FDIVEInspectableValidationSmokeTest,
+	"DIVE.Inspectable.IsDataValid",
 	SmokeUnitTestFlags)
 
-bool FDIVEActionCanExecuteGateSmokeTest::RunTest(const FString& Parameters)
+bool FDIVEInspectableValidationSmokeTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 
-	UDIVEFocusAction* Focus = NewObject<UDIVEFocusAction>();
-	TestNotNull(TEXT("Focus action"), Focus);
-	if (!Focus)
+#if !WITH_EDITOR
+	AddInfo(TEXT("IsDataValid / ValidateSections are editor-only — skipped."));
+	return true;
+#else
+	{
+		TArray<FDIVEMenuSection> Sections;
+		FDIVEMenuSection Standard;
+		Standard.SectionId = DIVE::kSectionStandard;
+		FDIVEMenuSection Admin;
+		Admin.SectionId = DIVE::kSectionAdmin;
+		Sections.Add(Standard);
+		Sections.Add(Admin);
+
+		FDataValidationContext Context;
+		TSet<FName> Known;
+		TestTrue(
+			TEXT("Authored Standard+Admin sections are valid"),
+			DIVEActionBindingValidation::ValidateSections(Sections, Known, Context));
+		TestTrue(TEXT("Known ids include Standard"), Known.Contains(DIVE::kSectionStandard));
+		TestTrue(TEXT("Known ids include Admin"), Known.Contains(DIVE::kSectionAdmin));
+	}
+
+	{
+		TArray<FDIVEMenuSection> DuplicateSections;
+		FDIVEMenuSection First;
+		First.SectionId = TEXT("Panel");
+		FDIVEMenuSection Second;
+		Second.SectionId = TEXT("Panel");
+		DuplicateSections.Add(First);
+		DuplicateSections.Add(Second);
+
+		FDataValidationContext Context;
+		TSet<FName> Known;
+		TestFalse(
+			TEXT("Duplicate SectionId fails ValidateSections"),
+			DIVEActionBindingValidation::ValidateSections(DuplicateSections, Known, Context));
+	}
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped Inspectable IsDataValid on owned component."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Host = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Spawned inspectable-validation host"), Host);
+	if (!Host)
 	{
 		return false;
 	}
 
-	FDIVEActionContext EmptyContext;
-	TestFalse(
-		TEXT("Focus CanExecute is false without a valid primitive pick"),
-		Focus->CanExecute(EmptyContext));
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Host,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	TestNotNull(TEXT("Inspectable on validation host"), Inspectable);
+	if (!Inspectable)
+	{
+		Host->Destroy();
+		return false;
+	}
+
+	Host->AddInstanceComponent(Inspectable);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+
+	FDataValidationContext OwnerContext;
+	TestEqual(
+		TEXT("Default Inspectable IsDataValid on live owner"),
+		Inspectable->IsDataValid(OwnerContext),
+		EDataValidationResult::Valid);
+
+	Inspectable->bSeedAdminDefaults = false;
+	if (FProperty* AdminSeedProp = FindFProperty<FProperty>(
+			UDIVEInspectableComponent::StaticClass(),
+			GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, bSeedAdminDefaults)))
+	{
+		FPropertyChangedEvent ChangeEvent(AdminSeedProp);
+		Inspectable->PostEditChangeProperty(ChangeEvent);
+	}
+
+	bool bHasSeededAdmin = false;
+	for (const FDIVEActionBinding& Binding : Inspectable->Bindings)
+	{
+		if (Binding.BindingId == DIVE::kBindingBuiltInAdmin)
+		{
+			bHasSeededAdmin = true;
+			break;
+		}
+	}
+	TestFalse(TEXT("Unchecking Seed Admin Defaults removes BuiltIn.Admin"), bHasSeededAdmin);
+
+	FDataValidationContext AfterAdminOff;
+	TestEqual(
+		TEXT("Inspectable still Valid after removing seeded Admin"),
+		Inspectable->IsDataValid(AfterAdminOff),
+		EDataValidationResult::Valid);
+
+	Host->Destroy();
+	return true;
+#endif
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEDriveMappingSmokeTest,
+	"DIVE.Drive.Mapping",
+	SmokeUnitTestFlags)
+
+bool FDIVEDriveMappingSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	TestEqual(
+		TEXT("Zero delta maps to zero angle"),
+		DIVE::MapScreenDeltaToAxisAngle(FVector2D::ZeroVector, FRotator::ZeroRotator, FVector::UpVector, 1.f),
+		0.f);
+
+	TestEqual(
+		TEXT("Face-on axis falls back to horizontal pixels"),
+		DIVE::MapScreenDeltaToAxisAngle(FVector2D(10.f, 0.f), FRotator::ZeroRotator, FVector::ForwardVector, 1.f),
+		10.f);
+
+	TestEqual(
+		TEXT("Z-up drag right is clockwise from identity view"),
+		DIVE::MapScreenDeltaToAxisAngle(FVector2D(10.f, 0.f), FRotator::ZeroRotator, FVector::UpVector, 1.f),
+		-10.f);
+
+	TestEqual(
+		TEXT("Vertical drag projects onto world up as travel"),
+		DIVE::MapScreenDeltaToAxisTravel(FVector2D(0.f, 10.f), FRotator::ZeroRotator, FVector::UpVector, 1.f),
+		-10.f);
 
 	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FDIVECameraDefinitionBlendSmokeTest,
-	"DIVE.Camera.DefinitionBlendDuration",
+	FDIVEDriveBuiltInActionsSmokeTest,
+	"DIVE.Drive.BuiltInActions",
 	SmokeUnitTestFlags)
 
-bool FDIVECameraDefinitionBlendSmokeTest::RunTest(const FString& Parameters)
+bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 
-	UDIVEDeviceDefinitionAsset* Definition = NewObject<UDIVEDeviceDefinitionAsset>();
-	TestNotNull(TEXT("Device definition instance"), Definition);
-	if (!Definition)
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped rotary/threaded transform asserts."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Host = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Spawned drive-action host"), Host);
+	if (!Host)
 	{
 		return false;
 	}
 
-	TestEqual(TEXT("Definition FocusBlendDuration default"), Definition->CameraSettings.FocusBlendDuration, 0.35f);
-	Definition->CameraSettings.FocusBlendDuration = 0.9f;
-	TestEqual(TEXT("Definition FocusBlendDuration writes"), Definition->CameraSettings.FocusBlendDuration, 0.9f);
+	USphereComponent* Sphere = MakeSphereOnHost(Host, TEXT("DriveSphere"), 8.f);
+	TestNotNull(TEXT("Drive sphere"), Sphere);
+	if (!Sphere)
+	{
+		Host->Destroy();
+		return false;
+	}
 
+	FDIVEActionContext Context;
+	Context.Target = Sphere;
+	Context.ViewRotation = FRotator::ZeroRotator;
+
+	UDIVERotaryDriveAction* Rotary = NewObject<UDIVERotaryDriveAction>();
+	TestNotNull(TEXT("Rotary action"), Rotary);
+	if (Rotary)
+	{
+		Rotary->DegreesPerPixel = 1.f;
+		Rotary->bLimitAngle = false;
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin"), Rotary->BeginInteraction(Context));
+		Rotary->UpdateInteraction(FVector2D(10.f, 0.f), 0.016f);
+		TestTrue(
+			TEXT("Rotary accumulated yaw from Z-up mapping"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, -10.f, 0.05f));
+		Rotary->EndInteraction(false);
+		TestTrue(
+			TEXT("Rotary cancel restores start rotation"),
+			Sphere->GetRelativeRotation().IsNearlyZero(0.05f));
+
+		Sphere->SetSimulatePhysics(true);
+		TestFalse(TEXT("Rotary rejects simulating body"), Rotary->CanExecute(Context));
+		Sphere->SetSimulatePhysics(false);
+	}
+
+	UDIVEThreadedDriveAction* Threaded = NewObject<UDIVEThreadedDriveAction>();
+	TestNotNull(TEXT("Threaded action"), Threaded);
+	if (Threaded)
+	{
+		Threaded->Axis = EDIVEDriveAxis::X;
+		Threaded->DegreesPerPixel = 1.f;
+		Threaded->TurnsToRelease = 1.f;
+		Threaded->PitchCmPerTurn = 2.f;
+		Threaded->MarkInteractionActive(Context);
+		TestTrue(TEXT("Threaded Begin"), Threaded->BeginInteraction(Context));
+		Threaded->UpdateInteraction(FVector2D(180.f, 0.f), 0.016f);
+		TestTrue(
+			TEXT("Threaded half-turn translates along local X"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 1.f, 0.05f));
+		Threaded->EndInteraction(false);
+		TestTrue(
+			TEXT("Threaded cancel restores start transform"),
+			Sphere->GetRelativeTransform().Equals(FTransform::Identity, 0.05f));
+
+		Sphere->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+		Threaded->MarkInteractionActive(Context);
+		TestTrue(TEXT("Threaded Begin with pre-rotated part"), Threaded->BeginInteraction(Context));
+		// Local X after yaw 90 is parent Y; identity view + vertical drag maps onto that axis.
+		Threaded->UpdateInteraction(FVector2D(0.f, -180.f), 0.016f);
+		TestTrue(
+			TEXT("Threaded translation follows screw axis in parent space"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().Y, 1.f, 0.05f));
+		TestTrue(
+			TEXT("Threaded translation does not slide along parent X for a yaw-90 part"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 0.f, 0.05f));
+		Threaded->EndInteraction(false);
+		TestTrue(
+			TEXT("Threaded cancel restores pre-rotated start transform"),
+			Sphere->GetRelativeTransform().Equals(FTransform(FRotator(0.f, 90.f, 0.f)), 0.05f));
+	}
+
+	Host->Destroy();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEProxyDriveResolveHierarchySmokeTest,
+	"DIVE.ProxyDrive.ResolveHierarchy",
+	SmokeUnitTestFlags)
+
+bool FDIVEProxyDriveResolveHierarchySmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped proxy-drive hierarchy resolve."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Root = SpawnSmokeHost(World);
+	ADIVETestPhysicalDrivePawn* Child = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Root host"), Root);
+	TestNotNull(TEXT("Child host"), Child);
+	if (!Root || !Child)
+	{
+		if (Root)
+		{
+			Root->Destroy();
+		}
+		if (Child)
+		{
+			Child->Destroy();
+		}
+		return false;
+	}
+
+	Child->AttachToActor(Root, FAttachmentTransformRules::KeepRelativeTransform);
+
+	UDIVETestProxyDriveComponent* Drive = NewObject<UDIVETestProxyDriveComponent>(Root, TEXT("TestDrive"));
+	UDIVETestControlRegistryComponent* Registry = NewObject<UDIVETestControlRegistryComponent>(Root, TEXT("TestRegistry"));
+	TestNotNull(TEXT("Drive component"), Drive);
+	TestNotNull(TEXT("Registry component"), Registry);
+	if (!Drive || !Registry)
+	{
+		Root->Destroy();
+		Child->Destroy();
+		return false;
+	}
+
+	Registry->DriveObject = Drive;
+	Root->AddInstanceComponent(Drive);
+	Root->AddInstanceComponent(Registry);
+	if (!Drive->IsRegistered())
+	{
+		Drive->RegisterComponent();
+	}
+	if (!Registry->IsRegistered())
+	{
+		Registry->RegisterComponent();
+	}
+
+	USphereComponent* ChildSphere = MakeSphereOnHost(Child, TEXT("ChildHit"), 8.f);
+	TestNotNull(TEXT("Child hit sphere"), ChildSphere);
+	if (!ChildSphere)
+	{
+		Root->Destroy();
+		Child->Destroy();
+		return false;
+	}
+
+	IDIVEProxyDrive* Resolved = DIVEProxyDriveResolve::FindProxyDriveForHit(ChildSphere);
+	TestTrue(
+		TEXT("Registry on root resolves for child-actor hit"),
+		Resolved == Cast<IDIVEProxyDrive>(Drive));
+
+	UDIVETestControlRegistryComponent* SecondRegistry =
+		NewObject<UDIVETestControlRegistryComponent>(Root, TEXT("TestRegistry2"));
+	UDIVETestProxyDriveComponent* Drive2 = NewObject<UDIVETestProxyDriveComponent>(Root, TEXT("TestDrive2"));
+	if (SecondRegistry && Drive2)
+	{
+		SecondRegistry->DriveObject = Drive2;
+		Root->AddInstanceComponent(Drive2);
+		Root->AddInstanceComponent(SecondRegistry);
+		if (!Drive2->IsRegistered())
+		{
+			Drive2->RegisterComponent();
+		}
+		if (!SecondRegistry->IsRegistered())
+		{
+			SecondRegistry->RegisterComponent();
+		}
+		TestNull(
+			TEXT("N>1 registry results are fail-closed"),
+			DIVEProxyDriveResolve::FindProxyDriveForHit(ChildSphere));
+	}
+
+	Child->Destroy();
+	Root->Destroy();
 	return true;
 }
 
