@@ -7,6 +7,7 @@
 #include "DIVEProxyDrive.h"
 #include "DIVEProxyDriveResolve.h"
 #include "DIVESessionSubsystem.h"
+#include "Engine/EngineTypes.h"
 #include "Engine/World.h"
 
 namespace
@@ -294,6 +295,83 @@ FVector DriveAxisWorld(const UPrimitiveComponent* Target, const EDIVEDriveAxis A
 	}
 	return Target->GetComponentTransform().TransformVectorNoScale(DriveAxisLocal(Axis)).GetSafeNormal();
 }
+
+void IsolateDrivenPrimitive(UPrimitiveComponent* Target, uint8& OutSavedCollision, bool& OutSavedAutoWeld, bool& OutHasSaved)
+{
+	if (!Target)
+	{
+		return;
+	}
+
+	OutSavedCollision = static_cast<uint8>(Target->GetCollisionEnabled());
+	OutSavedAutoWeld = Target->BodyInstance.bAutoWeld;
+	OutHasSaved = true;
+
+	Target->BodyInstance.bAutoWeld = false;
+
+	if (Target->Mobility != EComponentMobility::Movable)
+	{
+		Target->SetMobility(EComponentMobility::Movable);
+	}
+
+	if (Target->IsWelded())
+	{
+		Target->UnWeldFromParent();
+	}
+
+	if (Target->BodyInstance.bSimulatePhysics)
+	{
+		Target->SetSimulatePhysics(false);
+	}
+
+	Target->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	for (USceneComponent* Ancestor = Target->GetAttachParent(); Ancestor; Ancestor = Ancestor->GetAttachParent())
+	{
+		if (UPrimitiveComponent* Prim = Cast<UPrimitiveComponent>(Ancestor))
+		{
+			if (Prim->BodyInstance.bSimulatePhysics)
+			{
+				Prim->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
+				Prim->SetAllPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+				Prim->PutRigidBodyToSleep();
+				break;
+			}
+		}
+	}
+}
+
+void RestoreDrivenPrimitiveIsolation(
+	UPrimitiveComponent* Target,
+	const uint8 SavedCollision,
+	const bool bSavedAutoWeld,
+	const bool bHasSaved)
+{
+	if (!Target || !bHasSaved)
+	{
+		return;
+	}
+
+	Target->BodyInstance.bAutoWeld = bSavedAutoWeld;
+	Target->SetCollisionEnabled(static_cast<ECollisionEnabled::Type>(SavedCollision));
+}
+
+void SetDrivenRelativeRotation(UPrimitiveComponent* Target, const FQuat& NewRelativeQuat)
+{
+	if (Target)
+	{
+		Target->SetRelativeRotation(NewRelativeQuat, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+}
+
+void SetDrivenRelativeTransform(UPrimitiveComponent* Target, const FTransform& NewRelative)
+{
+	if (Target)
+	{
+		Target->SetRelativeTransform(NewRelative, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+}
+
 }
 
 UDIVERotaryDriveAction::UDIVERotaryDriveAction()
@@ -304,21 +382,22 @@ UDIVERotaryDriveAction::UDIVERotaryDriveAction()
 bool UDIVERotaryDriveAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
 {
 	return Super::CanExecute_Implementation(Context)
-		&& Context.Target != nullptr
-		&& !Context.Target->IsSimulatingPhysics();
+		&& Context.Target != nullptr;
 }
 
 bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
 {
 	UPrimitiveComponent* Target = Context.Target.Get();
-	if (!Target || Target->IsSimulatingPhysics())
+	if (!Target)
 	{
 		return false;
 	}
 
+	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeRotation = Target->GetRelativeRotation();
 	ViewRotation = Context.ViewRotation;
+	FrozenAxisWorld = DriveAxisWorld(Target, Axis);
 	AccumulatedDegrees = 0.f;
 	NotifyInteractionValue(MakeInteractionValue());
 	return true;
@@ -336,7 +415,7 @@ void UDIVERotaryDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDe
 	const float DeltaDeg = DIVE::MapScreenDeltaToAxisAngle(
 		ScreenDelta,
 		ViewRotation,
-		DriveAxisWorld(Target, Axis),
+		FrozenAxisWorld,
 		DegreesPerPixel);
 	AccumulatedDegrees += DeltaDeg;
 
@@ -358,14 +437,16 @@ void UDIVERotaryDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDe
 
 void UDIVERotaryDriveAction::EndInteraction_Implementation(const bool bCommit)
 {
-	if (!bCommit && bRestoreOnCancel)
+	if (UPrimitiveComponent* Target = ActiveTarget.Get())
 	{
-		if (UPrimitiveComponent* Target = ActiveTarget.Get())
+		if (!bCommit && bRestoreOnCancel)
 		{
-			Target->SetRelativeRotation(StartRelativeRotation);
+			SetDrivenRelativeRotation(Target, FQuat(StartRelativeRotation));
 		}
+		RestoreDrivenPrimitiveIsolation(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	}
 
+	bHasSavedIsolation = false;
 	ActiveTarget.Reset();
 	AccumulatedDegrees = 0.f;
 	NotifyInteractionCompleted();
@@ -380,7 +461,8 @@ void UDIVERotaryDriveAction::ApplyAccumulated()
 	}
 
 	const FQuat DeltaQ(DriveAxisLocal(Axis), FMath::DegreesToRadians(AccumulatedDegrees));
-	Target->SetRelativeRotation(FQuat(StartRelativeRotation) * DeltaQ);
+	const FQuat NewRelQuat = FQuat(StartRelativeRotation) * DeltaQ;
+	SetDrivenRelativeRotation(Target, NewRelQuat);
 }
 
 float UDIVERotaryDriveAction::GetNormalizedValue() const
@@ -417,25 +499,23 @@ UDIVEThreadedDriveAction::UDIVEThreadedDriveAction()
 
 bool UDIVEThreadedDriveAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
 {
-	if (!Super::CanExecute_Implementation(Context) || !Context.Target)
-	{
-		return false;
-	}
-
-	return !Context.Target->IsSimulatingPhysics();
+	return Super::CanExecute_Implementation(Context)
+		&& Context.Target != nullptr;
 }
 
 bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
 {
 	UPrimitiveComponent* Target = Context.Target.Get();
-	if (!Target || Target->IsSimulatingPhysics())
+	if (!Target)
 	{
 		return false;
 	}
 
+	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeTransform = Target->GetRelativeTransform();
 	ViewRotation = Context.ViewRotation;
+	FrozenAxisWorld = DriveAxisWorld(Target, Axis);
 	AccumulatedTurns = 0.f;
 	bReleased = false;
 	NotifyInteractionValue(MakeInteractionValue());
@@ -454,7 +534,7 @@ void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(FVector2D Screen
 	const float DeltaDeg = DIVE::MapScreenDeltaToAxisAngle(
 		ScreenDelta,
 		ViewRotation,
-		DriveAxisWorld(Target, Axis),
+		FrozenAxisWorld,
 		DegreesPerPixel);
 	const float SignedTurns = (DeltaDeg / 360.f) * (bPositiveDeltaLoosens ? 1.f : -1.f);
 	AccumulatedTurns = FMath::Clamp(AccumulatedTurns + SignedTurns, 0.f, TurnsToRelease);
@@ -470,14 +550,19 @@ void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(FVector2D Screen
 
 void UDIVEThreadedDriveAction::EndInteraction_Implementation(const bool bCommit)
 {
-	if (!bCommit && !bReleased)
+	if (UPrimitiveComponent* Target = ActiveTarget.Get())
 	{
-		if (UPrimitiveComponent* Target = ActiveTarget.Get())
+		if (!bCommit && !bReleased)
 		{
-			Target->SetRelativeTransform(StartRelativeTransform);
+			SetDrivenRelativeTransform(Target, StartRelativeTransform);
+		}
+		if (!bReleased)
+		{
+			RestoreDrivenPrimitiveIsolation(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 		}
 	}
 
+	bHasSavedIsolation = false;
 	ActiveTarget.Reset();
 	AccumulatedTurns = 0.f;
 	bReleased = false;
@@ -500,7 +585,7 @@ void UDIVEThreadedDriveAction::ApplyAccumulated()
 	FTransform NewRel = StartRelativeTransform;
 	NewRel.SetRotation(StartRelativeTransform.GetRotation() * DeltaQ);
 	NewRel.SetTranslation(StartRelativeTransform.GetTranslation() + RelOffset);
-	Target->SetRelativeTransform(NewRel);
+	SetDrivenRelativeTransform(Target, NewRel);
 }
 
 void UDIVEThreadedDriveAction::ReleaseTarget()
@@ -512,6 +597,8 @@ void UDIVEThreadedDriveAction::ReleaseTarget()
 	}
 
 	bReleased = true;
+	RestoreDrivenPrimitiveIsolation(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
+	bHasSavedIsolation = false;
 	Target->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	Target->SetSimulatePhysics(true);
 	NotifyInteractionValue(MakeInteractionValue());

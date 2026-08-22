@@ -148,7 +148,7 @@ Available regardless of `EDIVESessionInteractionMode`:
 
 ```text
 EDIVESessionInteractionMode  (DIVECore)
-  Interact  — interact verb: primary → binding PrimaryActionIndex; hover overlay; explicit focus via HandleFocusUnderCursor / context menu
+  Interact  — interact verb: primary → binding PrimaryActionIndex (or sole continuous action); hover overlay; explicit focus via HandleFocusUnderCursor / context menu
   Physical  — grab verb: primary → pawn physical drive (GRIP bridge). Code today also tries IDIVEProxyDrive first (pre-rev2); target: grab only
   Logical   — planned; not yet in the enum (v1 roadmap)
 ```
@@ -188,7 +188,7 @@ Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_P
 
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
-| **Interact** | Binding `PrimaryActionIndex` when configured (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh. Kinematic knobs/nuts: bind Rotary/Threaded as primary. |
+| **Interact** | Binding `PrimaryActionIndex` when configured, or the binding's only action if it is continuous (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh. Kinematic knobs/nuts: bind Rotary/Threaded as primary. Begin isolates the driven child from a simulating parent (unweld, Query Only for the gesture). Engine cylinder is Z-up: Axis Z spins in place. |
 | **Physical** | Pawn GRIP grab via DIVEGRIPBridge. Code today also tries `IDIVEProxyDrive` via `InternalProxyDriveAction` first — target (tier 2): proxy lives on Interact, Physical is grab-only. |
 | **Logical** | Planned (v1 roadmap); not yet in the enum |
 
@@ -221,7 +221,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | Current behaviour | Notes |
 |-------------------|-------|
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Interact / Physical |
-| `HandlePrimaryAction*` | Interact → binding `PrimaryActionIndex` (when set); hover overlay; Physical → pawn GRIP grab (code today also tries device proxy first) |
+| `HandlePrimaryAction*` | Interact → binding `PrimaryActionIndex` (when set, or sole continuous action); hover overlay; Physical → pawn GRIP grab (code today also tries device proxy first) |
 | Context menu + widget | Focus, Isolate, Simulate, Delete (Bindings; Admin hidden in Shipping); custom from Catalog |
 | Action Catalog / Bindings + `UDIVEDeviceAction` | Object actions; continuous via shared interaction slot |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
@@ -263,7 +263,7 @@ Prefer **device registry** at session start (primitive / tag → control compone
 - **Interact (tier 2, target):** same gesture / binding forwards to `IDIVEProxyDrive` / registry. Not yet the Physical-mode pick path.
 - **Grab (Physical):** GRIP bridge cursor-pull / VR grip button on free bodies.
 - **Physical pick (code today, pre-rev2):** `HandlePrimaryAction*` → registry or `IDIVEProxyDrive` first, then pawn GRIP. Move proxy off this path when tier 2 starts.
-- **Value HUD:** `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta (`NotifyValueChanged`). Rotary/Threaded send `FDIVEInteractionValue` via `NotifyInteractionValue` (signed Absolute + Unit; widget formats).
+- **Value HUD:** compact chip next to the driven primitive (cursor fallback). `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta (`NotifyValueChanged`). Rotary/Threaded send `FDIVEInteractionValue` via `NotifyInteractionValue` (signed Absolute + Unit; widget formats).
 - **Sounds / MESS:** only in device component when value changes.
 
 **Do not** hang the interface on `UStaticMeshComponent` — put it on a **control component** on the actor and register which primitives it owns.

@@ -71,7 +71,7 @@ hidden meshes need tag `DIVE.PickProxy`.
 
 - Resets to **Interact** on session start/end
 - **Physical (code today):** `TryBeginProxyDrive*` via `HandlePrimaryAction*` — device `IDIVEProxyDrive` first, then pawn GRIP grab. **Target:** GRIP grab only; proxy belongs to Interact (tier 2).
-- **Interact:** binding `PrimaryActionIndex` (when set); hover overlay on pick; explicit focus via `HandleFocusUnderCursor` / context menu
+- **Interact:** binding `PrimaryActionIndex` when set, or the sole continuous action on that binding; hover overlay on pick; explicit focus via `HandleFocusUnderCursor` / context menu
 
 ### Enhanced Input (host Content)
 
@@ -139,7 +139,7 @@ Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.Bindin
 | Smoke | What it covers |
 |-------|----------------|
 | `DIVE.ContextMenu.DefaultBindings` | Native CDO Bindings empty; instance seeds public Focus/Admin; register instances foreign private actions |
-| `DIVE.Actions.BindingResolve` | Primary index, specificity, continuous/notify, Focus `CanExecute` |
+| `DIVE.Actions.BindingResolve` | Primary index, implicit sole-continuous primary, specificity, continuous/notify, Focus `CanExecute` |
 | `DIVE.Actions.ExecutionWorld` | Catalog action world injection |
 | `DIVE.Actions.CollectMatchingPrimitives` | CDO Collect empty; live owner + tagged sphere when a world exists |
 | `DIVE.Actions.ComponentNameMatch` | Name normalize / FocusId is not a name match |

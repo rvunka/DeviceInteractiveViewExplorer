@@ -5,6 +5,7 @@
 #include "Actions/DIVEBuiltInActions.h"
 #include "DIVECameraRig.h"
 #include "DIVEInspectableComponent.h"
+#include "DIVELog.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/DIVESessionFocusOps.h"
@@ -407,6 +408,14 @@ bool UDIVESessionSubsystem::ExecuteResolvedAction(
 	FDIVEActionWorldScope WorldScope(Action, GetWorld());
 	if (!Action->CanExecute(Context))
 	{
+		UE_LOG(
+			LogDIVE,
+			Verbose,
+			TEXT("Action '%s' (%s) CanExecute=false Target=%s Binding=%s"),
+			*Action->GetResolvedDisplayName().ToString(),
+			*GetNameSafe(Action->GetClass()),
+			*GetNameSafe(Context.Target.Get()),
+			*Context.BindingId.ToString());
 		return false;
 	}
 
@@ -584,6 +593,14 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 	FDIVEActionWorldScope WorldScope(Action, GetWorld());
 	if (!Action->CanExecute(Context))
 	{
+		UE_LOG(
+			LogDIVE,
+			Verbose,
+			TEXT("Continuous '%s' (%s) CanExecute=false Target=%s Binding=%s"),
+			*Action->GetResolvedDisplayName().ToString(),
+			*GetNameSafe(Action->GetClass()),
+			*GetNameSafe(Context.Target.Get()),
+			*Context.BindingId.ToString());
 		return false;
 	}
 

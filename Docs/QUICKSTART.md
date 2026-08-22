@@ -100,7 +100,7 @@ Example — tagged bolts → continuous unscrew BP:
 - **Context menu:** click row → `BeginInteraction` (modal drag without hold) → finish with next primary click / Escape / self-complete. Same LMB-up that confirms the menu row is ignored so the gesture is not cancelled immediately.
 - Session marks the action active and subscribes to `OnValueChanged` **before** `Begin`, so the initial `NotifyInteractionValue` / `NotifyValueChanged` reaches the HUD. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
 
-Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit). Rotary/Threaded call **`NotifyInteractionValue`**; proxy forward still uses **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Default widget is a compact chip next to the driven primitive (cursor fallback). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit). Rotary/Threaded call **`NotifyInteractionValue`**; proxy forward still uses **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
 
 Interaction parameters live on the action instance; device domain state lives on the device (see `Additional/DeviceInteractionModel.md`).
 
@@ -155,7 +155,7 @@ Click menu row
  → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Interact mode when **`PrimaryActionIndex`** is set on a matching binding. Winner among overlapping primaries: **Name > PartId > Tag > AnyPrimitive**; equal specificity → earlier binding in the list (Scan warns if more than one).
+Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Interact mode when **`PrimaryActionIndex`** is set on a matching binding, or when that binding's **only** action is continuous (Rotate / Unscrew). Winner among overlapping primaries: **Name > PartId > Tag > AnyPrimitive**; equal specificity → earlier binding in the list (Scan warns if more than one).
 
 ### Primary action path (production)
 
@@ -163,7 +163,7 @@ Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryAct
 IA_DIVE_PrimaryAction Started
  → DIVE Player::HandlePrimaryActionPressed()
  → Session::ExecutePrimaryActionAtScreenPosition (Interact mode)
- → most-specific matching binding PrimaryActionIndex → UDIVEDeviceAction::Execute / BeginInteraction
+ → most-specific matching binding PrimaryActionIndex (or the sole continuous action) → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
 In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog primary actions.
@@ -198,8 +198,8 @@ Do **not** add a second DIVE-only control asset layer — that would be another 
 
 **Author a knob or nut on your device** (the plugin does not ship a sample actor):
 
-1. On the moving mesh: a component tag (e.g. `DIVE.Knob` / `DIVE.Nut`). Visibility **Block** on the pick channel.
-2. On `UDIVEInspectableComponent` Bindings (or Action Catalog): Match Mode **Component Tag**, that tag, instanced **DIVE Rotary Drive Action** or **DIVE Threaded Drive Action**, `PrimaryActionIndex = 0`.
+1. On the moving mesh: a component tag (e.g. `DIVE.Knob` / `DIVE.Nut`). Visibility **Block** on the pick channel. Mobility can stay Static — Begin promotes it to Movable. If the device body simulates, Begin isolates the child (unweld, Query Only) and does not disable parent physics. Engine **cylinder is Z-up**: default Rotary **Axis Z** is spin-in-place.
+2. On `UDIVEInspectableComponent` Bindings (or Action Catalog): Match Mode **Component Tag**, that tag, instanced **DIVE Rotary Drive Action** or **DIVE Threaded Drive Action**. A binding whose only action is that drive is LMB primary; otherwise set `PrimaryActionIndex` to the drive slot.
 3. Open a session from the device (`Request Session` / ACTS `OpenDIVE`). Interact mode: LMB-drag is the primary. Threaded: at `TurnsToRelease` the part detaches and simulates — then Physical + GRIP can pick it up.
 
 **Generic simulating-mesh drag** — pawn physical drive (no device component):

@@ -121,6 +121,24 @@ bool ValidateBindings(
 				bValid = false;
 			}
 		}
+		else
+		{
+			int32 ContinuousCount = 0;
+			for (const UDIVEDeviceAction* Action : Binding->Actions)
+			{
+				if (Action && Action->IsA(UDIVEContinuousDeviceAction::StaticClass()))
+				{
+					++ContinuousCount;
+				}
+			}
+
+			if (ContinuousCount > 0 && !(Binding->Actions.Num() == 1 && ContinuousCount == 1))
+			{
+				Context.AddWarning(FText::FromString(FString::Printf(
+					TEXT("Binding '%s' has a continuous action (Rotate/Unscrew) but PrimaryActionIndex is None. Set it to that action's slot so LMB-drag in Interact starts it. A binding whose only action is continuous already uses that action as LMB primary."),
+					*BindingLabel)));
+			}
+		}
 
 		// NAME_None SectionId falls back to kSectionStandard at runtime — not an error.
 		if (!Binding->SectionId.IsNone() && !KnownSectionIds.Contains(Binding->SectionId))

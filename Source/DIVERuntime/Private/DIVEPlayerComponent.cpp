@@ -167,6 +167,11 @@ void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	{
 		PhysicalDriveProvider->TickDrive(DeltaTime);
 	}
+
+	if (ValueReadoutWidget)
+	{
+		ValueReadoutWidget->TickAnchor();
+	}
 }
 
 void UDIVEPlayerComponent::BindSessionDelegates()
@@ -346,12 +351,15 @@ void UDIVEPlayerComponent::ApplyPrimaryActionDragFromMouse()
 		return;
 	}
 
-	float MouseDeltaX = 0.f;
-	float MouseDeltaY = 0.f;
-	PlayerController->GetInputMouseDelta(MouseDeltaX, MouseDeltaY);
-	if (!FMath::IsNearlyZero(MouseDeltaX) || !FMath::IsNearlyZero(MouseDeltaY))
+	if (Subsystem->IsPawnPhysicalDriveActive())
 	{
-		Subsystem->UpdateActiveInteraction(FVector2D(MouseDeltaX, MouseDeltaY));
+		float MouseDeltaX = 0.f;
+		float MouseDeltaY = 0.f;
+		PlayerController->GetInputMouseDelta(MouseDeltaX, MouseDeltaY);
+		if (!FMath::IsNearlyZero(MouseDeltaX) || !FMath::IsNearlyZero(MouseDeltaY))
+		{
+			Subsystem->UpdateActiveInteraction(FVector2D(MouseDeltaX, MouseDeltaY));
+		}
 		return;
 	}
 
@@ -445,6 +453,7 @@ void UDIVEPlayerComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosi
 	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Interact)
 	{
 		Subsystem->ExecutePrimaryActionAtScreenPosition(ScreenPosition, PlayerController);
+		TryGetCursorScreenPosition(PrimaryActionLastPosition);
 		return;
 	}
 }
@@ -1161,7 +1170,6 @@ void UDIVEPlayerComponent::HandleInteractionValueChanged(
 	const FDIVEActionContext& Context,
 	const FDIVEInteractionValue& Value)
 {
-	(void)Context;
 	if (!IsLocallyControlledOwner())
 	{
 		return;
@@ -1179,6 +1187,7 @@ void UDIVEPlayerComponent::HandleInteractionValueChanged(
 	EnsureValueReadoutWidget();
 	if (ValueReadoutWidget)
 	{
+		ValueReadoutWidget->SetWorldAnchor(Context.Target.Get());
 		ValueReadoutWidget->SetReadout(Action->GetResolvedDisplayName(), Value);
 	}
 }
@@ -1205,6 +1214,7 @@ void UDIVEPlayerComponent::EnsureValueReadoutWidget()
 	ValueReadoutWidget = CreateWidget<UDIVEValueReadoutWidget>(PlayerController, WidgetClass);
 	if (ValueReadoutWidget && !ValueReadoutWidget->IsInViewport())
 	{
+		ValueReadoutWidget->SetVisibility(ESlateVisibility::Collapsed);
 		ValueReadoutWidget->AddToViewport(ValueReadoutZOrder);
 	}
 }

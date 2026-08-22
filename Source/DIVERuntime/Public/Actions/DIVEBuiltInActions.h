@@ -4,9 +4,9 @@
 
 #include "DIVEDeviceAction.h"
 
-class UPrimitiveComponent;
-
 #include "DIVEBuiltInActions.generated.h"
+
+class UPrimitiveComponent;
 
 UCLASS(BlueprintType, EditInlineNew, meta = (DisplayName = "DIVE Focus Action"))
 class DIVERUNTIME_API UDIVEFocusAction : public UDIVEDeviceAction
@@ -100,10 +100,10 @@ enum class EDIVEDriveAxis : uint8
 	Z
 };
 
-/** Stateless mapper: screen drag → rotation around a local axis. State lives on the target transform. */
+/** Screen drag rotates the picked primitive around a local axis. */
 UCLASS(BlueprintType, EditInlineNew, meta = (
 	DisplayName = "DIVE Rotary Drive Action",
-	ToolTip = "Hold/drag rotates the picked primitive around Axis. Limits and detents are per-instance."))
+	ToolTip = "Hold/drag rotates the picked primitive around Axis. Begin isolates a child on a simulating device (unweld, Query Only) without disabling parent physics. Engine cylinder is Z-up: Axis Z is spin-in-place."))
 class DIVERUNTIME_API UDIVERotaryDriveAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
@@ -111,7 +111,8 @@ class DIVERUNTIME_API UDIVERotaryDriveAction : public UDIVEContinuousDeviceActio
 public:
 	UDIVERotaryDriveAction();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ToolTip = "Local axis of the picked primitive. Engine Shape_Cylinder is Z-up; Axis Z is spin-in-place."))
 	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
@@ -156,6 +157,11 @@ private:
 
 	UPROPERTY(Transient)
 	float AccumulatedDegrees = 0.f;
+
+	uint8 SavedCollisionEnabled = 0;
+	bool bSavedAutoWeld = false;
+	bool bHasSavedIsolation = false;
+	FVector FrozenAxisWorld = FVector::ZeroVector;
 };
 
 /**
@@ -164,7 +170,7 @@ private:
  */
 UCLASS(BlueprintType, EditInlineNew, meta = (
 	DisplayName = "DIVE Threaded Drive Action",
-	ToolTip = "Hold/drag unscrews the picked primitive. On complete: detach + Simulate Physics."))
+	ToolTip = "Hold/drag unscrews the picked primitive around Axis. Begin isolates a child on a simulating device the same way Rotary does. On complete: detach + Simulate Physics."))
 class DIVERUNTIME_API UDIVEThreadedDriveAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
@@ -213,6 +219,11 @@ private:
 
 	UPROPERTY(Transient)
 	float AccumulatedTurns = 0.f;
+
+	uint8 SavedCollisionEnabled = 0;
+	bool bSavedAutoWeld = false;
+	bool bHasSavedIsolation = false;
+	FVector FrozenAxisWorld = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
 	bool bReleased = false;

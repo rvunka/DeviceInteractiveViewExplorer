@@ -469,6 +469,26 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 	Binding.PrimaryActionIndex = 5;
 	TestNull(TEXT("PrimaryAction null for invalid index"), Binding.GetPrimaryAction());
 
+	{
+		UDIVERotaryDriveAction* SoleRotary = NewObject<UDIVERotaryDriveAction>();
+		TestNotNull(TEXT("Sole rotary for implicit primary"), SoleRotary);
+		if (SoleRotary)
+		{
+			FDIVEActionBinding ImplicitRotary;
+			ImplicitRotary.Actions.Add(SoleRotary);
+			TestEqual(
+				TEXT("Sole continuous action is implicit LMB primary"),
+				ImplicitRotary.GetPrimaryAction(),
+				static_cast<UDIVEDeviceAction*>(SoleRotary));
+		}
+
+		FDIVEActionBinding SoleFocus;
+		SoleFocus.Actions.Add(Focus);
+		TestNull(
+			TEXT("Sole instant action is not implicit LMB primary"),
+			SoleFocus.GetPrimaryAction());
+	}
+
 	// CDO, not NewObject — instance UActorComponent asserts in PostInitProperties until
 	// EngineElements registers Typed Element type "Components" (see DefaultBindings smoke).
 	const UDIVEInspectableComponent* Inspectable =
@@ -1084,6 +1104,7 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 	{
 		Rotary->DegreesPerPixel = 1.f;
 		Rotary->bLimitAngle = false;
+		TestTrue(TEXT("Rotary CanExecute on kinematic primitive"), Rotary->CanExecute(Context));
 		Rotary->MarkInteractionActive(Context);
 		TestTrue(TEXT("Rotary Begin"), Rotary->BeginInteraction(Context));
 		Rotary->UpdateInteraction(FVector2D(10.f, 0.f), 0.016f);
@@ -1109,7 +1130,15 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 			Sphere->GetRelativeRotation().IsNearlyZero(0.05f));
 
 		Sphere->SetSimulatePhysics(true);
-		TestFalse(TEXT("Rotary rejects simulating body"), Rotary->CanExecute(Context));
+		TestTrue(
+			TEXT("Rotary CanExecute stays true when Simulate Physics is on"),
+			Rotary->CanExecute(Context));
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin forces kinematic"), Rotary->BeginInteraction(Context));
+		TestFalse(
+			TEXT("Begin cleared Simulate Physics"),
+			Sphere->IsSimulatingPhysics());
+		Rotary->EndInteraction(false);
 		Sphere->SetSimulatePhysics(false);
 	}
 
@@ -1160,6 +1189,61 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Threaded cancel restores pre-rotated start transform"),
 			Sphere->GetRelativeTransform().Equals(FTransform(FRotator(0.f, 90.f, 0.f)), 0.05f));
+	}
+
+	{
+		ADIVETestPhysicalDrivePawn* PhysicalHost = SpawnSmokeHost(World);
+		TestNotNull(TEXT("Physical-device host"), PhysicalHost);
+		if (PhysicalHost)
+		{
+			USphereComponent* DeviceBody = NewObject<USphereComponent>(PhysicalHost, TEXT("DeviceBody"));
+			DeviceBody->SetSphereRadius(24.f);
+			DeviceBody->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			DeviceBody->SetSimulatePhysics(true);
+			PhysicalHost->SetRootComponent(DeviceBody);
+			PhysicalHost->AddInstanceComponent(DeviceBody);
+			DeviceBody->RegisterComponent();
+
+			USphereComponent* Knob = NewObject<USphereComponent>(PhysicalHost, TEXT("DeviceKnob"));
+			Knob->SetSphereRadius(8.f);
+			Knob->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			Knob->SetupAttachment(DeviceBody);
+			PhysicalHost->AddInstanceComponent(Knob);
+			Knob->RegisterComponent();
+
+			FDIVEActionContext KnobContext;
+			KnobContext.Target = Knob;
+			KnobContext.ViewRotation = FRotator::ZeroRotator;
+
+			UDIVERotaryDriveAction* IsolatedRotary = NewObject<UDIVERotaryDriveAction>();
+			TestNotNull(TEXT("Rotary on a simulating parent"), IsolatedRotary);
+			if (!IsolatedRotary)
+			{
+				PhysicalHost->Destroy();
+				return false;
+			}
+
+			IsolatedRotary->DegreesPerPixel = 1.f;
+			IsolatedRotary->bLimitAngle = false;
+			IsolatedRotary->MarkInteractionActive(KnobContext);
+
+			const FVector BodyBefore = DeviceBody->GetComponentLocation();
+			TestTrue(TEXT("Rotary Begin on a child of a simulating body"), IsolatedRotary->BeginInteraction(KnobContext));
+			TestTrue(TEXT("Begin leaves the parent simulating"), DeviceBody->BodyInstance.bSimulatePhysics);
+			TestFalse(TEXT("Begin unwelded the driven child"), Knob->IsWelded());
+			TestEqual(
+				TEXT("Begin sets Query Only on the driven child"),
+				Knob->GetCollisionEnabled(),
+				ECollisionEnabled::QueryOnly);
+
+			IsolatedRotary->UpdateInteraction(FVector2D(30.f, 0.f), 0.016f);
+			TestTrue(
+				TEXT("Rotary on a welded child does not launch the simulating parent"),
+				DeviceBody->GetComponentLocation().Equals(BodyBefore, 2.f));
+
+			IsolatedRotary->EndInteraction(true);
+			PhysicalHost->Destroy();
+		}
 	}
 
 	Host->Destroy();

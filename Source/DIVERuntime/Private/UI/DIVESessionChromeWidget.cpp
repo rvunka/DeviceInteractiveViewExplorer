@@ -10,10 +10,12 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "UI/SharedUmgStyle.h"
+#include "Widgets/Layout/Anchors.h"
 
 UDIVESessionChromeWidget::UDIVESessionChromeWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
+	SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void UDIVESessionChromeWidget::NativeOnInitialized()
@@ -65,6 +67,7 @@ void UDIVESessionChromeWidget::RebuildChrome()
 
 	WidgetTree->RootWidget = nullptr;
 	RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("RootCanvas"));
+	RootCanvas->SetVisibility(ESlateVisibility::HitTestInvisible);
 	WidgetTree->RootWidget = RootCanvas;
 
 	ModePanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ModePanel"));

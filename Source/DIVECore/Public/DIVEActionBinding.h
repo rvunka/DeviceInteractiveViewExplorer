@@ -79,7 +79,7 @@ struct DIVECORE_API FDIVEActionBinding
 	TArray<TObjectPtr<UDIVEDeviceAction>> Actions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (
-		ToolTip = "Index into Actions for LMB primary. Among matching bindings, the most specific Match Mode wins (Name > PartId > Tag > Any); equal specificity keeps the earlier binding in the Bindings array. INDEX_NONE = none."))
+		ToolTip = "Index into Actions for LMB primary. Among matching bindings, the most specific Match Mode wins (Name > PartId > Tag > Any); equal specificity keeps the earlier binding in the Bindings array. INDEX_NONE = none, except a binding whose only action is continuous (Rotate/Unscrew) which is still LMB primary."))
 	int32 PrimaryActionIndex = INDEX_NONE;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (
@@ -89,7 +89,20 @@ struct DIVECORE_API FDIVEActionBinding
 
 	UDIVEDeviceAction* GetPrimaryAction() const
 	{
-		if (PrimaryActionIndex == INDEX_NONE || !Actions.IsValidIndex(PrimaryActionIndex))
+		if (PrimaryActionIndex == INDEX_NONE)
+		{
+			if (Actions.Num() == 1)
+			{
+				UDIVEDeviceAction* SoleAction = Actions[0];
+				if (SoleAction && SoleAction->IsA(UDIVEContinuousDeviceAction::StaticClass()))
+				{
+					return SoleAction;
+				}
+			}
+			return nullptr;
+		}
+
+		if (!Actions.IsValidIndex(PrimaryActionIndex))
 		{
 			return nullptr;
 		}

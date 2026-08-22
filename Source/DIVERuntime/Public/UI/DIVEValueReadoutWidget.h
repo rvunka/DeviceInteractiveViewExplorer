@@ -7,7 +7,9 @@
 
 #include "DIVEValueReadoutWidget.generated.h"
 
-/** On-screen value readout. Formats FDIVEInteractionValue; host may replace via ValueReadoutWidgetClass. */
+class UPrimitiveComponent;
+
+/** Compact value chip next to the driven primitive (cursor fallback). */
 UCLASS()
 class DIVERUNTIME_API UDIVEValueReadoutWidget : public UUserWidget
 {
@@ -23,14 +25,32 @@ public:
 	void SetNormalizedReadout(FText Label, float NormalizedValue);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
+	void SetWorldAnchor(UPrimitiveComponent* Primitive);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
 	void ClearReadout();
+
+	void TickAnchor();
 
 protected:
 	virtual void NativeOnInitialized() override;
+
+	void RebuildChip();
+	void UpdateChipPosition();
+	void SetChipSlatePosition(FVector2D SlatePosition);
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UCanvasPanel> RootCanvas;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UBorder> ChipBorder;
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UTextBlock> LabelText;
 
 	UPROPERTY(Transient)
-	TObjectPtr<class UBorder> PanelBorder;
+	TWeakObjectPtr<UPrimitiveComponent> WorldAnchor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UCanvasPanelSlot> ChipSlot;
 };

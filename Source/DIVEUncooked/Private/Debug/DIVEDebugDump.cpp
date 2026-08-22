@@ -411,7 +411,7 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 	AppendLine(Out, FString::Printf(TEXT("Shape/PickProxy count (listed interesting): %d"), ShapeOrProxyCount));
 	AppendLine(Out, TEXT("Hint: Match modes = ComponentTag / ComponentName / PartId / AnyPrimitive. Matching bindings are unioned by section."));
 	AppendLine(Out, TEXT("Hint: Menu/section order = Bindings and Sections array order (component, then catalog)."));
-	AppendLine(Out, TEXT("Hint: LMB primary = most specific matching binding with PrimaryActionIndex (Name > PartId > Tag > Any); equal specificity keeps the earlier binding."));
+	AppendLine(Out, TEXT("Hint: LMB primary = most specific matching binding with PrimaryActionIndex, or a binding whose only action is continuous (Name > PartId > Tag > Any); equal specificity keeps the earlier binding."));
 	AppendLine(Out, TEXT("Hint: Menu rows include component Bindings + Action Catalog. Device-specific ops usually live in the Catalog."));
 	AppendLine(Out, TEXT("==== end ===="));
 	return Out;

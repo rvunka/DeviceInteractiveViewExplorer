@@ -1380,6 +1380,42 @@ void UDIVEInspectableComponent::AppendDeviceAuthoringValidation(FDataValidationC
 	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
 	{
 		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
+		if (!Binding)
+		{
+			continue;
+		}
+
+		bool bHasKinematicDrive = false;
+		for (const UDIVEDeviceAction* Action : Binding->Actions)
+		{
+			if (Action && (Action->IsA<UDIVERotaryDriveAction>() || Action->IsA<UDIVEThreadedDriveAction>()))
+			{
+				bHasKinematicDrive = true;
+				break;
+			}
+		}
+		if (!bHasKinematicDrive)
+		{
+			continue;
+		}
+
+		TArray<UPrimitiveComponent*> Matching;
+		CollectPrimitivesMatchingQuery(Binding->Targets, Matching);
+		for (const UPrimitiveComponent* Primitive : Matching)
+		{
+			if (Primitive && Primitive->IsSimulatingPhysics())
+			{
+				Context.AddWarning(FText::FromString(FString::Printf(
+					TEXT("Binding '%s': '%s' has Simulate Physics on. Rotate/Unscrew Begin will turn it off for the kinematic drag."),
+					*MakeBindingValidationLabel(Binding, BindingIndex),
+					*Primitive->GetName())));
+			}
+		}
+	}
+
+	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
+	{
+		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
 		if (!Binding || Binding->Targets.MatchMode != EDIVETargetMatchMode::ComponentTag)
 		{
 			continue;
