@@ -69,7 +69,7 @@ FText UDIVEContinuousDeviceActionBlueprintFactory::GetToolTip() const
 	return NSLOCTEXT(
 		"DIVEContinuousDeviceActionBlueprintFactory",
 		"Tooltip",
-		"Blueprint subclass for hold/drag actions. Override BeginInteraction / UpdateInteraction / EndInteraction.");
+		"Blueprint subclass for hold/drag actions. Override BeginInteraction / UpdateInteraction(FDIVEInteractionUpdate) / EndInteraction.");
 }
 
 uint32 UDIVEContinuousDeviceActionBlueprintFactory::GetMenuCategories() const

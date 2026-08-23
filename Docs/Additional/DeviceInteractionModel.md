@@ -17,7 +17,7 @@ State lives on the **moving mesh** (kinematic) or on a **device control componen
 
 | Tier | Use when | Mechanism |
 |------|----------|-----------|
-| **1 — kinematic (now)** | Monitor session is enough; transform-as-state is enough | `UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` in **Interact** mode (same hold/drag as any continuous action) |
+| **1 — kinematic (now)** | Monitor session is enough; transform-as-state is enough | `UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` / `UDIVELinearDriveAction` in **Interact** mode (same hold/drag as any continuous action) |
 | **2 — device control (trigger)** | VR parity, MESS telemetry, the control must work outside DIVE | Control component owns the value; the **interact verb** drives it: monitor = session gesture via `IDIVEProxyDrive` / registry, VR = host trigger-hold interactor. GRIP **grab** stays for free bodies (grip button / bridge cursor-pull). See [`../Design_PhysicalControls_OneState_TwoInputs.md`](../Design_PhysicalControls_OneState_TwoInputs.md). **Zero in-plugin implementors today.** |
 
 | Layer | Owns |
@@ -60,7 +60,7 @@ Standing at the panel **does not** call `RequestSession()` and does not steal th
 ### Flat monitor (target)
 
 - **DIVE** brings the camera close and provides precise **screen-space input**.
-- **Interact (now, tier 1):** drag maps onto the picked mesh's authored axis (`UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction`). One kinematic DOF.
+- **Interact (now, tier 1):** pointer/ray maps onto the picked mesh's authored axis — polar angle for knobs/nuts (`UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` via `MapPointerToAxisAngle`), centimetres along the rail for sliders (`UDIVELinearDriveAction` via `MapPointerToAxisTravel`). Edge-on falls back to screen-delta helpers. One kinematic DOF. Standing-VR can feed the same helpers with a hand point later.
 - **Interact (tier 2):** the same gesture forwards into the device control component (`IDIVEProxyDrive` / registry). Standing-VR uses the host action host on the same Catalog / Bindings — not a camera session.
 - **Grab:** Physical-mode LMB → existing GRIP bridge cursor-pull, **free bodies only**.
 - No second physics rig inside DIVE. See [`../Design_PhysicalControls_OneState_TwoInputs.md`](../Design_PhysicalControls_OneState_TwoInputs.md).
@@ -80,7 +80,7 @@ Standing at the panel **does not** call `RequestSession()` and does not steal th
 
 Recommended **control wiring**:
 
-**Tier 1 (Interact mode, in-plugin):** bind a primitive (tag / name / PartId) to `UDIVERotaryDriveAction` or `UDIVEThreadedDriveAction`. The action is a stateless mapper; the mesh transform is the state. Catalog instances are shared — do not store per-target runtime state on the action beyond the active gesture.
+**Tier 1 (Interact mode, in-plugin):** bind a primitive (tag / name / PartId) to `UDIVERotaryDriveAction`, `UDIVEThreadedDriveAction`, or `UDIVELinearDriveAction`. The action is a stateless mapper; the mesh transform is the state. Catalog instances are shared — do not store per-target runtime state on the action beyond the active gesture.
 
 **Tier 2 (host implements, both verbs):**
 
@@ -116,6 +116,7 @@ IDIVEProxyDrive (DIVECore) — contract-goal for monitor interact (0 in-plugin i
 | Interaction | Mechanism |
 |-------------|-----------|
 | Knob, nut, kinematic lever | **Interact** mode → `UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` (tier 1) |
+| Slider / rail | **Interact** mode → `UDIVELinearDriveAction` (tier 1; pointer → cm on axis) |
 | Constrained / VR-parity panel control | **Interact** → host control component; monitor via `IDIVEProxyDrive` / registry (contract-goal, 0 implementors); standing-VR via host action host on the same Catalog / Bindings (no camera) |
 | Read label, use button, demount module | **Context menu** on pick → **Action Catalog / Bindings** + `UDIVEDeviceAction` |
 | Cable, grab | GRIP + MESS in host project |
@@ -188,11 +189,11 @@ Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_P
 
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
-| **Interact** | Binding `PrimaryActionIndex` when configured, or the binding's only action if it is continuous (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh. Kinematic knobs/nuts: bind Rotary/Threaded as primary. Begin isolates the driven child from a simulating parent (unweld, Query Only for the gesture). Engine cylinder is Z-up: Axis Z spins in place. |
+| **Interact** | Binding `PrimaryActionIndex` when configured, or the binding's only action if it is continuous (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh. Kinematic knobs/nuts: bind Rotary/Threaded as primary (polar rim). Sliders: bind Linear as primary (cm along Axis; edge-on falls back to `CmPerPixel`). Begin isolates the driven child from a simulating parent (unweld, Query Only for the gesture). Engine cylinder is Z-up: Rotary Axis Z spins in place; Linear default Axis X is travel. |
 | **Physical** | Pawn GRIP grab via DIVEGRIPBridge. Code today also tries `IDIVEProxyDrive` via `InternalProxyDriveAction` first — target (tier 2): proxy lives on Interact, Physical is grab-only. |
 | **Logical** | Planned (v1 roadmap); not yet in the enum |
 
-Drag delta while held is driven by the same action lifecycle + tick/Triggered axis if needed — still **semantic**, not «mouse moved».
+While held, the session ticks `UpdateInteraction(FDIVEInteractionUpdate)` (cursor, ray, view — not ScreenDelta alone). Still **semantic**, not raw «mouse moved».
 
 ### 4.5. Layer diagram (target)
 
@@ -225,7 +226,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | Context menu + widget | Focus, Isolate, Simulate, Delete (Bindings; Admin hidden in Shipping); custom from Catalog |
 | Action Catalog / Bindings + `UDIVEDeviceAction` | Object actions; continuous via shared interaction slot |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
-| `UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` | Interact-mode knobs/nuts; author on the device via Bindings / Catalog |
+| `UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction` / `UDIVELinearDriveAction` | Interact-mode knobs/nuts/sliders; author on the device via Bindings / Catalog |
 | `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` | Host implements on devices (contract-goal; 0 in-plugin implementors) |
 | Anchor | Viewpoint + PartId only |
 
@@ -244,7 +245,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 
 **Status: Контракт-цель.**
 
-`IDIVEProxyDrive` (DIVECore) is the **monitor adapter for the interact verb** (tier 2). The session forwards the same hold/drag used by tier-1 rotary/threaded actions onto a device control component. Standing-VR talks to the **same Catalog / Bindings** through a host action host — not through GRIP, not through `RequestSession()`. DIVERuntime ships **zero** implementors; do not treat this as a finished product path until a host device actually implements it.
+`IDIVEProxyDrive` (DIVECore) is the **monitor adapter for the interact verb** (tier 2). The session forwards the same hold/drag used by tier-1 rotary/threaded/linear actions onto a device control component. Standing-VR talks to the **same Catalog / Bindings** through a host action host — not through GRIP, not through `RequestSession()`. DIVERuntime ships **zero** implementors; do not treat this as a finished product path until a host device actually implements it.
 
 ```text
 IDIVEProxyDrive (DIVECore)
@@ -263,7 +264,7 @@ Prefer **device registry** at session start (primitive / tag → control compone
 - **Interact (tier 2, target):** same gesture / binding forwards to `IDIVEProxyDrive` / registry. Not yet the Physical-mode pick path.
 - **Grab (Physical):** GRIP bridge cursor-pull / VR grip button on free bodies.
 - **Physical pick (code today, pre-rev2):** `HandlePrimaryAction*` → registry or `IDIVEProxyDrive` first, then pawn GRIP. Move proxy off this path when tier 2 starts.
-- **Value HUD:** compact chip next to the driven primitive (cursor fallback). `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta (`NotifyValueChanged`). Rotary/Threaded send `FDIVEInteractionValue` via `NotifyInteractionValue` (signed Absolute + Unit; widget formats).
+- **Value HUD:** compact chip next to the driven primitive (cursor fallback). `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta (`NotifyValueChanged`). Rotary/Threaded/Linear send `FDIVEInteractionValue` via `NotifyInteractionValue` (signed Absolute + Unit; widget formats).
 - **Sounds / MESS:** only in device component when value changes.
 
 **Do not** hang the interface on `UStaticMeshComponent` — put it on a **control component** on the actor and register which primitives it owns.

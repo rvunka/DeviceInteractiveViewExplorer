@@ -1388,7 +1388,9 @@ void UDIVEInspectableComponent::AppendDeviceAuthoringValidation(FDataValidationC
 		bool bHasKinematicDrive = false;
 		for (const UDIVEDeviceAction* Action : Binding->Actions)
 		{
-			if (Action && (Action->IsA<UDIVERotaryDriveAction>() || Action->IsA<UDIVEThreadedDriveAction>()))
+			if (Action && (Action->IsA<UDIVERotaryDriveAction>()
+				|| Action->IsA<UDIVEThreadedDriveAction>()
+				|| Action->IsA<UDIVELinearDriveAction>()))
 			{
 				bHasKinematicDrive = true;
 				break;
@@ -1406,7 +1408,7 @@ void UDIVEInspectableComponent::AppendDeviceAuthoringValidation(FDataValidationC
 			if (Primitive && Primitive->IsSimulatingPhysics())
 			{
 				Context.AddWarning(FText::FromString(FString::Printf(
-					TEXT("Binding '%s': '%s' has Simulate Physics on. Rotate/Unscrew Begin will turn it off for the kinematic drag."),
+					TEXT("Binding '%s': '%s' has Simulate Physics on. Rotate/Unscrew/Slide Begin will turn it off for the kinematic drag."),
 					*MakeBindingValidationLabel(Binding, BindingIndex),
 					*Primitive->GetName())));
 			}

@@ -152,7 +152,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 	return false;
 }
 
-void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem& Session, const FVector2D& ScreenDelta)
+void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem& Session, const FDIVEInteractionUpdate& Update)
 {
 	if (!Session.bProxyDriving)
 	{
@@ -170,10 +170,14 @@ void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
 		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
 		{
-			const float DeltaTime = Session.GetWorld() ? Session.GetWorld()->GetDeltaSeconds() : 0.f;
+			FDIVEInteractionUpdate Frame = Update;
+			if (Frame.DeltaTime <= 0.f)
+			{
+				Frame.DeltaTime = Session.GetWorld() ? Session.GetWorld()->GetDeltaSeconds() : 0.f;
+			}
 			{
 				FDIVEActionWorldScope WorldScope(Continuous, Session.GetWorld());
-				Continuous->UpdateInteraction(ScreenDelta, DeltaTime);
+				Continuous->UpdateInteraction(Frame);
 			}
 			if (!Continuous->IsInteractionActive())
 			{

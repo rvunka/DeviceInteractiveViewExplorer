@@ -18,7 +18,7 @@ class UDIVEProxyDrive : public UInterface
  * Monitor adapter for the **interact** verb on a device-owned control (tier 2).
  * DIVERuntime ships **zero** implementors — host/device modules implement this when a
  * control must live on the device (MESS, VR parity, reuse outside the session).
- * Interact-mode knobs/nuts today use DIVERuntime continuous drive actions
+ * Interact-mode knobs/nuts/sliders today use DIVERuntime continuous drive actions
  * (kinematic mesh transform), not this interface.
  * Session routing today still starts this path from Physical primary (see
  * `TryBeginProxyDriveAtScreenPosition`); target policy moves it to Interact.

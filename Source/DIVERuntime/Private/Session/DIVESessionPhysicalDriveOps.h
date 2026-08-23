@@ -6,6 +6,7 @@
 
 class UDIVESessionSubsystem;
 struct FDIVEFocusTarget;
+struct FDIVEInteractionUpdate;
 struct FHitResult;
 
 struct FDIVESessionPhysicalDriveOps
@@ -17,7 +18,7 @@ struct FDIVESessionPhysicalDriveOps
 		UDIVESessionSubsystem& Session,
 		const FVector2D& ScreenPosition,
 		class APlayerController* PlayerController);
-	static void UpdateActiveInteraction(UDIVESessionSubsystem& Session, const FVector2D& ScreenDelta);
+	static void UpdateActiveInteraction(UDIVESessionSubsystem& Session, const FDIVEInteractionUpdate& Update);
 	static void EndProxyDrive(UDIVESessionSubsystem& Session, bool bCommit);
 	static void HandleActivePawnPhysicalManualRotatePressed(UDIVESessionSubsystem& Session);
 	static void HandleActivePawnPhysicalManualRotateReleased(UDIVESessionSubsystem& Session);

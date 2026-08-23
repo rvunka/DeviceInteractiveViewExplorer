@@ -232,16 +232,15 @@ bool UDIVEProxyDriveForwardAction::BeginInteraction_Implementation(const FDIVEAc
 	return true;
 }
 
-void UDIVEProxyDriveForwardAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
+void UDIVEProxyDriveForwardAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
 {
-	(void)DeltaTime;
 	UObject* ProxyObject = ActiveProxyObject.Get();
-	if (!ProxyObject)
+	if (!ProxyObject || Update.ScreenDelta.IsNearlyZero())
 	{
 		return;
 	}
 
-	IDIVEProxyDrive::Execute_ApplyProxyDriveDelta(ProxyObject, ScreenDelta);
+	IDIVEProxyDrive::Execute_ApplyProxyDriveDelta(ProxyObject, Update.ScreenDelta);
 
 	float NormalizedValue = 0.f;
 	if (IDIVEProxyDrive::Execute_GetProxyDriveNormalizedValue(ProxyObject, NormalizedValue))
@@ -372,6 +371,98 @@ void SetDrivenRelativeTransform(UPrimitiveComponent* Target, const FTransform& N
 	}
 }
 
+constexpr float PolarDeadRadiusCm = 1.f;
+
+void ClearPolarGestureState(
+	FVector& FrozenAxisWorld,
+	FVector& AxisOrigin,
+	FVector& PlaneBasisU,
+	FVector& PlaneBasisV,
+	FVector& PreviousPlaneVector,
+	bool& bAwaitingPolarSeed)
+{
+	FrozenAxisWorld = FVector::ZeroVector;
+	AxisOrigin = FVector::ZeroVector;
+	PlaneBasisU = FVector::ZeroVector;
+	PlaneBasisV = FVector::ZeroVector;
+	PreviousPlaneVector = FVector::ZeroVector;
+	bAwaitingPolarSeed = false;
+}
+
+void InitializePolarGestureState(
+	const FDIVEActionContext& Context,
+	UPrimitiveComponent* Target,
+	const EDIVEDriveAxis Axis,
+	FVector& OutFrozenAxisWorld,
+	FVector& OutAxisOrigin,
+	FVector& OutPlaneBasisU,
+	FVector& OutPlaneBasisV,
+	FVector& OutPreviousPlaneVector,
+	bool& bOutAwaitingPolarSeed)
+{
+	const FVector SeedPoint = Context.PickHit.bBlockingHit
+		? FVector(Context.PickHit.ImpactPoint)
+		: Target->GetComponentLocation();
+	OutFrozenAxisWorld = DriveAxisWorld(Target, Axis);
+	OutAxisOrigin = DIVE::ProjectPointOntoAxis(SeedPoint, Target->GetComponentLocation(), OutFrozenAxisWorld);
+	DIVE::BuildAxisPlaneBasis(OutFrozenAxisWorld, OutPlaneBasisU, OutPlaneBasisV);
+	// Live pointer seeds on the first Update. Using PickHit as previous would jump
+	// when the gesture starts from the context menu (cursor is off the rim).
+	OutPreviousPlaneVector = FVector::ZeroVector;
+	bOutAwaitingPolarSeed = true;
+}
+
+float ResolvePolarDeltaDegrees(
+	const FDIVEInteractionUpdate& Update,
+	const FVector& AxisOrigin,
+	const FVector& FrozenAxisWorld,
+	const FVector& PlaneBasisU,
+	const FVector& PlaneBasisV,
+	FVector& InOutPreviousPlaneVector,
+	bool& bInOutAwaitingPolarSeed,
+	const float DegreesPerPixel)
+{
+	const FDIVEPointerAxisAngleResult Polar = DIVE::MapPointerToAxisAngle(
+		AxisOrigin,
+		FrozenAxisWorld,
+		PlaneBasisU,
+		PlaneBasisV,
+		Update.ViewLocation,
+		Update.PickRayDir,
+		InOutPreviousPlaneVector,
+		PolarDeadRadiusCm);
+
+	const bool bHaveRimHit = Polar.PlaneVector.SizeSquared() >= FMath::Square(PolarDeadRadiusCm);
+
+	if (bInOutAwaitingPolarSeed)
+	{
+		InOutPreviousPlaneVector = bHaveRimHit ? Polar.PlaneVector : FVector::ZeroVector;
+		bInOutAwaitingPolarSeed = false;
+		return 0.f;
+	}
+
+	if (Polar.bApplied)
+	{
+		InOutPreviousPlaneVector = Polar.PlaneVector;
+		return Polar.DeltaDegrees;
+	}
+
+	if (bHaveRimHit && InOutPreviousPlaneVector.IsNearlyZero())
+	{
+		InOutPreviousPlaneVector = Polar.PlaneVector;
+		return 0.f;
+	}
+
+	// Lost a stable rim hit (dead zone, grazing, behind-camera). Drop the latch so the
+	// next valid hit re-seeds instead of applying a jump from the last good angle.
+	InOutPreviousPlaneVector = FVector::ZeroVector;
+	return DIVE::MapScreenDeltaToAxisAngle(
+		Update.ScreenDelta,
+		Update.ViewRotation,
+		FrozenAxisWorld,
+		DegreesPerPixel);
+}
+
 }
 
 UDIVERotaryDriveAction::UDIVERotaryDriveAction()
@@ -396,41 +487,43 @@ bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeRotation = Target->GetRelativeRotation();
-	ViewRotation = Context.ViewRotation;
-	FrozenAxisWorld = DriveAxisWorld(Target, Axis);
+	InitializePolarGestureState(
+		Context,
+		Target,
+		Axis,
+		FrozenAxisWorld,
+		AxisOrigin,
+		PlaneBasisU,
+		PlaneBasisV,
+		PreviousPlaneVector,
+		bAwaitingPolarSeed);
 	AccumulatedDegrees = 0.f;
 	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
 
-void UDIVERotaryDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
+void UDIVERotaryDriveAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
 {
-	(void)DeltaTime;
 	UPrimitiveComponent* Target = ActiveTarget.Get();
 	if (!Target || !IsInteractionActive())
 	{
 		return;
 	}
 
-	const float DeltaDeg = DIVE::MapScreenDeltaToAxisAngle(
-		ScreenDelta,
-		ViewRotation,
+	const float DeltaDeg = ResolvePolarDeltaDegrees(
+		Update,
+		AxisOrigin,
 		FrozenAxisWorld,
+		PlaneBasisU,
+		PlaneBasisV,
+		PreviousPlaneVector,
+		bAwaitingPolarSeed,
 		DegreesPerPixel);
+	if (FMath::IsNearlyZero(DeltaDeg))
+	{
+		return;
+	}
 	AccumulatedDegrees += DeltaDeg;
-
-	if (DetentStepDegrees > KINDA_SMALL_NUMBER)
-	{
-		AccumulatedDegrees = FMath::GridSnap(AccumulatedDegrees, DetentStepDegrees);
-	}
-
-	if (bLimitAngle)
-	{
-		const float Lo = FMath::Min(MinAngleDegrees, MaxAngleDegrees);
-		const float Hi = FMath::Max(MinAngleDegrees, MaxAngleDegrees);
-		AccumulatedDegrees = FMath::Clamp(AccumulatedDegrees, Lo, Hi);
-	}
-
 	ApplyAccumulated();
 	NotifyInteractionValue(MakeInteractionValue());
 }
@@ -449,6 +542,13 @@ void UDIVERotaryDriveAction::EndInteraction_Implementation(const bool bCommit)
 	bHasSavedIsolation = false;
 	ActiveTarget.Reset();
 	AccumulatedDegrees = 0.f;
+	ClearPolarGestureState(
+		FrozenAxisWorld,
+		AxisOrigin,
+		PlaneBasisU,
+		PlaneBasisV,
+		PreviousPlaneVector,
+		bAwaitingPolarSeed);
 	NotifyInteractionCompleted();
 }
 
@@ -460,16 +560,33 @@ void UDIVERotaryDriveAction::ApplyAccumulated()
 		return;
 	}
 
-	const FQuat DeltaQ(DriveAxisLocal(Axis), FMath::DegreesToRadians(AccumulatedDegrees));
+	const FQuat DeltaQ(DriveAxisLocal(Axis), FMath::DegreesToRadians(GetAppliedDegrees()));
 	const FQuat NewRelQuat = FQuat(StartRelativeRotation) * DeltaQ;
 	SetDrivenRelativeRotation(Target, NewRelQuat);
 }
 
+float UDIVERotaryDriveAction::GetAppliedDegrees() const
+{
+	float Applied = AccumulatedDegrees;
+	if (DetentStepDegrees > KINDA_SMALL_NUMBER)
+	{
+		Applied = FMath::GridSnap(Applied, DetentStepDegrees);
+	}
+	if (bLimitAngle)
+	{
+		const float Lo = FMath::Min(MinAngleDegrees, MaxAngleDegrees);
+		const float Hi = FMath::Max(MinAngleDegrees, MaxAngleDegrees);
+		Applied = FMath::Clamp(Applied, Lo, Hi);
+	}
+	return Applied;
+}
+
 float UDIVERotaryDriveAction::GetNormalizedValue() const
 {
+	const float Applied = GetAppliedDegrees();
 	if (!bLimitAngle)
 	{
-		return FMath::Fmod(FMath::Abs(AccumulatedDegrees), 360.f) / 360.f;
+		return FMath::Fmod(FMath::Abs(Applied), 360.f) / 360.f;
 	}
 
 	const float Lo = FMath::Min(MinAngleDegrees, MaxAngleDegrees);
@@ -479,14 +596,14 @@ float UDIVERotaryDriveAction::GetNormalizedValue() const
 	{
 		return 0.f;
 	}
-	return (AccumulatedDegrees - Lo) / Span;
+	return (Applied - Lo) / Span;
 }
 
 FDIVEInteractionValue UDIVERotaryDriveAction::MakeInteractionValue() const
 {
 	FDIVEInteractionValue Value;
 	Value.Normalized = GetNormalizedValue();
-	Value.Absolute = AccumulatedDegrees;
+	Value.Absolute = GetAppliedDegrees();
 	Value.AbsoluteMax = 0.f;
 	Value.Unit = EDIVEInteractionValueUnit::Degrees;
 	return Value;
@@ -514,35 +631,50 @@ bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEAction
 	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeTransform = Target->GetRelativeTransform();
-	ViewRotation = Context.ViewRotation;
-	FrozenAxisWorld = DriveAxisWorld(Target, Axis);
+	InitializePolarGestureState(
+		Context,
+		Target,
+		Axis,
+		FrozenAxisWorld,
+		AxisOrigin,
+		PlaneBasisU,
+		PlaneBasisV,
+		PreviousPlaneVector,
+		bAwaitingPolarSeed);
 	AccumulatedTurns = 0.f;
 	bReleased = false;
 	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
 
-void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
+void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
 {
-	(void)DeltaTime;
 	UPrimitiveComponent* Target = ActiveTarget.Get();
 	if (!Target || !IsInteractionActive() || bReleased)
 	{
 		return;
 	}
 
-	const float DeltaDeg = DIVE::MapScreenDeltaToAxisAngle(
-		ScreenDelta,
-		ViewRotation,
+	const float DeltaDeg = ResolvePolarDeltaDegrees(
+		Update,
+		AxisOrigin,
 		FrozenAxisWorld,
+		PlaneBasisU,
+		PlaneBasisV,
+		PreviousPlaneVector,
+		bAwaitingPolarSeed,
 		DegreesPerPixel);
+	if (FMath::IsNearlyZero(DeltaDeg))
+	{
+		return;
+	}
 	const float SignedTurns = (DeltaDeg / 360.f) * (bPositiveDeltaLoosens ? 1.f : -1.f);
-	AccumulatedTurns = FMath::Clamp(AccumulatedTurns + SignedTurns, 0.f, TurnsToRelease);
+	AccumulatedTurns += SignedTurns;
 
 	ApplyAccumulated();
 	NotifyInteractionValue(MakeInteractionValue());
 
-	if (AccumulatedTurns >= TurnsToRelease - KINDA_SMALL_NUMBER)
+	if (GetAppliedTurns() >= TurnsToRelease - KINDA_SMALL_NUMBER)
 	{
 		ReleaseTarget();
 	}
@@ -566,6 +698,13 @@ void UDIVEThreadedDriveAction::EndInteraction_Implementation(const bool bCommit)
 	ActiveTarget.Reset();
 	AccumulatedTurns = 0.f;
 	bReleased = false;
+	ClearPolarGestureState(
+		FrozenAxisWorld,
+		AxisOrigin,
+		PlaneBasisU,
+		PlaneBasisV,
+		PreviousPlaneVector,
+		bAwaitingPolarSeed);
 	NotifyInteractionCompleted();
 }
 
@@ -578,9 +717,10 @@ void UDIVEThreadedDriveAction::ApplyAccumulated()
 	}
 
 	const FVector AxisLocal = DriveAxisLocal(Axis);
-	const FQuat DeltaQ(AxisLocal, FMath::DegreesToRadians(AccumulatedTurns * 360.f));
+	const float AppliedTurns = GetAppliedTurns();
+	const FQuat DeltaQ(AxisLocal, FMath::DegreesToRadians(AppliedTurns * 360.f));
 	const FVector AxisInParent = StartRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
-	const FVector RelOffset = AxisInParent * (AccumulatedTurns * PitchCmPerTurn);
+	const FVector RelOffset = AxisInParent * (AppliedTurns * PitchCmPerTurn);
 
 	FTransform NewRel = StartRelativeTransform;
 	NewRel.SetRotation(StartRelativeTransform.GetRotation() * DeltaQ);
@@ -605,21 +745,266 @@ void UDIVEThreadedDriveAction::ReleaseTarget()
 	NotifyInteractionCompleted();
 }
 
+float UDIVEThreadedDriveAction::GetAppliedTurns() const
+{
+	return FMath::Clamp(AccumulatedTurns, 0.f, TurnsToRelease);
+}
+
 float UDIVEThreadedDriveAction::GetNormalizedValue() const
 {
 	if (TurnsToRelease <= KINDA_SMALL_NUMBER)
 	{
 		return 1.f;
 	}
-	return FMath::Clamp(AccumulatedTurns / TurnsToRelease, 0.f, 1.f);
+	return FMath::Clamp(GetAppliedTurns() / TurnsToRelease, 0.f, 1.f);
 }
 
 FDIVEInteractionValue UDIVEThreadedDriveAction::MakeInteractionValue() const
 {
 	FDIVEInteractionValue Value;
 	Value.Normalized = GetNormalizedValue();
-	Value.Absolute = AccumulatedTurns;
+	Value.Absolute = GetAppliedTurns();
 	Value.AbsoluteMax = TurnsToRelease;
 	Value.Unit = EDIVEInteractionValueUnit::Turns;
+	return Value;
+}
+
+UDIVELinearDriveAction::UDIVELinearDriveAction()
+{
+	DisplayName = NSLOCTEXT("DIVE", "LinearDrive", "Slide");
+}
+
+bool UDIVELinearDriveAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
+{
+	return Super::CanExecute_Implementation(Context)
+		&& Context.Target != nullptr;
+}
+
+namespace
+{
+void ClearLinearGestureState(
+	FVector& FrozenAxisWorld,
+	FVector& AxisOrigin,
+	float& PreviousParameterCm,
+	bool& bHasPreviousParameter,
+	bool& bAwaitingLinearSeed)
+{
+	FrozenAxisWorld = FVector::ZeroVector;
+	AxisOrigin = FVector::ZeroVector;
+	PreviousParameterCm = 0.f;
+	bHasPreviousParameter = false;
+	bAwaitingLinearSeed = false;
+}
+
+void InitializeLinearGestureState(
+	const FDIVEActionContext& Context,
+	UPrimitiveComponent* Target,
+	const EDIVEDriveAxis Axis,
+	FVector& OutFrozenAxisWorld,
+	FVector& OutAxisOrigin,
+	float& OutPreviousParameterCm,
+	bool& bOutHasPreviousParameter,
+	bool& bOutAwaitingLinearSeed)
+{
+	const FVector SeedPoint = Context.PickHit.bBlockingHit
+		? FVector(Context.PickHit.ImpactPoint)
+		: Target->GetComponentLocation();
+	OutFrozenAxisWorld = DriveAxisWorld(Target, Axis);
+	OutAxisOrigin = DIVE::ProjectPointOntoAxis(SeedPoint, Target->GetComponentLocation(), OutFrozenAxisWorld);
+	// Live pointer seeds on the first Update. Using PickHit as previous would jump
+	// when the gesture starts from the context menu (cursor is off the rail).
+	OutPreviousParameterCm = 0.f;
+	bOutHasPreviousParameter = false;
+	bOutAwaitingLinearSeed = true;
+}
+
+float ResolveLinearDeltaCm(
+	const FDIVEInteractionUpdate& Update,
+	const FVector& AxisOrigin,
+	const FVector& FrozenAxisWorld,
+	float& InOutPreviousParameterCm,
+	bool& bInOutHasPreviousParameter,
+	bool& bInOutAwaitingLinearSeed,
+	const float CmPerPixel)
+{
+	const FDIVEPointerAxisTravelResult Travel = DIVE::MapPointerToAxisTravel(
+		AxisOrigin,
+		FrozenAxisWorld,
+		Update.ViewLocation,
+		Update.PickRayDir,
+		bInOutHasPreviousParameter,
+		InOutPreviousParameterCm);
+
+	if (bInOutAwaitingLinearSeed)
+	{
+		if (Travel.bHasParameter)
+		{
+			InOutPreviousParameterCm = Travel.ParameterCm;
+			bInOutHasPreviousParameter = true;
+		}
+		bInOutAwaitingLinearSeed = false;
+		return 0.f;
+	}
+
+	if (Travel.bApplied)
+	{
+		InOutPreviousParameterCm = Travel.ParameterCm;
+		bInOutHasPreviousParameter = true;
+		return Travel.DeltaCm;
+	}
+
+	if (Travel.bHasParameter && !bInOutHasPreviousParameter)
+	{
+		InOutPreviousParameterCm = Travel.ParameterCm;
+		bInOutHasPreviousParameter = true;
+		return 0.f;
+	}
+
+	// Lost a stable projection (parallel / behind-camera). Drop the latch so the
+	// next valid hit re-seeds instead of applying a jump from the last parameter.
+	bInOutHasPreviousParameter = false;
+	return DIVE::MapScreenDeltaToAxisTravel(
+		Update.ScreenDelta,
+		Update.ViewRotation,
+		FrozenAxisWorld,
+		CmPerPixel);
+}
+} // namespace
+
+bool UDIVELinearDriveAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
+{
+	UPrimitiveComponent* Target = Context.Target.Get();
+	if (!Target)
+	{
+		return false;
+	}
+
+	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
+	ActiveTarget = Target;
+	StartRelativeTransform = Target->GetRelativeTransform();
+	InitializeLinearGestureState(
+		Context,
+		Target,
+		Axis,
+		FrozenAxisWorld,
+		AxisOrigin,
+		PreviousParameterCm,
+		bHasPreviousParameter,
+		bAwaitingLinearSeed);
+	AccumulatedTravelCm = 0.f;
+	NotifyInteractionValue(MakeInteractionValue());
+	return true;
+}
+
+void UDIVELinearDriveAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
+{
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target || !IsInteractionActive())
+	{
+		return;
+	}
+
+	const float DeltaCm = ResolveLinearDeltaCm(
+		Update,
+		AxisOrigin,
+		FrozenAxisWorld,
+		PreviousParameterCm,
+		bHasPreviousParameter,
+		bAwaitingLinearSeed,
+		CmPerPixel);
+	if (FMath::IsNearlyZero(DeltaCm))
+	{
+		return;
+	}
+	AccumulatedTravelCm += DeltaCm;
+	ApplyAccumulated();
+	NotifyInteractionValue(MakeInteractionValue());
+}
+
+void UDIVELinearDriveAction::EndInteraction_Implementation(const bool bCommit)
+{
+	if (UPrimitiveComponent* Target = ActiveTarget.Get())
+	{
+		if (!bCommit && bRestoreOnCancel)
+		{
+			SetDrivenRelativeTransform(Target, StartRelativeTransform);
+		}
+		RestoreDrivenPrimitiveIsolation(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
+	}
+
+	bHasSavedIsolation = false;
+	ActiveTarget.Reset();
+	AccumulatedTravelCm = 0.f;
+	ClearLinearGestureState(
+		FrozenAxisWorld,
+		AxisOrigin,
+		PreviousParameterCm,
+		bHasPreviousParameter,
+		bAwaitingLinearSeed);
+	NotifyInteractionCompleted();
+}
+
+void UDIVELinearDriveAction::ApplyAccumulated()
+{
+	UPrimitiveComponent* Target = ActiveTarget.Get();
+	if (!Target)
+	{
+		return;
+	}
+
+	const FVector AxisLocal = DriveAxisLocal(Axis);
+	const FVector AxisInParent = StartRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
+	FTransform NewRel = StartRelativeTransform;
+	NewRel.SetTranslation(StartRelativeTransform.GetTranslation() + AxisInParent * GetAppliedTravelCm());
+	SetDrivenRelativeTransform(Target, NewRel);
+}
+
+float UDIVELinearDriveAction::GetAppliedTravelCm() const
+{
+	float Applied = AccumulatedTravelCm;
+	if (DetentStepCm > KINDA_SMALL_NUMBER)
+	{
+		Applied = FMath::GridSnap(Applied, DetentStepCm);
+	}
+	if (bLimitTravel)
+	{
+		const float Lo = FMath::Min(MinTravelCm, MaxTravelCm);
+		const float Hi = FMath::Max(MinTravelCm, MaxTravelCm);
+		Applied = FMath::Clamp(Applied, Lo, Hi);
+	}
+	return Applied;
+}
+
+float UDIVELinearDriveAction::GetNormalizedValue() const
+{
+	if (!bLimitTravel)
+	{
+		return 0.f;
+	}
+
+	const float Lo = FMath::Min(MinTravelCm, MaxTravelCm);
+	const float Hi = FMath::Max(MinTravelCm, MaxTravelCm);
+	const float Span = Hi - Lo;
+	if (Span <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+	return (GetAppliedTravelCm() - Lo) / Span;
+}
+
+FDIVEInteractionValue UDIVELinearDriveAction::MakeInteractionValue() const
+{
+	FDIVEInteractionValue Value;
+	Value.Normalized = GetNormalizedValue();
+	Value.Absolute = GetAppliedTravelCm();
+	if (bLimitTravel)
+	{
+		Value.AbsoluteMax = FMath::Abs(MaxTravelCm - MinTravelCm);
+	}
+	else
+	{
+		Value.AbsoluteMax = 0.f;
+	}
+	Value.Unit = EDIVEInteractionValueUnit::Centimeters;
 	return Value;
 }

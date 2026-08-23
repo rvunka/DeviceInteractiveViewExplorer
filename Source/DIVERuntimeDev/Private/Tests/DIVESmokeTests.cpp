@@ -86,6 +86,63 @@ USphereComponent* MakeSphereOnHost(AActor* Host, const FName Name, const float R
 
 	return Sphere;
 }
+
+FDIVEInteractionUpdate MakePolarUpdateAroundAxis(
+	const FVector& AxisWorld,
+	const float AngleDegrees,
+	const float RimRadiusCm = 10.f,
+	const float RayOffsetCm = 100.f)
+{
+	FDIVEInteractionUpdate Update;
+	FVector BasisU = FVector::ZeroVector;
+	FVector BasisV = FVector::ZeroVector;
+	DIVE::BuildAxisPlaneBasis(AxisWorld, BasisU, BasisV);
+
+	const FVector Axis = AxisWorld.GetSafeNormal();
+	const float Rad = FMath::DegreesToRadians(AngleDegrees);
+	const FVector RimPoint = BasisU * (RimRadiusCm * FMath::Cos(Rad)) + BasisV * (RimRadiusCm * FMath::Sin(Rad));
+	// Offset along the axis so the ray is not parallel to the drive plane.
+	const FVector RayStart = RimPoint + Axis * RayOffsetCm;
+	Update.ViewLocation = RayStart;
+	Update.PickRayDir = -Axis;
+	Update.DeltaTime = 0.016f;
+	return Update;
+}
+
+FDIVEInteractionUpdate MakeZUpPolarUpdate(const float AngleDegrees, const float RimRadiusCm = 10.f)
+{
+	return MakePolarUpdateAroundAxis(FVector::UpVector, AngleDegrees, RimRadiusCm);
+}
+
+FDIVEInteractionUpdate MakeXAxisPolarUpdate(const float AngleDegrees, const float RimRadiusCm = 10.f)
+{
+	return MakePolarUpdateAroundAxis(FVector::ForwardVector, AngleDegrees, RimRadiusCm);
+}
+
+/** Ray perpendicular to AxisWorld whose closest point on the axis sits at ParameterCm from the origin. */
+FDIVEInteractionUpdate MakeLinearUpdateAlongAxis(
+	const FVector& AxisWorld,
+	const float ParameterCm,
+	const float LateralOffsetCm = 100.f)
+{
+	FDIVEInteractionUpdate Update;
+	FVector BasisU = FVector::ZeroVector;
+	FVector BasisV = FVector::ZeroVector;
+	DIVE::BuildAxisPlaneBasis(AxisWorld, BasisU, BasisV);
+
+	const FVector Axis = AxisWorld.GetSafeNormal();
+	const FVector PointOnAxis = Axis * ParameterCm;
+	const FVector RayStart = PointOnAxis + BasisU * LateralOffsetCm;
+	Update.ViewLocation = RayStart;
+	Update.PickRayDir = -BasisU;
+	Update.DeltaTime = 0.016f;
+	return Update;
+}
+
+FDIVEInteractionUpdate MakeXAxisLinearUpdate(const float ParameterCm)
+{
+	return MakeLinearUpdateAlongAxis(FVector::ForwardVector, ParameterCm);
+}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -1014,6 +1071,221 @@ bool FDIVEDriveMappingSmokeTest::RunTest(const FString& Parameters)
 		DIVE::MapScreenDeltaToAxisTravel(FVector2D(0.f, 10.f), FRotator::ZeroRotator, FVector::UpVector, 1.f),
 		-10.f);
 
+	TestEqual(
+		TEXT("Looking along the rail falls back to horizontal pixels"),
+		DIVE::MapScreenDeltaToAxisTravel(FVector2D(10.f, 0.f), FRotator::ZeroRotator, FVector::ForwardVector, 1.f),
+		10.f);
+
+	{
+		const FVector AxisOrigin = FVector::ZeroVector;
+		const FVector AxisWorld = FVector::UpVector;
+		FVector BasisU = FVector::ZeroVector;
+		FVector BasisV = FVector::ZeroVector;
+		DIVE::BuildAxisPlaneBasis(AxisWorld, BasisU, BasisV);
+		const float RimRadiusCm = 10.f;
+		const float DeadRadiusCm = 1.f;
+
+		const auto RayAtAngle = [&](const float AngleDegrees) -> TPair<FVector, FVector>
+		{
+			const FDIVEInteractionUpdate Frame = MakeZUpPolarUpdate(AngleDegrees, RimRadiusCm);
+			return TPair<FVector, FVector>(Frame.ViewLocation, Frame.PickRayDir);
+		};
+
+		const FVector AngleZeroVector = BasisU * RimRadiusCm;
+
+		{
+			const TPair<FVector, FVector> Ray = RayAtAngle(0.f);
+			const FDIVEPointerAxisAngleResult Seed = DIVE::MapPointerToAxisAngle(
+				AxisOrigin,
+				AxisWorld,
+				BasisU,
+				BasisV,
+				Ray.Key,
+				Ray.Value,
+				FVector::ZeroVector,
+				DeadRadiusCm);
+			TestFalse(TEXT("Polar seed with no previous vector does not apply"), Seed.bApplied);
+			TestTrue(
+				TEXT("Polar seed still exposes the rim vector"),
+				Seed.PlaneVector.Size() >= DeadRadiusCm);
+		}
+
+		FVector PreviousPlaneVector = AngleZeroVector;
+		{
+			const TPair<FVector, FVector> Ray = RayAtAngle(0.f);
+			const FDIVEPointerAxisAngleResult SameAngle = DIVE::MapPointerToAxisAngle(
+				AxisOrigin,
+				AxisWorld,
+				BasisU,
+				BasisV,
+				Ray.Key,
+				Ray.Value,
+				PreviousPlaneVector,
+				DeadRadiusCm);
+			TestTrue(TEXT("Polar repeat angle applies zero delta"), SameAngle.bApplied);
+			TestTrue(
+				TEXT("Polar repeat angle delta is zero"),
+				FMath::IsNearlyZero(SameAngle.DeltaDegrees, 0.05f));
+			PreviousPlaneVector = SameAngle.PlaneVector;
+		}
+
+		float WrappedTotal = 0.f;
+		PreviousPlaneVector = AngleZeroVector;
+		for (int32 Step = 1; Step <= 36; ++Step)
+		{
+			const TPair<FVector, FVector> Ray = RayAtAngle(Step * 10.f);
+			const FDIVEPointerAxisAngleResult StepResult = DIVE::MapPointerToAxisAngle(
+				AxisOrigin,
+				AxisWorld,
+				BasisU,
+				BasisV,
+				Ray.Key,
+				Ray.Value,
+				PreviousPlaneVector,
+				DeadRadiusCm);
+			if (StepResult.bApplied)
+			{
+				WrappedTotal += StepResult.DeltaDegrees;
+				PreviousPlaneVector = StepResult.PlaneVector;
+			}
+		}
+		TestTrue(
+			TEXT("Polar full revolution wraps to about 360 degrees"),
+			FMath::IsNearlyEqual(WrappedTotal, 360.f, 0.5f));
+
+		{
+			const FDIVEPointerAxisAngleResult DeadZone = DIVE::MapPointerToAxisAngle(
+				AxisOrigin,
+				AxisWorld,
+				BasisU,
+				BasisV,
+				FVector(0.5f, 0.f, 100.f),
+				FVector(0.f, 0.f, -1.f),
+				AngleZeroVector,
+				DeadRadiusCm);
+			TestFalse(TEXT("Polar dead zone rejects the hit"), DeadZone.bApplied);
+			TestTrue(
+				TEXT("Polar dead zone keeps zero delta"),
+				FMath::IsNearlyZero(DeadZone.DeltaDegrees, 0.05f));
+		}
+
+		{
+			const FDIVEPointerAxisAngleResult FromPoint = DIVE::MapWorldPointToAxisAngle(
+				AxisOrigin,
+				AxisWorld,
+				BasisU,
+				BasisV,
+				AngleZeroVector,
+				AngleZeroVector,
+				DeadRadiusCm);
+			TestTrue(TEXT("World-point polar at the same rim point applies"), FromPoint.bApplied);
+			TestTrue(
+				TEXT("World-point polar same-point delta is zero"),
+				FMath::IsNearlyZero(FromPoint.DeltaDegrees, 0.05f));
+		}
+
+		{
+			const FDIVEPointerAxisAngleResult Grazing = DIVE::MapPointerToAxisAngle(
+				AxisOrigin,
+				AxisWorld,
+				BasisU,
+				BasisV,
+				FVector::ZeroVector,
+				FVector::ForwardVector,
+				AngleZeroVector,
+				DeadRadiusCm);
+			TestFalse(TEXT("Polar grazing ray rejects the hit"), Grazing.bApplied);
+		}
+	}
+
+	{
+		const FVector AxisOrigin = FVector::ZeroVector;
+		const FVector AxisWorld = FVector::ForwardVector;
+
+		{
+			const FDIVEPointerAxisTravelResult Seed = DIVE::MapWorldPointToAxisTravel(
+				AxisOrigin,
+				AxisWorld,
+				FVector(5.f, 0.f, 0.f),
+				false,
+				0.f);
+			TestFalse(TEXT("Travel seed with no previous does not apply"), Seed.bApplied);
+			TestTrue(TEXT("Travel seed still exposes the parameter"), Seed.bHasParameter);
+			TestTrue(
+				TEXT("Travel seed parameter is 5 cm"),
+				FMath::IsNearlyEqual(Seed.ParameterCm, 5.f, 0.05f));
+		}
+
+		{
+			const FDIVEPointerAxisTravelResult SamePoint = DIVE::MapWorldPointToAxisTravel(
+				AxisOrigin,
+				AxisWorld,
+				FVector(5.f, 0.f, 0.f),
+				true,
+				5.f);
+			TestTrue(TEXT("Travel same point applies"), SamePoint.bApplied);
+			TestTrue(
+				TEXT("Travel same-point delta is zero"),
+				FMath::IsNearlyZero(SamePoint.DeltaCm, 0.05f));
+		}
+
+		{
+			const FDIVEPointerAxisTravelResult Shifted = DIVE::MapWorldPointToAxisTravel(
+				AxisOrigin,
+				AxisWorld,
+				FVector(5.f, 2.f, -1.f),
+				true,
+				0.f);
+			TestTrue(TEXT("Travel shift along axis applies"), Shifted.bApplied);
+			TestTrue(
+				TEXT("Travel shift delta is about 5 cm"),
+				FMath::IsNearlyEqual(Shifted.DeltaCm, 5.f, 0.05f));
+		}
+
+		{
+			const FDIVEInteractionUpdate Frame = MakeXAxisLinearUpdate(0.f);
+			const FDIVEPointerAxisTravelResult SeedRay = DIVE::MapPointerToAxisTravel(
+				AxisOrigin,
+				AxisWorld,
+				Frame.ViewLocation,
+				Frame.PickRayDir,
+				false,
+				0.f);
+			TestFalse(TEXT("Pointer travel seed does not apply"), SeedRay.bApplied);
+			TestTrue(TEXT("Pointer travel seed has a parameter"), SeedRay.bHasParameter);
+			TestTrue(
+				TEXT("Pointer travel seed parameter is about 0"),
+				FMath::IsNearlyZero(SeedRay.ParameterCm, 0.05f));
+		}
+
+		{
+			const FDIVEInteractionUpdate AtFive = MakeXAxisLinearUpdate(5.f);
+			const FDIVEPointerAxisTravelResult Moved = DIVE::MapPointerToAxisTravel(
+				AxisOrigin,
+				AxisWorld,
+				AtFive.ViewLocation,
+				AtFive.PickRayDir,
+				true,
+				0.f);
+			TestTrue(TEXT("Pointer travel along X applies"), Moved.bApplied);
+			TestTrue(
+				TEXT("Pointer travel delta is about 5 cm"),
+				FMath::IsNearlyEqual(Moved.DeltaCm, 5.f, 0.05f));
+		}
+
+		{
+			const FDIVEPointerAxisTravelResult Parallel = DIVE::MapPointerToAxisTravel(
+				AxisOrigin,
+				AxisWorld,
+				FVector::ZeroVector,
+				FVector::ForwardVector,
+				true,
+				0.f);
+			TestFalse(TEXT("Pointer travel rejects a ray parallel to the axis"), Parallel.bApplied);
+			TestFalse(TEXT("Parallel travel ray has no parameter"), Parallel.bHasParameter);
+		}
+	}
+
 	{
 		FDIVEInteractionValue NoneValue;
 		NoneValue.Normalized = 0.42f;
@@ -1097,6 +1369,8 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 	FDIVEActionContext Context;
 	Context.Target = Sphere;
 	Context.ViewRotation = FRotator::ZeroRotator;
+	Context.PickHit.bBlockingHit = true;
+	Context.PickHit.ImpactPoint = FVector(10.f, 0.f, 0.f);
 
 	UDIVERotaryDriveAction* Rotary = NewObject<UDIVERotaryDriveAction>();
 	TestNotNull(TEXT("Rotary action"), Rotary);
@@ -1107,10 +1381,30 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Rotary CanExecute on kinematic primitive"), Rotary->CanExecute(Context));
 		Rotary->MarkInteractionActive(Context);
 		TestTrue(TEXT("Rotary Begin"), Rotary->BeginInteraction(Context));
-		Rotary->UpdateInteraction(FVector2D(10.f, 0.f), 0.016f);
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+		{
+			FDIVEInteractionUpdate HorizontalOnly = MakeZUpPolarUpdate(0.f);
+			HorizontalOnly.ScreenDelta = FVector2D(10.f, 0.f);
+			Rotary->UpdateInteraction(HorizontalOnly);
+			TestTrue(
+				TEXT("Rotary ignores horizontal ScreenDelta while the polar ray stays on the rim"),
+				FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, 0.f, 0.05f));
+		}
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(-10.f));
 		TestTrue(
 			TEXT("Rotary accumulated yaw from Z-up mapping"),
 			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, -10.f, 0.05f));
+		{
+			FDIVEInteractionUpdate Grazing;
+			Grazing.ViewLocation = FVector::ZeroVector;
+			Grazing.PickRayDir = FVector::ForwardVector;
+			Grazing.DeltaTime = 0.016f;
+			Rotary->UpdateInteraction(Grazing);
+			Rotary->UpdateInteraction(MakeZUpPolarUpdate(20.f));
+			TestTrue(
+				TEXT("Rotary re-seeds after a lost rim hit instead of jumping"),
+				FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, -10.f, 0.05f));
+		}
 		{
 			const FDIVEInteractionValue RotaryValue = Rotary->MakeInteractionValue();
 			TestEqual(
@@ -1128,6 +1422,21 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Rotary cancel restores start rotation"),
 			Sphere->GetRelativeRotation().IsNearlyZero(0.05f));
+
+		Rotary->DetentStepDegrees = 10.f;
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin for detent"), Rotary->BeginInteraction(Context));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(-4.f));
+		TestTrue(
+			TEXT("Rotary detent holds the start snap across a sub-step move"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, 0.f, 0.05f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(-7.f));
+		TestTrue(
+			TEXT("Rotary detent snaps once raw angle crosses half a step"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, -10.f, 0.05f));
+		Rotary->EndInteraction(false);
+		Rotary->DetentStepDegrees = 0.f;
 
 		Sphere->SetSimulatePhysics(true);
 		TestTrue(
@@ -1150,9 +1459,11 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		Threaded->DegreesPerPixel = 1.f;
 		Threaded->TurnsToRelease = 1.f;
 		Threaded->PitchCmPerTurn = 2.f;
+		Context.PickHit.ImpactPoint = FVector(0.f, 10.f, 0.f);
 		Threaded->MarkInteractionActive(Context);
 		TestTrue(TEXT("Threaded Begin"), Threaded->BeginInteraction(Context));
-		Threaded->UpdateInteraction(FVector2D(180.f, 0.f), 0.016f);
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(0.f));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(180.f));
 		TestTrue(
 			TEXT("Threaded half-turn translates along local X"),
 			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 1.f, 0.05f));
@@ -1175,10 +1486,13 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 			Sphere->GetRelativeTransform().Equals(FTransform::Identity, 0.05f));
 
 		Sphere->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+		const FVector ScrewAxisWorld = Sphere->GetComponentTransform().TransformVectorNoScale(FVector::ForwardVector);
+		Context.PickHit.ImpactPoint = FVector(10.f, 0.f, 0.f);
 		Threaded->MarkInteractionActive(Context);
 		TestTrue(TEXT("Threaded Begin with pre-rotated part"), Threaded->BeginInteraction(Context));
-		// Local X after yaw 90 is parent Y; identity view + vertical drag maps onto that axis.
-		Threaded->UpdateInteraction(FVector2D(0.f, -180.f), 0.016f);
+		Threaded->UpdateInteraction(MakePolarUpdateAroundAxis(ScrewAxisWorld, 180.f));
+		Threaded->UpdateInteraction(MakePolarUpdateAroundAxis(ScrewAxisWorld, 270.f));
+		Threaded->UpdateInteraction(MakePolarUpdateAroundAxis(ScrewAxisWorld, 360.f));
 		TestTrue(
 			TEXT("Threaded translation follows screw axis in parent space"),
 			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().Y, 1.f, 0.05f));
@@ -1189,6 +1503,111 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Threaded cancel restores pre-rotated start transform"),
 			Sphere->GetRelativeTransform().Equals(FTransform(FRotator(0.f, 90.f, 0.f)), 0.05f));
+	}
+
+	UDIVELinearDriveAction* Linear = NewObject<UDIVELinearDriveAction>();
+	TestNotNull(TEXT("Linear action"), Linear);
+	if (Linear)
+	{
+		Sphere->SetRelativeTransform(FTransform::Identity);
+		Linear->Axis = EDIVEDriveAxis::X;
+		Linear->CmPerPixel = 1.f;
+		Linear->bLimitTravel = true;
+		Linear->MinTravelCm = 0.f;
+		Linear->MaxTravelCm = 10.f;
+		Context.PickHit.ImpactPoint = FVector::ZeroVector;
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear Begin"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+		{
+			FDIVEInteractionUpdate HorizontalOnly = MakeXAxisLinearUpdate(0.f);
+			HorizontalOnly.ScreenDelta = FVector2D(10.f, 0.f);
+			Linear->UpdateInteraction(HorizontalOnly);
+			TestTrue(
+				TEXT("Linear ignores horizontal ScreenDelta while the travel ray stays on the rail"),
+				FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 0.f, 0.05f));
+		}
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(5.f));
+		TestTrue(
+			TEXT("Linear accumulated travel along local X"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 5.f, 0.05f));
+		{
+			const FDIVEInteractionValue LinearValue = Linear->MakeInteractionValue();
+			TestEqual(
+				TEXT("Linear HUD unit is Centimeters"),
+				LinearValue.Unit,
+				EDIVEInteractionValueUnit::Centimeters);
+			TestTrue(
+				TEXT("Linear Absolute is accumulated centimetres"),
+				FMath::IsNearlyEqual(LinearValue.Absolute, 5.f, 0.05f));
+			TestTrue(
+				TEXT("Linear AbsoluteMax is travel span"),
+				FMath::IsNearlyEqual(LinearValue.AbsoluteMax, 10.f, 0.05f));
+		}
+		{
+			FDIVEInteractionUpdate Parallel;
+			Parallel.ViewLocation = FVector::ZeroVector;
+			Parallel.PickRayDir = FVector::ForwardVector;
+			Parallel.DeltaTime = 0.016f;
+			Linear->UpdateInteraction(Parallel);
+			Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+			TestTrue(
+				TEXT("Linear re-seeds after a lost rail projection instead of jumping"),
+				FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 5.f, 0.05f));
+		}
+		Linear->EndInteraction(false);
+		TestTrue(
+			TEXT("Linear cancel restores start transform"),
+			Sphere->GetRelativeTransform().Equals(FTransform::Identity, 0.05f));
+
+		Linear->DetentStepCm = 1.f;
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear Begin for detent"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.4f));
+		TestTrue(
+			TEXT("Linear detent holds the start snap across a sub-step move"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 0.f, 0.05f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.7f));
+		TestTrue(
+			TEXT("Linear detent snaps once raw travel crosses half a step"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 1.f, 0.05f));
+		Linear->EndInteraction(false);
+
+		Linear->DetentStepCm = 0.f;
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear Begin for limit return"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(15.f));
+		TestTrue(
+			TEXT("Linear clamps travel at MaxTravelCm"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 10.f, 0.05f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(2.f));
+		TestTrue(
+			TEXT("Linear returns from overshoot to the live pointer, not to the stop"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 2.f, 0.05f));
+		Linear->EndInteraction(false);
+
+		Sphere->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear Begin with pre-rotated part"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeLinearUpdateAlongAxis(
+			Sphere->GetComponentTransform().TransformVectorNoScale(FVector::ForwardVector),
+			0.f));
+		Linear->UpdateInteraction(MakeLinearUpdateAlongAxis(
+			Sphere->GetComponentTransform().TransformVectorNoScale(FVector::ForwardVector),
+			5.f));
+		TestTrue(
+			TEXT("Linear travel follows local X in parent space"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().Y, 5.f, 0.05f));
+		TestTrue(
+			TEXT("Linear travel does not slide along parent X for a yaw-90 part"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 0.f, 0.05f));
+		Linear->EndInteraction(false);
+		TestTrue(
+			TEXT("Linear cancel restores pre-rotated start transform"),
+			Sphere->GetRelativeTransform().Equals(FTransform(FRotator(0.f, 90.f, 0.f)), 0.05f));
+		Sphere->SetRelativeTransform(FTransform::Identity);
 	}
 
 	{
@@ -1214,6 +1633,8 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 			FDIVEActionContext KnobContext;
 			KnobContext.Target = Knob;
 			KnobContext.ViewRotation = FRotator::ZeroRotator;
+			KnobContext.PickHit.bBlockingHit = true;
+			KnobContext.PickHit.ImpactPoint = FVector(8.f, 0.f, 0.f);
 
 			UDIVERotaryDriveAction* IsolatedRotary = NewObject<UDIVERotaryDriveAction>();
 			TestNotNull(TEXT("Rotary on a simulating parent"), IsolatedRotary);
@@ -1236,7 +1657,8 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 				Knob->GetCollisionEnabled(),
 				ECollisionEnabled::QueryOnly);
 
-			IsolatedRotary->UpdateInteraction(FVector2D(30.f, 0.f), 0.016f);
+			// First Update only seeds the polar angle; isolation is the assert here.
+			IsolatedRotary->UpdateInteraction(MakeZUpPolarUpdate(-30.f));
 			TestTrue(
 				TEXT("Rotary on a welded child does not launch the simulating parent"),
 				DeviceBody->GetComponentLocation().Equals(BodyBefore, 2.f));

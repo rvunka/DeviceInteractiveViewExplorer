@@ -88,10 +88,9 @@ bool UDIVEContinuousDeviceAction::BeginInteraction_Implementation(const FDIVEAct
 	return false;
 }
 
-void UDIVEContinuousDeviceAction::UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime)
+void UDIVEContinuousDeviceAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
 {
-	(void)ScreenDelta;
-	(void)DeltaTime;
+	(void)Update;
 }
 
 void UDIVEContinuousDeviceAction::EndInteraction_Implementation(bool bCommit)

@@ -104,6 +104,31 @@ struct DIVECORE_API FDIVEInteractionValue
 	EDIVEInteractionValueUnit Unit = EDIVEInteractionValueUnit::None;
 };
 
+/** Per-frame payload for continuous hold/drag updates (cursor, ray, view). */
+USTRUCT(BlueprintType)
+struct DIVECORE_API FDIVEInteractionUpdate
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector2D ScreenPosition = FVector2D::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector2D ScreenDelta = FVector2D::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	float DeltaTime = 0.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector ViewLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FRotator ViewRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FVector PickRayDir = FVector::ForwardVector;
+};
+
 namespace DIVE
 {
 	DIVECORE_API FText FormatInteractionValueReadout(const FText& Label, const FDIVEInteractionValue& Value);
@@ -223,9 +248,10 @@ public:
 	bool BeginInteraction(const FDIVEActionContext& Context);
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Action")
-	void UpdateInteraction(FVector2D ScreenDelta, float DeltaTime);
-	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime);
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Action", meta = (
+		ToolTip = "v0.8-dev: receives FDIVEInteractionUpdate (cursor, ray, view) instead of ScreenDelta alone."))
+	void UpdateInteraction(const FDIVEInteractionUpdate& Update);
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update);
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Action")
 	void EndInteraction(bool bCommit);

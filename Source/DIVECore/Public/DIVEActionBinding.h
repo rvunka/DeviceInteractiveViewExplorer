@@ -79,7 +79,7 @@ struct DIVECORE_API FDIVEActionBinding
 	TArray<TObjectPtr<UDIVEDeviceAction>> Actions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (
-		ToolTip = "Index into Actions for LMB primary. Among matching bindings, the most specific Match Mode wins (Name > PartId > Tag > Any); equal specificity keeps the earlier binding in the Bindings array. INDEX_NONE = none, except a binding whose only action is continuous (Rotate/Unscrew) which is still LMB primary."))
+		ToolTip = "Index into Actions for LMB primary. Among matching bindings, the most specific Match Mode wins (Name > PartId > Tag > Any); equal specificity keeps the earlier binding in the Bindings array. INDEX_NONE = none, except a binding whose only action is continuous (Rotate/Unscrew/Slide) which is still LMB primary."))
 	int32 PrimaryActionIndex = INDEX_NONE;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Binding", meta = (

@@ -4,6 +4,7 @@
 
 #include "DIVEInspectableComponent.h"
 #include "DIVEPawnPhysicalDrive.h"
+#include "DIVECameraRig.h"
 #include "DIVEDeviceAction.h"
 #include "DIVESessionSubsystem.h"
 #include "Blueprint/UserWidget.h"
@@ -358,7 +359,10 @@ void UDIVEPlayerComponent::ApplyPrimaryActionDragFromMouse()
 		PlayerController->GetInputMouseDelta(MouseDeltaX, MouseDeltaY);
 		if (!FMath::IsNearlyZero(MouseDeltaX) || !FMath::IsNearlyZero(MouseDeltaY))
 		{
-			Subsystem->UpdateActiveInteraction(FVector2D(MouseDeltaX, MouseDeltaY));
+			FDIVEInteractionUpdate Update;
+			Update.ScreenDelta = FVector2D(MouseDeltaX, MouseDeltaY);
+			Update.DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
+			Subsystem->UpdateActiveInteraction(Update);
 		}
 		return;
 	}
@@ -372,10 +376,35 @@ void UDIVEPlayerComponent::ApplyPrimaryActionDragFromMouse()
 	const FVector2D Delta = CurrentPosition - PrimaryActionLastPosition;
 	PrimaryActionLastPosition = CurrentPosition;
 
-	if (!Delta.IsNearlyZero())
+	// Polar rotary/threaded seed from the live ray, including a still cursor after a menu start.
+	FDIVEInteractionUpdate Update;
+	Update.ScreenPosition = CurrentPosition;
+	Update.ScreenDelta = Delta;
+	Update.DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
+
+	if (const ADIVECameraRig* CameraRig = Subsystem->GetActiveCameraRig())
 	{
-		Subsystem->UpdateActiveInteraction(Delta);
+		Update.ViewLocation = CameraRig->GetActorLocation();
+		Update.ViewRotation = CameraRig->GetActorRotation();
 	}
+
+	FVector RayOrigin = FVector::ZeroVector;
+	FVector RayDir = FVector::ZeroVector;
+	if (PlayerController->DeprojectScreenPositionToWorld(
+		CurrentPosition.X,
+		CurrentPosition.Y,
+		RayOrigin,
+		RayDir))
+	{
+		Update.ViewLocation = RayOrigin;
+		Update.PickRayDir = RayDir.GetSafeNormal();
+	}
+	else
+	{
+		Update.PickRayDir = Update.ViewRotation.Vector();
+	}
+
+	Subsystem->UpdateActiveInteraction(Update);
 }
 
 bool UDIVEPlayerComponent::TryGetCursorScreenPosition(FVector2D& OutScreenPosition) const

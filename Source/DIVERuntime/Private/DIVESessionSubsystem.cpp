@@ -571,9 +571,9 @@ bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
 	return FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(*this, ScreenPosition, PlayerController);
 }
 
-void UDIVESessionSubsystem::UpdateActiveInteraction(const FVector2D& ScreenDelta)
+void UDIVESessionSubsystem::UpdateActiveInteraction(const FDIVEInteractionUpdate& Update)
 {
-	FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(*this, ScreenDelta);
+	FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(*this, Update);
 }
 
 void UDIVESessionSubsystem::EndProxyDrive(bool bCommit)

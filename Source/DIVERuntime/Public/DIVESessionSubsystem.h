@@ -193,7 +193,7 @@ public:
 
 	/** Updates active proxy drive or continuous device action. */
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
-	void UpdateActiveInteraction(const FVector2D& ScreenDelta);
+	void UpdateActiveInteraction(const FDIVEInteractionUpdate& Update);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void EndProxyDrive(bool bCommit);

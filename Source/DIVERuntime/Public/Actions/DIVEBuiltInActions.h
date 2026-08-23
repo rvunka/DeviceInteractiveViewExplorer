@@ -70,7 +70,7 @@ public:
 
 	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
-	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
 	virtual void EndInteraction_Implementation(bool bCommit) override;
 
 private:
@@ -100,10 +100,10 @@ enum class EDIVEDriveAxis : uint8
 	Z
 };
 
-/** Screen drag rotates the picked primitive around a local axis. */
+/** Polar gesture around the picked primitive's rim; edge-on falls back to DegreesPerPixel. */
 UCLASS(BlueprintType, EditInlineNew, meta = (
 	DisplayName = "DIVE Rotary Drive Action",
-	ToolTip = "Hold/drag rotates the picked primitive around Axis. Begin isolates a child on a simulating device (unweld, Query Only) without disabling parent physics. Engine cylinder is Z-up: Axis Z is spin-in-place."))
+	ToolTip = "Drag around the rim to rotate the picked primitive around Axis. Begin isolates a child on a simulating device (unweld, Query Only) without disabling parent physics. Engine cylinder is Z-up: Axis Z is spin-in-place."))
 class DIVERUNTIME_API UDIVERotaryDriveAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
@@ -115,7 +115,9 @@ public:
 		ToolTip = "Local axis of the picked primitive. Engine Shape_Cylinder is Z-up; Axis Z is spin-in-place."))
 	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ClampMin = "0.01",
+		ToolTip = "Fallback only when the pointer is edge-on to the axis or inside the polar dead zone."))
 	float DegreesPerPixel = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
@@ -129,7 +131,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		ClampMin = "0.0",
-		ToolTip = "0 = no detents. Otherwise snap Accumulated angle to this step."))
+		ToolTip = "0 = no detents. Otherwise snap the applied angle to this step (raw travel still accumulates across frames)."))
 	float DetentStepDegrees = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
@@ -137,13 +139,14 @@ public:
 
 	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
-	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
 	virtual void EndInteraction_Implementation(bool bCommit) override;
 
 	FDIVEInteractionValue MakeInteractionValue() const;
 
 private:
 	void ApplyAccumulated();
+	float GetAppliedDegrees() const;
 	float GetNormalizedValue() const;
 
 	UPROPERTY(Transient)
@@ -152,25 +155,29 @@ private:
 	UPROPERTY(Transient)
 	FRotator StartRelativeRotation = FRotator::ZeroRotator;
 
-	UPROPERTY(Transient)
-	FRotator ViewRotation = FRotator::ZeroRotator;
-
+	/** Raw pointer integral. Mesh and HUD use GetAppliedDegrees() (detents + limits). */
 	UPROPERTY(Transient)
 	float AccumulatedDegrees = 0.f;
 
 	uint8 SavedCollisionEnabled = 0;
 	bool bSavedAutoWeld = false;
 	bool bHasSavedIsolation = false;
+	/** Frozen at Begin; first Update seeds the live pointer on the plane perpendicular to Axis. */
 	FVector FrozenAxisWorld = FVector::ZeroVector;
+	FVector AxisOrigin = FVector::ZeroVector;
+	FVector PlaneBasisU = FVector::ZeroVector;
+	FVector PlaneBasisV = FVector::ZeroVector;
+	FVector PreviousPlaneVector = FVector::ZeroVector;
+	bool bAwaitingPolarSeed = false;
 };
 
 /**
- * Screen drag unscrews a primitive along its local axis. Progress is encoded in relative
+ * Polar unscrew gesture around the picked primitive's rim. Progress is encoded in relative
  * rotation + translation. At TurnsToRelease the part detaches and simulates physics.
  */
 UCLASS(BlueprintType, EditInlineNew, meta = (
 	DisplayName = "DIVE Threaded Drive Action",
-	ToolTip = "Hold/drag unscrews the picked primitive around Axis. Begin isolates a child on a simulating device the same way Rotary does. On complete: detach + Simulate Physics."))
+	ToolTip = "Drag around the rim to unscrew the picked primitive around Axis. Begin isolates a child on a simulating device the same way Rotary does. On complete: detach + Simulate Physics."))
 class DIVERUNTIME_API UDIVEThreadedDriveAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
@@ -178,10 +185,13 @@ class DIVERUNTIME_API UDIVEThreadedDriveAction : public UDIVEContinuousDeviceAct
 public:
 	UDIVEThreadedDriveAction();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ToolTip = "Local axis of the picked primitive. Engine Shape_Cylinder is Z-up; Axis Z is spin-in-place."))
 	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ClampMin = "0.01",
+		ToolTip = "Fallback only when the pointer is edge-on to the axis or inside the polar dead zone."))
 	float DegreesPerPixel = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
@@ -193,12 +203,12 @@ public:
 	float PitchCmPerTurn = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
-		ToolTip = "If true, positive mapped delta (typically drag right) loosens toward release."))
+		ToolTip = "If true, positive polar delta around Axis (right-hand rule) loosens toward release."))
 	bool bPositiveDeltaLoosens = true;
 
 	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
-	virtual void UpdateInteraction_Implementation(FVector2D ScreenDelta, float DeltaTime) override;
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
 	virtual void EndInteraction_Implementation(bool bCommit) override;
 
 	FDIVEInteractionValue MakeInteractionValue() const;
@@ -206,6 +216,7 @@ public:
 private:
 	void ApplyAccumulated();
 	void ReleaseTarget();
+	float GetAppliedTurns() const;
 	float GetNormalizedValue() const;
 
 	UPROPERTY(Transient)
@@ -214,17 +225,94 @@ private:
 	UPROPERTY(Transient)
 	FTransform StartRelativeTransform = FTransform::Identity;
 
-	UPROPERTY(Transient)
-	FRotator ViewRotation = FRotator::ZeroRotator;
-
+	/** Raw pointer integral. Mesh, HUD, and release use GetAppliedTurns() (clamped 0..TurnsToRelease). */
 	UPROPERTY(Transient)
 	float AccumulatedTurns = 0.f;
 
 	uint8 SavedCollisionEnabled = 0;
 	bool bSavedAutoWeld = false;
 	bool bHasSavedIsolation = false;
+	/** Frozen at Begin; first Update seeds the live pointer on the plane perpendicular to Axis. */
 	FVector FrozenAxisWorld = FVector::ZeroVector;
+	FVector AxisOrigin = FVector::ZeroVector;
+	FVector PlaneBasisU = FVector::ZeroVector;
+	FVector PlaneBasisV = FVector::ZeroVector;
+	FVector PreviousPlaneVector = FVector::ZeroVector;
+	bool bAwaitingPolarSeed = false;
 
 	UPROPERTY(Transient)
 	bool bReleased = false;
+};
+
+/**
+ * Pointer travel along the picked primitive's local axis. Progress is relative translation.
+ * Edge-on / unstable projection falls back to CmPerPixel screen drag.
+ */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Linear Drive Action",
+	ToolTip = "Drag along the rail to slide the picked primitive along Axis. Begin isolates a child on a simulating device the same way Rotary does. Pointer maps 1:1 onto axis centimetres; edge-on falls back to CmPerPixel."))
+class DIVERUNTIME_API UDIVELinearDriveAction : public UDIVEContinuousDeviceAction
+{
+	GENERATED_BODY()
+
+public:
+	UDIVELinearDriveAction();
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ToolTip = "Local travel axis of the picked primitive (rail direction, not spin)."))
+	EDIVEDriveAxis Axis = EDIVEDriveAxis::X;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ClampMin = "0.01",
+		ToolTip = "Fallback only when the pointer ray is nearly parallel to the axis or the projection is unstable."))
+	float CmPerPixel = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	bool bLimitTravel = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitTravel"))
+	float MinTravelCm = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitTravel"))
+	float MaxTravelCm = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ClampMin = "0.0",
+		ToolTip = "0 = no detents. Otherwise snap the applied travel to this step (raw travel still accumulates across frames)."))
+	float DetentStepCm = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
+	bool bRestoreOnCancel = true;
+
+	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
+	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
+	virtual void EndInteraction_Implementation(bool bCommit) override;
+
+	FDIVEInteractionValue MakeInteractionValue() const;
+
+private:
+	void ApplyAccumulated();
+	float GetAppliedTravelCm() const;
+	float GetNormalizedValue() const;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
+
+	UPROPERTY(Transient)
+	FTransform StartRelativeTransform = FTransform::Identity;
+
+	/** Raw pointer integral. Mesh and HUD use GetAppliedTravelCm() (detents + limits). */
+	UPROPERTY(Transient)
+	float AccumulatedTravelCm = 0.f;
+
+	uint8 SavedCollisionEnabled = 0;
+	bool bSavedAutoWeld = false;
+	bool bHasSavedIsolation = false;
+	/** Frozen at Begin; first Update seeds the live pointer parameter on the axis. */
+	FVector FrozenAxisWorld = FVector::ZeroVector;
+	FVector AxisOrigin = FVector::ZeroVector;
+	float PreviousParameterCm = 0.f;
+	bool bHasPreviousParameter = false;
+	bool bAwaitingLinearSeed = false;
 };
