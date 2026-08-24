@@ -123,10 +123,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
 	bool bLimitAngle = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitAngle"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		EditCondition = "bLimitAngle",
+		ToolTip = "Minimum angle from the part's rest pose (authored relative rotation on first grab), not from each mouse-down."))
 	float MinAngleDegrees = -180.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitAngle"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		EditCondition = "bLimitAngle",
+		ToolTip = "Maximum angle from the part's rest pose (authored relative rotation on first grab), not from each mouse-down."))
 	float MaxAngleDegrees = 180.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
@@ -136,6 +140,26 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
 	bool bRestoreOnCancel = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		ToolTip = "When enabled and the angle is limited, Absolute is lerp(DomainMin, DomainMax, Normalized). Gesture still rotates in degrees."))
+	bool bUseDomainReadout = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		EditCondition = "bUseDomainReadout && bLimitAngle",
+		EditConditionHides))
+	float DomainMin = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		EditCondition = "bUseDomainReadout && bLimitAngle",
+		EditConditionHides))
+	float DomainMax = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		EditCondition = "bUseDomainReadout && bLimitAngle",
+		EditConditionHides,
+		ToolTip = "HUD / Value Event suffix (A, V, Ω, …). Empty keeps domain Absolute without a unit glyph."))
+	FText ReadoutSuffix;
 
 	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
@@ -152,10 +176,15 @@ private:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
 
+	/** Rest pose for this primitive; limits and apply are relative to this, not to mouse-down. */
+	UPROPERTY(Transient)
+	FQuat RestRelativeRotation = FQuat::Identity;
+
+	/** Relative rotation at mouse-down; restored on cancel. */
 	UPROPERTY(Transient)
 	FRotator StartRelativeRotation = FRotator::ZeroRotator;
 
-	/** Raw pointer integral. Mesh and HUD use GetAppliedDegrees() (detents + limits). */
+	/** Raw pointer integral from rest. Mesh and HUD use GetAppliedDegrees() (detents + limits). */
 	UPROPERTY(Transient)
 	float AccumulatedDegrees = 0.f;
 
@@ -222,10 +251,15 @@ private:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
 
+	/** Rest pose for this primitive; turns and apply are relative to this, not to mouse-down. */
+	UPROPERTY(Transient)
+	FTransform RestRelativeTransform = FTransform::Identity;
+
+	/** Relative transform at mouse-down; restored on cancel. */
 	UPROPERTY(Transient)
 	FTransform StartRelativeTransform = FTransform::Identity;
 
-	/** Raw pointer integral. Mesh, HUD, and release use GetAppliedTurns() (clamped 0..TurnsToRelease). */
+	/** Raw pointer integral from rest. Mesh, HUD, and release use GetAppliedTurns() (clamped 0..TurnsToRelease). */
 	UPROPERTY(Transient)
 	float AccumulatedTurns = 0.f;
 
@@ -270,10 +304,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
 	bool bLimitTravel = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitTravel"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		EditCondition = "bLimitTravel",
+		ToolTip = "Minimum travel from the part's rest pose (authored relative transform on first grab), not from each mouse-down."))
 	float MinTravelCm = 0.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (EditCondition = "bLimitTravel"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		EditCondition = "bLimitTravel",
+		ToolTip = "Maximum travel from the part's rest pose (authored relative transform on first grab), not from each mouse-down."))
 	float MaxTravelCm = 10.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
@@ -283,6 +321,26 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
 	bool bRestoreOnCancel = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		ToolTip = "When enabled and travel is limited, Absolute is lerp(DomainMin, DomainMax, Normalized). Gesture still slides in centimetres."))
+	bool bUseDomainReadout = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		EditCondition = "bUseDomainReadout && bLimitTravel",
+		EditConditionHides))
+	float DomainMin = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		EditCondition = "bUseDomainReadout && bLimitTravel",
+		EditConditionHides))
+	float DomainMax = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive|Readout", meta = (
+		EditCondition = "bUseDomainReadout && bLimitTravel",
+		EditConditionHides,
+		ToolTip = "HUD / Value Event suffix (A, V, Ω, …). Empty keeps domain Absolute without a unit glyph."))
+	FText ReadoutSuffix;
 
 	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
@@ -299,10 +357,15 @@ private:
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
 
+	/** Rest pose for this primitive; limits and apply are relative to this, not to mouse-down. */
+	UPROPERTY(Transient)
+	FTransform RestRelativeTransform = FTransform::Identity;
+
+	/** Relative transform at mouse-down; restored on cancel. */
 	UPROPERTY(Transient)
 	FTransform StartRelativeTransform = FTransform::Identity;
 
-	/** Raw pointer integral. Mesh and HUD use GetAppliedTravelCm() (detents + limits). */
+	/** Raw pointer integral from rest. Mesh and HUD use GetAppliedTravelCm() (detents + limits). */
 	UPROPERTY(Transient)
 	float AccumulatedTravelCm = 0.f;
 

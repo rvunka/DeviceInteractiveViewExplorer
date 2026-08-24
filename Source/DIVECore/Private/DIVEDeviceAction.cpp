@@ -128,6 +128,35 @@ FText FormatNumber(const float Number, const int32 MaxFractionDigits)
 
 FText DIVE::FormatInteractionValueReadout(const FText& Label, const FDIVEInteractionValue& Value)
 {
+	const bool bDomainStyle = !Value.DisplaySuffix.IsEmpty()
+		|| (Value.Unit == EDIVEInteractionValueUnit::None && Value.AbsoluteMax > KINDA_SMALL_NUMBER);
+
+	if (bDomainStyle)
+	{
+		if (Value.AbsoluteMax > KINDA_SMALL_NUMBER)
+		{
+			if (!Value.DisplaySuffix.IsEmpty())
+			{
+				return FText::Format(
+					NSLOCTEXT("DIVE", "ValueReadoutDomainSpan", "{0}: {1} / {2} {3}"),
+					Label,
+					FormatNumber(Value.Absolute, 2),
+					FormatNumber(Value.AbsoluteMax, 2),
+					Value.DisplaySuffix);
+			}
+			return FText::Format(
+				NSLOCTEXT("DIVE", "ValueReadoutDomainSpanNoSuffix", "{0}: {1} / {2}"),
+				Label,
+				FormatNumber(Value.Absolute, 2),
+				FormatNumber(Value.AbsoluteMax, 2));
+		}
+		return FText::Format(
+			NSLOCTEXT("DIVE", "ValueReadoutDomain", "{0}: {1} {2}"),
+			Label,
+			FormatNumber(Value.Absolute, 2),
+			Value.DisplaySuffix);
+	}
+
 	switch (Value.Unit)
 	{
 	case EDIVEInteractionValueUnit::Degrees:

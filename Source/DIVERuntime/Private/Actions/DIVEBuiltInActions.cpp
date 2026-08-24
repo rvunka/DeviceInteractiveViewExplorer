@@ -3,6 +3,7 @@
 #include "Actions/DIVEBuiltInActions.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "Templates/TypeHash.h"
 #include "DIVEDriveMapping.h"
 #include "DIVEProxyDrive.h"
 #include "DIVEProxyDriveResolve.h"
@@ -23,6 +24,14 @@ UDIVESessionSubsystem* ResolveSessionSubsystem(const UObject* WorldContext, cons
 		World = WorldContext ? WorldContext->GetWorld() : nullptr;
 	}
 	return World ? World->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
+}
+
+void ApplyDomainReadout(FDIVEInteractionValue& Value, const float DomainMin, const float DomainMax, const FText& Suffix)
+{
+	Value.Absolute = FMath::Lerp(DomainMin, DomainMax, Value.Normalized);
+	Value.AbsoluteMax = FMath::Abs(DomainMax - DomainMin);
+	Value.DisplaySuffix = Suffix;
+	Value.Unit = EDIVEInteractionValueUnit::None;
 }
 } // namespace
 
@@ -371,6 +380,213 @@ void SetDrivenRelativeTransform(UPrimitiveComponent* Target, const FTransform& N
 	}
 }
 
+struct FDrivenRestKey
+{
+	TWeakObjectPtr<const UPrimitiveComponent> Primitive;
+	TWeakObjectPtr<const UClass> ActionClass;
+
+	bool operator==(const FDrivenRestKey& Other) const
+	{
+		return Primitive == Other.Primitive && ActionClass == Other.ActionClass;
+	}
+
+	friend uint32 GetTypeHash(const FDrivenRestKey& Key)
+	{
+		return HashCombine(GetTypeHash(Key.Primitive.Get()), GetTypeHash(Key.ActionClass.Get()));
+	}
+};
+
+struct FDrivenPrimitiveRest
+{
+	FTransform RelativeTransform = FTransform::Identity;
+	float CommittedAngleDegrees = 0.f;
+	float CommittedTurns = 0.f;
+};
+
+TMap<FDrivenRestKey, FDrivenPrimitiveRest> GDrivenPrimitiveRests;
+
+void CompactDrivenPrimitiveRests()
+{
+	for (auto It = GDrivenPrimitiveRests.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().Primitive.IsValid() || !It.Key().ActionClass.IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
+FDrivenPrimitiveRest& GetOrCaptureDrivenRest(const UPrimitiveComponent* Target, const UClass* ActionClass)
+{
+	CompactDrivenPrimitiveRests();
+	const FDrivenRestKey Key{Target, ActionClass};
+	if (FDrivenPrimitiveRest* Found = GDrivenPrimitiveRests.Find(Key))
+	{
+		return *Found;
+	}
+
+	FDrivenPrimitiveRest Added;
+	Added.RelativeTransform = Target->GetRelativeTransform();
+	return GDrivenPrimitiveRests.Add(Key, MoveTemp(Added));
+}
+
+void ResetDrivenRestToCurrent(FDrivenPrimitiveRest& Rest, const UPrimitiveComponent* Target)
+{
+	Rest.RelativeTransform = Target->GetRelativeTransform();
+	Rest.CommittedAngleDegrees = 0.f;
+	Rest.CommittedTurns = 0.f;
+}
+
+float RotationDeltaDegrees(const FQuat& From, const FQuat& To)
+{
+	FVector DeltaAxis = FVector::ZeroVector;
+	float DeltaRad = 0.f;
+	(From.Inverse() * To).ToAxisAndAngle(DeltaAxis, DeltaRad);
+	return FMath::Abs(FMath::UnwindDegrees(FMath::RadiansToDegrees(DeltaRad)));
+}
+
+bool IsRotationAroundAxis(const FQuat& From, const FQuat& To, const FVector& AxisLocal)
+{
+	FVector DeltaAxis = FVector::ZeroVector;
+	float DeltaRad = 0.f;
+	(From.Inverse() * To).ToAxisAndAngle(DeltaAxis, DeltaRad);
+	const float Deg = FMath::Abs(FMath::UnwindDegrees(FMath::RadiansToDegrees(DeltaRad)));
+	if (Deg <= 1.f || DeltaAxis.IsNearlyZero())
+	{
+		return true;
+	}
+	return FMath::Abs(FVector::DotProduct(DeltaAxis.GetSafeNormal(), AxisLocal.GetSafeNormal())) >= 0.98f;
+}
+
+bool IsOffsetAlongAxis(const FVector& From, const FVector& To, const FVector& AxisInParent)
+{
+	const FVector Axis = AxisInParent.GetSafeNormal();
+	if (Axis.IsNearlyZero())
+	{
+		return false;
+	}
+	const FVector Delta = To - From;
+	return (Delta - Axis * FVector::DotProduct(Delta, Axis)).Size() <= 0.1f;
+}
+
+// Rotary never recaptures: angle-from-rest plus unwrap is the state.
+// Linear recaptures only when the rail orientation was reauthored (rotation left rest).
+// Threaded recaptures only when the pose left the screw (rotation not around Axis, or slide not along Axis).
+// A full-transform Equals here is unsafe: ±180 is one pose with two Euler writings, and a false
+// recapture would reset rest to the stop — the original infinite-spin bug.
+void RecaptureLinearRestIfReoriented(FDrivenPrimitiveRest& Rest, const UPrimitiveComponent* Target)
+{
+	if (!Target)
+	{
+		return;
+	}
+	if (RotationDeltaDegrees(Rest.RelativeTransform.GetRotation(), Target->GetRelativeTransform().GetRotation()) > 1.f)
+	{
+		ResetDrivenRestToCurrent(Rest, Target);
+	}
+}
+
+void RecaptureThreadedRestIfOffScrew(
+	FDrivenPrimitiveRest& Rest,
+	const UPrimitiveComponent* Target,
+	const EDIVEDriveAxis Axis)
+{
+	if (!Target)
+	{
+		return;
+	}
+
+	const FTransform Current = Target->GetRelativeTransform();
+	const FVector AxisLocal = DriveAxisLocal(Axis);
+	if (!IsRotationAroundAxis(Rest.RelativeTransform.GetRotation(), Current.GetRotation(), AxisLocal))
+	{
+		ResetDrivenRestToCurrent(Rest, Target);
+		return;
+	}
+
+	const FVector AxisInParent = Rest.RelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
+	if (!IsOffsetAlongAxis(Rest.RelativeTransform.GetLocation(), Current.GetLocation(), AxisInParent))
+	{
+		ResetDrivenRestToCurrent(Rest, Target);
+	}
+}
+
+FDrivenPrimitiveRest* FindDrivenRest(const UPrimitiveComponent* Target, const UClass* ActionClass)
+{
+	if (!Target || !ActionClass)
+	{
+		return nullptr;
+	}
+	return GDrivenPrimitiveRests.Find(FDrivenRestKey{Target, ActionClass});
+}
+
+void CommitDrivenAngle(const UPrimitiveComponent* Target, const UClass* ActionClass, const float AngleDegrees)
+{
+	if (FDrivenPrimitiveRest* Found = FindDrivenRest(Target, ActionClass))
+	{
+		Found->CommittedAngleDegrees = AngleDegrees;
+	}
+}
+
+void CommitDrivenTurns(const UPrimitiveComponent* Target, const UClass* ActionClass, const float Turns)
+{
+	if (FDrivenPrimitiveRest* Found = FindDrivenRest(Target, ActionClass))
+	{
+		Found->CommittedTurns = Turns;
+	}
+}
+
+float SignedDegreesAroundAxis(const FQuat& From, const FQuat& To, const FVector& AxisUnit)
+{
+	const FVector Axis = AxisUnit.GetSafeNormal();
+	if (Axis.IsNearlyZero())
+	{
+		return 0.f;
+	}
+
+	const FQuat Delta = From.Inverse() * To;
+	FVector DeltaAxis = FVector::ZeroVector;
+	float DeltaRad = 0.f;
+	Delta.ToAxisAndAngle(DeltaAxis, DeltaRad);
+	if (DeltaAxis.IsNearlyZero())
+	{
+		return 0.f;
+	}
+
+	float Degrees = FMath::RadiansToDegrees(DeltaRad);
+	if (FVector::DotProduct(DeltaAxis.GetSafeNormal(), Axis) < 0.f)
+	{
+		Degrees = -Degrees;
+	}
+	return FMath::UnwindDegrees(Degrees);
+}
+
+float UnwrapDegreesTowards(const float PrincipalDegrees, const float TowardsDegrees)
+{
+	return PrincipalDegrees + 360.f * FMath::RoundToFloat((TowardsDegrees - PrincipalDegrees) / 360.f);
+}
+
+float SeedUnwrappedDegrees(const float PrincipalDegrees, const float CommittedDegrees)
+{
+	const float Unwrapped = UnwrapDegreesTowards(PrincipalDegrees, CommittedDegrees);
+	const float CommittedPrincipal = FMath::UnwindDegrees(CommittedDegrees);
+	if (FMath::Abs(FMath::FindDeltaAngleDegrees(PrincipalDegrees, CommittedPrincipal)) <= 2.f)
+	{
+		return Unwrapped;
+	}
+	return PrincipalDegrees;
+}
+
+float SeedTravelAlongAxis(const FTransform& Rest, const FTransform& Current, const FVector& AxisLocal)
+{
+	const FVector AxisInParent = Rest.TransformVectorNoScale(AxisLocal).GetSafeNormal();
+	if (AxisInParent.IsNearlyZero())
+	{
+		return 0.f;
+	}
+	return FVector::DotProduct(Current.GetLocation() - Rest.GetLocation(), AxisInParent);
+}
+
 constexpr float PolarDeadRadiusCm = 1.f;
 
 void ClearPolarGestureState(
@@ -487,6 +703,15 @@ bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeRotation = Target->GetRelativeRotation();
+	FDrivenPrimitiveRest& RestState = GetOrCaptureDrivenRest(Target, GetClass());
+	RestRelativeRotation = RestState.RelativeTransform.GetRotation();
+	AccumulatedDegrees = SeedUnwrappedDegrees(
+		SignedDegreesAroundAxis(
+			RestRelativeRotation,
+			Target->GetRelativeRotation().Quaternion(),
+			DriveAxisLocal(Axis)),
+		RestState.CommittedAngleDegrees);
+	ApplyAccumulated();
 	InitializePolarGestureState(
 		Context,
 		Target,
@@ -497,7 +722,6 @@ bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 		PlaneBasisV,
 		PreviousPlaneVector,
 		bAwaitingPolarSeed);
-	AccumulatedDegrees = 0.f;
 	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
@@ -532,7 +756,11 @@ void UDIVERotaryDriveAction::EndInteraction_Implementation(const bool bCommit)
 {
 	if (UPrimitiveComponent* Target = ActiveTarget.Get())
 	{
-		if (!bCommit && bRestoreOnCancel)
+		if (bCommit)
+		{
+			CommitDrivenAngle(Target, GetClass(), GetAppliedDegrees());
+		}
+		else if (bRestoreOnCancel)
 		{
 			SetDrivenRelativeRotation(Target, FQuat(StartRelativeRotation));
 		}
@@ -561,7 +789,7 @@ void UDIVERotaryDriveAction::ApplyAccumulated()
 	}
 
 	const FQuat DeltaQ(DriveAxisLocal(Axis), FMath::DegreesToRadians(GetAppliedDegrees()));
-	const FQuat NewRelQuat = FQuat(StartRelativeRotation) * DeltaQ;
+	const FQuat NewRelQuat = RestRelativeRotation * DeltaQ;
 	SetDrivenRelativeRotation(Target, NewRelQuat);
 }
 
@@ -603,9 +831,16 @@ FDIVEInteractionValue UDIVERotaryDriveAction::MakeInteractionValue() const
 {
 	FDIVEInteractionValue Value;
 	Value.Normalized = GetNormalizedValue();
-	Value.Absolute = GetAppliedDegrees();
-	Value.AbsoluteMax = 0.f;
-	Value.Unit = EDIVEInteractionValueUnit::Degrees;
+	if (bUseDomainReadout && bLimitAngle)
+	{
+		ApplyDomainReadout(Value, DomainMin, DomainMax, ReadoutSuffix);
+	}
+	else
+	{
+		Value.Absolute = GetAppliedDegrees();
+		Value.AbsoluteMax = 0.f;
+		Value.Unit = EDIVEInteractionValueUnit::Degrees;
+	}
 	return Value;
 }
 
@@ -631,6 +866,30 @@ bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEAction
 	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeTransform = Target->GetRelativeTransform();
+	FDrivenPrimitiveRest& RestState = GetOrCaptureDrivenRest(Target, GetClass());
+	RecaptureThreadedRestIfOffScrew(RestState, Target, Axis);
+	RestRelativeTransform = RestState.RelativeTransform;
+	if (PitchCmPerTurn > KINDA_SMALL_NUMBER)
+	{
+		AccumulatedTurns = SeedTravelAlongAxis(
+			RestRelativeTransform,
+			StartRelativeTransform,
+			DriveAxisLocal(Axis)) / PitchCmPerTurn;
+	}
+	else
+	{
+		const float PrincipalDegrees = SignedDegreesAroundAxis(
+			RestRelativeTransform.GetRotation(),
+			StartRelativeTransform.GetRotation(),
+			DriveAxisLocal(Axis));
+		AccumulatedTurns = SeedUnwrappedDegrees(PrincipalDegrees, RestState.CommittedTurns * 360.f) / 360.f;
+	}
+	bReleased = false;
+	ApplyAccumulated();
+	if (GetAppliedTurns() >= TurnsToRelease - KINDA_SMALL_NUMBER)
+	{
+		ReleaseTarget();
+	}
 	InitializePolarGestureState(
 		Context,
 		Target,
@@ -641,8 +900,6 @@ bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEAction
 		PlaneBasisV,
 		PreviousPlaneVector,
 		bAwaitingPolarSeed);
-	AccumulatedTurns = 0.f;
-	bReleased = false;
 	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
@@ -684,7 +941,11 @@ void UDIVEThreadedDriveAction::EndInteraction_Implementation(const bool bCommit)
 {
 	if (UPrimitiveComponent* Target = ActiveTarget.Get())
 	{
-		if (!bCommit && !bReleased)
+		if (bCommit)
+		{
+			CommitDrivenTurns(Target, GetClass(), GetAppliedTurns());
+		}
+		else if (!bReleased)
 		{
 			SetDrivenRelativeTransform(Target, StartRelativeTransform);
 		}
@@ -719,12 +980,12 @@ void UDIVEThreadedDriveAction::ApplyAccumulated()
 	const FVector AxisLocal = DriveAxisLocal(Axis);
 	const float AppliedTurns = GetAppliedTurns();
 	const FQuat DeltaQ(AxisLocal, FMath::DegreesToRadians(AppliedTurns * 360.f));
-	const FVector AxisInParent = StartRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
+	const FVector AxisInParent = RestRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
 	const FVector RelOffset = AxisInParent * (AppliedTurns * PitchCmPerTurn);
 
-	FTransform NewRel = StartRelativeTransform;
-	NewRel.SetRotation(StartRelativeTransform.GetRotation() * DeltaQ);
-	NewRel.SetTranslation(StartRelativeTransform.GetTranslation() + RelOffset);
+	FTransform NewRel = RestRelativeTransform;
+	NewRel.SetRotation(RestRelativeTransform.GetRotation() * DeltaQ);
+	NewRel.SetTranslation(RestRelativeTransform.GetTranslation() + RelOffset);
 	SetDrivenRelativeTransform(Target, NewRel);
 }
 
@@ -882,6 +1143,14 @@ bool UDIVELinearDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 	IsolateDrivenPrimitive(Target, SavedCollisionEnabled, bSavedAutoWeld, bHasSavedIsolation);
 	ActiveTarget = Target;
 	StartRelativeTransform = Target->GetRelativeTransform();
+	FDrivenPrimitiveRest& RestState = GetOrCaptureDrivenRest(Target, GetClass());
+	RecaptureLinearRestIfReoriented(RestState, Target);
+	RestRelativeTransform = RestState.RelativeTransform;
+	AccumulatedTravelCm = SeedTravelAlongAxis(
+		RestRelativeTransform,
+		StartRelativeTransform,
+		DriveAxisLocal(Axis));
+	ApplyAccumulated();
 	InitializeLinearGestureState(
 		Context,
 		Target,
@@ -891,7 +1160,6 @@ bool UDIVELinearDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 		PreviousParameterCm,
 		bHasPreviousParameter,
 		bAwaitingLinearSeed);
-	AccumulatedTravelCm = 0.f;
 	NotifyInteractionValue(MakeInteractionValue());
 	return true;
 }
@@ -953,9 +1221,9 @@ void UDIVELinearDriveAction::ApplyAccumulated()
 	}
 
 	const FVector AxisLocal = DriveAxisLocal(Axis);
-	const FVector AxisInParent = StartRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
+	const FVector AxisInParent = RestRelativeTransform.TransformVectorNoScale(AxisLocal).GetSafeNormal();
 	FTransform NewRel = StartRelativeTransform;
-	NewRel.SetTranslation(StartRelativeTransform.GetTranslation() + AxisInParent * GetAppliedTravelCm());
+	NewRel.SetTranslation(RestRelativeTransform.GetTranslation() + AxisInParent * GetAppliedTravelCm());
 	SetDrivenRelativeTransform(Target, NewRel);
 }
 
@@ -996,15 +1264,15 @@ FDIVEInteractionValue UDIVELinearDriveAction::MakeInteractionValue() const
 {
 	FDIVEInteractionValue Value;
 	Value.Normalized = GetNormalizedValue();
-	Value.Absolute = GetAppliedTravelCm();
-	if (bLimitTravel)
+	if (bUseDomainReadout && bLimitTravel)
 	{
-		Value.AbsoluteMax = FMath::Abs(MaxTravelCm - MinTravelCm);
+		ApplyDomainReadout(Value, DomainMin, DomainMax, ReadoutSuffix);
 	}
 	else
 	{
-		Value.AbsoluteMax = 0.f;
+		Value.Absolute = GetAppliedTravelCm();
+		Value.AbsoluteMax = bLimitTravel ? FMath::Abs(MaxTravelCm - MinTravelCm) : 0.f;
+		Value.Unit = EDIVEInteractionValueUnit::Centimeters;
 	}
-	Value.Unit = EDIVEInteractionValueUnit::Centimeters;
 	return Value;
 }

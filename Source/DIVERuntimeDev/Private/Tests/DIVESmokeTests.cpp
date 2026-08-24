@@ -1318,6 +1318,17 @@ bool FDIVEDriveMappingSmokeTest::RunTest(const FString& Parameters)
 			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Slide")), CmValue).ToString();
 		TestTrue(TEXT("Centimeters readout includes the unit suffix"), CmText.Contains(TEXT("cm")));
 		TestTrue(TEXT("Centimeters readout with max includes a span separator"), CmText.Contains(TEXT("/")));
+
+		FDIVEInteractionValue DomainValue;
+		DomainValue.Unit = EDIVEInteractionValueUnit::None;
+		DomainValue.Absolute = 2.5f;
+		DomainValue.AbsoluteMax = 5.f;
+		DomainValue.DisplaySuffix = FText::FromString(TEXT("A"));
+		const FString DomainText =
+			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Current")), DomainValue).ToString();
+		TestTrue(TEXT("Domain readout includes the action label"), DomainText.Contains(TEXT("Current")));
+		TestTrue(TEXT("Domain readout includes the free suffix"), DomainText.Contains(TEXT("A")));
+		TestTrue(TEXT("Domain readout with AbsoluteMax includes a span separator"), DomainText.Contains(TEXT("/")));
 	}
 
 	return true;
@@ -1423,6 +1434,41 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 			TEXT("Rotary cancel restores start rotation"),
 			Sphere->GetRelativeRotation().IsNearlyZero(0.05f));
 
+		Rotary->bLimitAngle = true;
+		Rotary->MinAngleDegrees = 0.f;
+		Rotary->MaxAngleDegrees = 90.f;
+		Rotary->bUseDomainReadout = true;
+		Rotary->DomainMin = 0.f;
+		Rotary->DomainMax = 5.f;
+		Rotary->ReadoutSuffix = FText::FromString(TEXT("A"));
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin for domain readout"), Rotary->BeginInteraction(Context));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(45.f));
+		{
+			const FDIVEInteractionValue DomainRotary = Rotary->MakeInteractionValue();
+			TestEqual(
+				TEXT("Domain rotary Unit is None"),
+				DomainRotary.Unit,
+				EDIVEInteractionValueUnit::None);
+			TestTrue(
+				TEXT("Domain rotary Absolute lerps Normalized onto DomainMin..Max"),
+				FMath::IsNearlyEqual(DomainRotary.Absolute, 2.5f, 0.1f));
+			TestTrue(
+				TEXT("Domain rotary AbsoluteMax is domain span"),
+				FMath::IsNearlyEqual(DomainRotary.AbsoluteMax, 5.f, 0.05f));
+			TestTrue(
+				TEXT("Domain rotary DisplaySuffix is authored"),
+				DomainRotary.DisplaySuffix.ToString() == TEXT("A"));
+			const FString DomainRotaryHud =
+				DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Current")), DomainRotary)
+					.ToString();
+			TestTrue(TEXT("Domain rotary HUD includes suffix"), DomainRotaryHud.Contains(TEXT("A")));
+		}
+		Rotary->EndInteraction(false);
+		Rotary->bUseDomainReadout = false;
+		Rotary->bLimitAngle = false;
+
 		Rotary->DetentStepDegrees = 10.f;
 		Rotary->MarkInteractionActive(Context);
 		TestTrue(TEXT("Rotary Begin for detent"), Rotary->BeginInteraction(Context));
@@ -1449,6 +1495,76 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 			Sphere->IsSimulatingPhysics());
 		Rotary->EndInteraction(false);
 		Sphere->SetSimulatePhysics(false);
+
+		Sphere->SetRelativeTransform(FTransform::Identity);
+		Rotary->bLimitAngle = true;
+		Rotary->MinAngleDegrees = -180.f;
+		Rotary->MaxAngleDegrees = 180.f;
+		Rotary->bUseDomainReadout = false;
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin for rest-pose limits"), Rotary->BeginInteraction(Context));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(180.f));
+		TestTrue(
+			TEXT("Rotary first gesture reaches the rest-relative MaxAngle"),
+			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
+		Rotary->EndInteraction(true);
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary re-Begin after committing the limit"), Rotary->BeginInteraction(Context));
+		TestTrue(
+			TEXT("Rotary re-Begin does not snap the committed ±180 pose back to rest"),
+			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
+		{
+			const FDIVEInteractionValue PersistedRotary = Rotary->MakeInteractionValue();
+			TestTrue(
+				TEXT("Rotary HUD keeps the committed angle across mouse-up"),
+				FMath::IsNearlyEqual(PersistedRotary.Absolute, 180.f, 0.05f));
+		}
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(180.f));
+		TestTrue(
+			TEXT("Rotary cannot walk past MaxAngle by releasing and grabbing again"),
+			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
+		TestTrue(
+			TEXT("Rotary Absolute stays at the rest-relative limit after a second 180 drag"),
+			FMath::IsNearlyEqual(Rotary->MakeInteractionValue().Absolute, 180.f, 0.05f));
+		Rotary->EndInteraction(true);
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin to leave the committed stop"), Rotary->BeginInteraction(Context));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(180.f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(90.f));
+		TestTrue(
+			TEXT("Rotary can leave the stop toward rest in a later gesture"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, 90.f, 0.05f));
+		Rotary->EndInteraction(false);
+		TestTrue(
+			TEXT("Rotary cancel restores the committed pose, not rest"),
+			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
+
+		Sphere->SetRelativeTransform(FTransform::Identity);
+		Rotary->MinAngleDegrees = 0.f;
+		Rotary->MaxAngleDegrees = 90.f;
+		Rotary->bUseDomainReadout = true;
+		Rotary->DomainMin = 0.f;
+		Rotary->DomainMax = 5.f;
+		Rotary->ReadoutSuffix = FText::FromString(TEXT("A"));
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary Begin for persisted domain readout"), Rotary->BeginInteraction(Context));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(45.f));
+		Rotary->EndInteraction(true);
+		Rotary->MarkInteractionActive(Context);
+		TestTrue(TEXT("Rotary re-Begin after committing a domain value"), Rotary->BeginInteraction(Context));
+		{
+			const FDIVEInteractionValue PersistedDomain = Rotary->MakeInteractionValue();
+			TestTrue(
+				TEXT("Domain rotary Absolute persists across gestures"),
+				FMath::IsNearlyEqual(PersistedDomain.Absolute, 2.5f, 0.1f));
+		}
+		Rotary->EndInteraction(true);
+		Rotary->bUseDomainReadout = false;
+		Rotary->bLimitAngle = false;
+		Sphere->SetRelativeTransform(FTransform::Identity);
 	}
 
 	UDIVEThreadedDriveAction* Threaded = NewObject<UDIVEThreadedDriveAction>();
@@ -1503,6 +1619,37 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Threaded cancel restores pre-rotated start transform"),
 			Sphere->GetRelativeTransform().Equals(FTransform(FRotator(0.f, 90.f, 0.f)), 0.05f));
+
+		Sphere->SetRelativeTransform(FTransform::Identity);
+		Threaded->TurnsToRelease = 4.f;
+		Threaded->PitchCmPerTurn = 2.f;
+		Context.PickHit.ImpactPoint = FVector(0.f, 10.f, 0.f);
+		Threaded->MarkInteractionActive(Context);
+		TestTrue(TEXT("Threaded Begin for rest-pose turns"), Threaded->BeginInteraction(Context));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(0.f));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(360.f));
+		TestTrue(
+			TEXT("Threaded first gesture commits one turn from rest"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 2.f, 0.05f));
+		Threaded->EndInteraction(true);
+		Threaded->MarkInteractionActive(Context);
+		TestTrue(TEXT("Threaded re-Begin after committing a turn"), Threaded->BeginInteraction(Context));
+		TestTrue(
+			TEXT("Threaded HUD keeps committed turns across mouse-up"),
+			FMath::IsNearlyEqual(Threaded->MakeInteractionValue().Absolute, 1.f, 0.05f));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(0.f));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(360.f));
+		TestTrue(
+			TEXT("Threaded continues from rest instead of resetting on re-grab"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 4.f, 0.05f));
+		TestTrue(
+			TEXT("Threaded Absolute is two turns after the second gesture"),
+			FMath::IsNearlyEqual(Threaded->MakeInteractionValue().Absolute, 2.f, 0.05f));
+		Threaded->EndInteraction(false);
+		TestTrue(
+			TEXT("Threaded cancel restores the committed turn pose, not rest"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 2.f, 0.05f));
+		Sphere->SetRelativeTransform(FTransform::Identity);
 	}
 
 	UDIVELinearDriveAction* Linear = NewObject<UDIVELinearDriveAction>();
@@ -1544,6 +1691,27 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 				TEXT("Linear AbsoluteMax is travel span"),
 				FMath::IsNearlyEqual(LinearValue.AbsoluteMax, 10.f, 0.05f));
 		}
+		Linear->bUseDomainReadout = true;
+		Linear->DomainMin = 0.f;
+		Linear->DomainMax = 20.f;
+		Linear->ReadoutSuffix = FText::FromString(TEXT("V"));
+		{
+			const FDIVEInteractionValue DomainLinear = Linear->MakeInteractionValue();
+			TestEqual(
+				TEXT("Domain linear Unit is None"),
+				DomainLinear.Unit,
+				EDIVEInteractionValueUnit::None);
+			TestTrue(
+				TEXT("Domain linear Absolute lerps mid-travel onto DomainMin..Max"),
+				FMath::IsNearlyEqual(DomainLinear.Absolute, 10.f, 0.1f));
+			TestTrue(
+				TEXT("Domain linear AbsoluteMax is domain span"),
+				FMath::IsNearlyEqual(DomainLinear.AbsoluteMax, 20.f, 0.05f));
+			TestTrue(
+				TEXT("Domain linear DisplaySuffix is authored"),
+				DomainLinear.DisplaySuffix.ToString() == TEXT("V"));
+		}
+		Linear->bUseDomainReadout = false;
 		{
 			FDIVEInteractionUpdate Parallel;
 			Parallel.ViewLocation = FVector::ZeroVector;
@@ -1607,6 +1775,60 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Linear cancel restores pre-rotated start transform"),
 			Sphere->GetRelativeTransform().Equals(FTransform(FRotator(0.f, 90.f, 0.f)), 0.05f));
+		Sphere->SetRelativeTransform(FTransform::Identity);
+
+		Linear->bLimitTravel = true;
+		Linear->MinTravelCm = 0.f;
+		Linear->MaxTravelCm = 10.f;
+		Linear->bUseDomainReadout = false;
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear Begin for rest-pose travel"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(10.f));
+		TestTrue(
+			TEXT("Linear first gesture reaches the rest-relative MaxTravel"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 10.f, 0.05f));
+		Linear->EndInteraction(true);
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear re-Begin after committing the stop"), Linear->BeginInteraction(Context));
+		TestTrue(
+			TEXT("Linear re-Begin does not snap the committed stop back to rest"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 10.f, 0.05f));
+		TestTrue(
+			TEXT("Linear HUD keeps committed travel across mouse-up"),
+			FMath::IsNearlyEqual(Linear->MakeInteractionValue().Absolute, 10.f, 0.05f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(10.f));
+		TestTrue(
+			TEXT("Linear cannot walk past MaxTravel by releasing and grabbing again"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 10.f, 0.05f));
+		Linear->EndInteraction(true);
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear Begin to leave the committed stop"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(10.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(4.f));
+		TestTrue(
+			TEXT("Linear can leave the stop toward rest in a later gesture"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 4.f, 0.05f));
+		Linear->EndInteraction(false);
+		TestTrue(
+			TEXT("Linear cancel restores the committed pose, not rest"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 10.f, 0.05f));
+
+		Linear->bUseDomainReadout = true;
+		Linear->DomainMin = 0.f;
+		Linear->DomainMax = 5.f;
+		Linear->ReadoutSuffix = FText::FromString(TEXT("V"));
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Linear re-Begin after committing a domain stop"), Linear->BeginInteraction(Context));
+		{
+			const FDIVEInteractionValue PersistedDomain = Linear->MakeInteractionValue();
+			TestTrue(
+				TEXT("Domain linear Absolute persists across gestures"),
+				FMath::IsNearlyEqual(PersistedDomain.Absolute, 5.f, 0.1f));
+		}
+		Linear->EndInteraction(true);
+		Linear->bUseDomainReadout = false;
 		Sphere->SetRelativeTransform(FTransform::Identity);
 	}
 

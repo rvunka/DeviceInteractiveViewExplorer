@@ -108,7 +108,19 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
 	FOnDIVEActionExecuted OnActionExecuted;
 
+	/**
+	 * Live continuous-action values while this Inspectable owns the active session gesture.
+	 * Session forwards only to the active Inspectable — do not bind Action->OnValueChanged on a shared catalog instance.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
+	FOnDIVEActionValueChanged OnActionValueChanged;
+
 	void NotifyActionExecuted(UDIVEDeviceAction* Action, const FDIVEActionContext& Context);
+
+	void NotifyActionValueChanged(
+		UDIVEDeviceAction* Action,
+		const FDIVEActionContext& Context,
+		const FDIVEInteractionValue& Value);
 
 	void NotifySessionLifecycle(bool bActive);
 

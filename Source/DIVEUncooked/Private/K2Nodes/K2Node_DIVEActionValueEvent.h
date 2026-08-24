@@ -8,28 +8,24 @@
 #include "BlueprintNodeSpawner.h"
 #include "UObject/SoftObjectPath.h"
 
-#include "K2Node_DIVEActionEvent.generated.h"
+#include "K2Node_DIVEActionValueEvent.generated.h"
 
-class UDIVEDeviceAction;
+class UDIVEContinuousDeviceAction;
 class FBlueprintActionDatabaseRegistrar;
 class FKismetCompilerContext;
 struct FBlueprintNodeSignature;
 
 /**
- * Spawner that jumps to an existing wildcard DIVE Action Event (same ActionClass, empty BindingId)
- * instead of placing a duplicate. Filtered nodes (non-empty BindingId) are added by duplicating
- * the wildcard node and setting BindingId in Details.
- *
- * ActionClassPath is the registrar identity for Blueprint subclasses so the palette can list
- * unloaded action BPs without LoadObject. The class is loaded on non-template Invoke.
+ * Spawner that jumps to an existing wildcard DIVE Action Value Event (same ActionClass, empty BindingId)
+ * instead of placing a duplicate.
  */
 UCLASS(Transient)
-class UDIVEActionEventNodeSpawner : public UBlueprintNodeSpawner
+class UDIVEActionValueEventNodeSpawner : public UBlueprintNodeSpawner
 {
 	GENERATED_BODY()
 
 public:
-	static UDIVEActionEventNodeSpawner* Create(
+	static UDIVEActionValueEventNodeSpawner* Create(
 		TSubclassOf<UEdGraphNode> NodeClass,
 		const FSoftClassPath& InActionClassPath);
 
@@ -45,23 +41,26 @@ private:
 	UClass* ResolveActionClass(bool bLoadIfNeeded) const;
 
 	UPROPERTY()
-	TSubclassOf<UDIVEDeviceAction> ActionClass;
+	TSubclassOf<UDIVEContinuousDeviceAction> ActionClass;
 
 	UPROPERTY()
 	FSoftClassPath ActionClassPath;
 };
 
-/** Event node: pick a DIVE Device Action class; fires when that action succeeds on this device. */
+/**
+ * Event node: pick a continuous DIVE Device Action class; fires on live value changes
+ * while that action drives a gesture on this actor's Inspectable.
+ */
 UCLASS()
-class UK2Node_DIVEActionEvent : public UK2Node, public IK2Node_EventNodeInterface
+class UK2Node_DIVEActionValueEvent : public UK2Node, public IK2Node_EventNodeInterface
 {
 	GENERATED_BODY()
 
 public:
-	UK2Node_DIVEActionEvent(const FObjectInitializer& ObjectInitializer);
+	UK2Node_DIVEActionValueEvent(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(EditAnywhere, Category = "DIVE")
-	TSubclassOf<UDIVEDeviceAction> ActionClass;
+	TSubclassOf<UDIVEContinuousDeviceAction> ActionClass;
 
 	UPROPERTY(EditAnywhere, Category = "DIVE", meta = (
 		GetOptions = "GetAvailableBindingIds",

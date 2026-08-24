@@ -1,9 +1,9 @@
 // Copyright (c) 2026. All Rights Reserved.
 
-#include "K2Nodes/K2Node_DIVEActionEvent.h"
+#include "K2Nodes/K2Node_DIVEActionValueEvent.h"
 
 #include "K2Nodes/DIVEActionEventNodeShared.h"
-#include "K2Nodes/K2Node_DIVEActionBoundEvent.h"
+#include "K2Nodes/K2Node_DIVEActionValueBoundEvent.h"
 
 #include "DIVEDeviceAction.h"
 #include "DIVEInspectableComponent.h"
@@ -26,29 +26,31 @@
 #include "Styling/AppStyle.h"
 #include "UObject/SoftObjectPath.h"
 
-#include UE_INLINE_GENERATED_CPP_BY_NAME(K2Node_DIVEActionEvent)
+#include UE_INLINE_GENERATED_CPP_BY_NAME(K2Node_DIVEActionValueEvent)
 
-#define LOCTEXT_NAMESPACE "K2Node_DIVEActionEvent"
+#define LOCTEXT_NAMESPACE "K2Node_DIVEActionValueEvent"
 
 namespace
 {
 const FName ActionPinName(TEXT("Action"));
 const FName ContextPinName(TEXT("Context"));
+const FName ValuePinName(TEXT("Value"));
 
-bool IsUsableActionClass(const UClass* Class)
+bool IsUsableContinuousActionClass(const UClass* Class)
 {
-	return DIVEUncooked_IsUsableActionClass(Class, UDIVEDeviceAction::StaticClass());
+	return DIVEUncooked_IsUsableActionClass(Class, UDIVEContinuousDeviceAction::StaticClass());
 }
 } // namespace
 
-UDIVEActionEventNodeSpawner* UDIVEActionEventNodeSpawner::Create(
+UDIVEActionValueEventNodeSpawner* UDIVEActionValueEventNodeSpawner::Create(
 	TSubclassOf<UEdGraphNode> NodeClass,
 	const FSoftClassPath& InActionClassPath)
 {
 	check(NodeClass);
 	check(InActionClassPath.IsValid());
 
-	UDIVEActionEventNodeSpawner* NodeSpawner = NewObject<UDIVEActionEventNodeSpawner>(GetTransientPackage());
+	UDIVEActionValueEventNodeSpawner* NodeSpawner =
+		NewObject<UDIVEActionValueEventNodeSpawner>(GetTransientPackage());
 	NodeSpawner->NodeClass = NodeClass;
 	NodeSpawner->ActionClassPath = InActionClassPath;
 	if (UClass* LoadedClass = InActionClassPath.ResolveClass())
@@ -67,7 +69,7 @@ UDIVEActionEventNodeSpawner* UDIVEActionEventNodeSpawner::Create(
 		: FText::FromString(DisplayName);
 
 	NodeSpawner->DefaultMenuSignature.MenuName = FText::Format(
-		LOCTEXT("MenuNodeTitle", "DIVE Action Event ({0})"),
+		LOCTEXT("MenuNodeTitle", "DIVE Action Value Event ({0})"),
 		ActionLabel);
 	NodeSpawner->DefaultMenuSignature.Category = LOCTEXT("MenuCategory", "DIVE|Events");
 
@@ -75,22 +77,23 @@ UDIVEActionEventNodeSpawner* UDIVEActionEventNodeSpawner::Create(
 		UBlueprintNodeSpawner::FCustomizeNodeDelegate::CreateLambda(
 			[InActionClassPath](UEdGraphNode* NewNode, bool bIsTemplateNode)
 			{
-				UK2Node_DIVEActionEvent* ActionNode = CastChecked<UK2Node_DIVEActionEvent>(NewNode);
+				UK2Node_DIVEActionValueEvent* ValueNode =
+					CastChecked<UK2Node_DIVEActionValueEvent>(NewNode);
 				UClass* Class = InActionClassPath.ResolveClass();
 				if (!Class && !bIsTemplateNode)
 				{
-					Class = InActionClassPath.TryLoadClass<UDIVEDeviceAction>();
+					Class = InActionClassPath.TryLoadClass<UDIVEContinuousDeviceAction>();
 				}
 				if (Class)
 				{
-					ActionNode->ActionClass = Class;
+					ValueNode->ActionClass = Class;
 				}
 			});
 
 	return NodeSpawner;
 }
 
-UClass* UDIVEActionEventNodeSpawner::ResolveActionClass(const bool bLoadIfNeeded) const
+UClass* UDIVEActionValueEventNodeSpawner::ResolveActionClass(const bool bLoadIfNeeded) const
 {
 	if (UClass* Loaded = ActionClass.Get())
 	{
@@ -102,10 +105,10 @@ UClass* UDIVEActionEventNodeSpawner::ResolveActionClass(const bool bLoadIfNeeded
 		return Existing;
 	}
 
-	return bLoadIfNeeded ? ActionClassPath.TryLoadClass<UDIVEDeviceAction>() : nullptr;
+	return bLoadIfNeeded ? ActionClassPath.TryLoadClass<UDIVEContinuousDeviceAction>() : nullptr;
 }
 
-UEdGraphNode* UDIVEActionEventNodeSpawner::Invoke(
+UEdGraphNode* UDIVEActionValueEventNodeSpawner::Invoke(
 	UEdGraph* ParentGraph,
 	FBindingSet const& Bindings,
 	FVector2D const Location) const
@@ -116,12 +119,12 @@ UEdGraphNode* UDIVEActionEventNodeSpawner::Invoke(
 	UClass* Resolved = ResolveActionClass(/*bLoadIfNeeded=*/ !bIsTemplate);
 	if (Resolved)
 	{
-		const_cast<UDIVEActionEventNodeSpawner*>(this)->ActionClass = Resolved;
+		const_cast<UDIVEActionValueEventNodeSpawner*>(this)->ActionClass = Resolved;
 	}
 
 	if (!bIsTemplate)
 	{
-		if (!IsUsableActionClass(Resolved))
+		if (!IsUsableContinuousActionClass(Resolved))
 		{
 			return nullptr;
 		}
@@ -136,7 +139,7 @@ UEdGraphNode* UDIVEActionEventNodeSpawner::Invoke(
 	return Super::Invoke(ParentGraph, Bindings, Location);
 }
 
-FBlueprintNodeSignature UDIVEActionEventNodeSpawner::GetSpawnerSignature() const
+FBlueprintNodeSignature UDIVEActionValueEventNodeSpawner::GetSpawnerSignature() const
 {
 	FBlueprintNodeSignature SpawnerSignature;
 	SpawnerSignature.SetNodeClass(NodeClass);
@@ -144,7 +147,7 @@ FBlueprintNodeSignature UDIVEActionEventNodeSpawner::GetSpawnerSignature() const
 	return SpawnerSignature;
 }
 
-UK2Node* UDIVEActionEventNodeSpawner::FindExistingNode(const UBlueprint* Blueprint) const
+UK2Node* UDIVEActionValueEventNodeSpawner::FindExistingNode(const UBlueprint* Blueprint) const
 {
 	UClass* Resolved = ResolveActionClass(/*bLoadIfNeeded=*/ false);
 	if (!Resolved)
@@ -152,9 +155,9 @@ UK2Node* UDIVEActionEventNodeSpawner::FindExistingNode(const UBlueprint* Bluepri
 		return nullptr;
 	}
 
-	TArray<UK2Node_DIVEActionEvent*> Nodes;
-	FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionEvent>(Blueprint, Nodes);
-	for (UK2Node_DIVEActionEvent* Node : Nodes)
+	TArray<UK2Node_DIVEActionValueEvent*> Nodes;
+	FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionValueEvent>(Blueprint, Nodes);
+	for (UK2Node_DIVEActionValueEvent* Node : Nodes)
 	{
 		if (Node && Node->ActionClass == Resolved && Node->BindingId.IsNone())
 		{
@@ -165,37 +168,40 @@ UK2Node* UDIVEActionEventNodeSpawner::FindExistingNode(const UBlueprint* Bluepri
 	return nullptr;
 }
 
-UK2Node_DIVEActionEvent::UK2Node_DIVEActionEvent(const FObjectInitializer& ObjectInitializer)
+UK2Node_DIVEActionValueEvent::UK2Node_DIVEActionValueEvent(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 }
 
-FName UK2Node_DIVEActionEvent::GetActionName() const
+FName UK2Node_DIVEActionValueEvent::GetActionName() const
 {
 	return ActionClass ? ActionClass->GetFName() : FName(TEXT("None"));
 }
 
-void UK2Node_DIVEActionEvent::AllocateDefaultPins()
+void UK2Node_DIVEActionValueEvent::AllocateDefaultPins()
 {
 	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Then);
 
 	UClass* ActionPinClass = ActionClass
 		? ActionClass.Get()
-		: UDIVEDeviceAction::StaticClass();
+		: UDIVEContinuousDeviceAction::StaticClass();
 	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Object, ActionPinClass, ActionPinName);
 
 	UScriptStruct* ContextStruct = FDIVEActionContext::StaticStruct();
 	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Struct, ContextStruct, ContextPinName);
 
+	UScriptStruct* ValueStruct = FDIVEInteractionValue::StaticStruct();
+	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Struct, ValueStruct, ValuePinName);
+
 	Super::AllocateDefaultPins();
 }
 
-FLinearColor UK2Node_DIVEActionEvent::GetNodeTitleColor() const
+FLinearColor UK2Node_DIVEActionValueEvent::GetNodeTitleColor() const
 {
-	return FLinearColor(0.2f, 0.65f, 0.9f);
+	return FLinearColor(0.35f, 0.75f, 0.55f);
 }
 
-FText UK2Node_DIVEActionEvent::GetNodeTitle(ENodeTitleType::Type TitleType) const
+FText UK2Node_DIVEActionValueEvent::GetNodeTitle(ENodeTitleType::Type TitleType) const
 {
 	if (CachedNodeTitle.IsOutOfDate(this))
 	{
@@ -208,38 +214,39 @@ FText UK2Node_DIVEActionEvent::GetNodeTitle(ENodeTitleType::Type TitleType) cons
 		if (BindingId.IsNone())
 		{
 			CachedNodeTitle.SetCachedText(
-				FText::Format(LOCTEXT("NodeTitle", "DIVE Action Event ({ActionName})"), Args),
+				FText::Format(LOCTEXT("NodeTitle", "DIVE Action Value Event ({ActionName})"), Args),
 				this);
 		}
 		else
 		{
 			Args.Add(TEXT("BindingId"), FText::FromName(BindingId));
 			CachedNodeTitle.SetCachedText(
-				FText::Format(LOCTEXT("NodeTitleFiltered", "DIVE Action Event ({ActionName} · {BindingId})"), Args),
+				FText::Format(
+					LOCTEXT("NodeTitleFiltered", "DIVE Action Value Event ({ActionName} · {BindingId})"),
+					Args),
 				this);
 		}
 	}
 	return CachedNodeTitle;
 }
 
-FText UK2Node_DIVEActionEvent::GetTooltipText() const
+FText UK2Node_DIVEActionValueEvent::GetTooltipText() const
 {
 	return LOCTEXT(
 		"Tooltip",
-		"Fires when the selected DIVE Device Action succeeds on this actor's Inspectable "
-		"(instant Execute returned true, or continuous Begin succeeded). "
-		"Optional BindingId filters to one catalog/component slot. "
+		"Fires while the selected continuous DIVE Device Action reports live values on this actor's "
+		"Inspectable. Optional BindingId filters to one catalog/component slot. "
 		"Requires UDIVEInspectableComponent on the actor.");
 }
 
-FSlateIcon UK2Node_DIVEActionEvent::GetIconAndTint(FLinearColor& OutColor) const
+FSlateIcon UK2Node_DIVEActionValueEvent::GetIconAndTint(FLinearColor& OutColor) const
 {
 	static FSlateIcon Icon(FAppStyle::GetAppStyleSetName(), "GraphEditor.Event_16x");
 	OutColor = GetNodeTitleColor();
 	return Icon;
 }
 
-bool UK2Node_DIVEActionEvent::IsCompatibleWithGraph(UEdGraph const* Graph) const
+bool UK2Node_DIVEActionValueEvent::IsCompatibleWithGraph(UEdGraph const* Graph) const
 {
 	if (!Super::IsCompatibleWithGraph(Graph))
 	{
@@ -250,20 +257,20 @@ bool UK2Node_DIVEActionEvent::IsCompatibleWithGraph(UEdGraph const* Graph) const
 	return Blueprint && Blueprint->ParentClass && Blueprint->ParentClass->IsChildOf(AActor::StaticClass());
 }
 
-void UK2Node_DIVEActionEvent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+void UK2Node_DIVEActionValueEvent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
 	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
-	if (PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionEvent, ActionClass)
-		|| PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionEvent, BindingId))
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionValueEvent, ActionClass)
+		|| PropertyName == GET_MEMBER_NAME_CHECKED(UK2Node_DIVEActionValueEvent, BindingId))
 	{
 		CachedNodeTitle.MarkDirty();
 		ReconstructNode();
 	}
 }
 
-bool UK2Node_DIVEActionEvent::HasExternalDependencies(TArray<UStruct*>* OptionalOutput) const
+bool UK2Node_DIVEActionValueEvent::HasExternalDependencies(TArray<UStruct*>* OptionalOutput) const
 {
 	UClass* SourceClass = ActionClass.Get();
 	const UBlueprint* SourceBlueprint = GetBlueprint();
@@ -278,14 +285,17 @@ bool UK2Node_DIVEActionEvent::HasExternalDependencies(TArray<UStruct*>* Optional
 	return bResult || bSuperResult;
 }
 
-void UK2Node_DIVEActionEvent::ValidateNodeDuringCompilation(FCompilerResultsLog& MessageLog) const
+void UK2Node_DIVEActionValueEvent::ValidateNodeDuringCompilation(FCompilerResultsLog& MessageLog) const
 {
 	Super::ValidateNodeDuringCompilation(MessageLog);
 
-	if (!IsUsableActionClass(ActionClass))
+	if (!IsUsableContinuousActionClass(ActionClass))
 	{
 		MessageLog.Error(
-			*LOCTEXT("InvalidActionClass", "@@ does not have a valid DIVE Device Action class.").ToString(),
+			*LOCTEXT(
+				"InvalidActionClass",
+				"@@ does not have a valid continuous DIVE Device Action class.")
+				.ToString(),
 			this);
 		return;
 	}
@@ -311,9 +321,9 @@ void UK2Node_DIVEActionEvent::ValidateNodeDuringCompilation(FCompilerResultsLog&
 
 	if (Blueprint)
 	{
-		TArray<UK2Node_DIVEActionEvent*> Nodes;
-		FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionEvent>(Blueprint, Nodes);
-		for (const UK2Node_DIVEActionEvent* Other : Nodes)
+		TArray<UK2Node_DIVEActionValueEvent*> Nodes;
+		FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_DIVEActionValueEvent>(Blueprint, Nodes);
+		for (const UK2Node_DIVEActionValueEvent* Other : Nodes)
 		{
 			if (Other && Other != this
 				&& Other->GetGraph() == GetGraph()
@@ -323,7 +333,7 @@ void UK2Node_DIVEActionEvent::ValidateNodeDuringCompilation(FCompilerResultsLog&
 				MessageLog.Warning(
 					*LOCTEXT(
 						"DuplicateFilter",
-						"@@ duplicates another DIVE Action Event with the same Action class and BindingId.")
+						"@@ duplicates another DIVE Action Value Event with the same Action class and BindingId.")
 						.ToString(),
 					this);
 				break;
@@ -332,23 +342,23 @@ void UK2Node_DIVEActionEvent::ValidateNodeDuringCompilation(FCompilerResultsLog&
 	}
 }
 
-void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
+void UK2Node_DIVEActionValueEvent::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
 
 	const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
 	check(Schema);
 
-	if (!IsUsableActionClass(ActionClass))
+	if (!IsUsableContinuousActionClass(ActionClass))
 	{
 		BreakAllNodeLinks();
 		return;
 	}
 
-	UK2Node_DIVEActionBoundEvent* BoundEvent =
-		CompilerContext.SpawnIntermediateNode<UK2Node_DIVEActionBoundEvent>(this, SourceGraph);
+	UK2Node_DIVEActionValueBoundEvent* BoundEvent =
+		CompilerContext.SpawnIntermediateNode<UK2Node_DIVEActionValueBoundEvent>(this, SourceGraph);
 	BoundEvent->CustomFunctionName = FName(*FString::Printf(
-		TEXT("DIVEActEvt_%s_%s_%s"),
+		TEXT("DIVEActValEvt_%s_%s_%s"),
 		*GetActionName().ToString(),
 		BindingId.IsNone() ? TEXT("Any") : *BindingId.ToString(),
 		*BoundEvent->GetName()));
@@ -356,14 +366,14 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 
 	if (const FMulticastDelegateProperty* DelegateProp = FindFProperty<FMulticastDelegateProperty>(
 			UDIVEInspectableComponent::StaticClass(),
-			GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, OnActionExecuted)))
+			GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, OnActionValueChanged)))
 	{
 		BoundEvent->EventReference.SetFromField<UFunction>(DelegateProp->SignatureFunction, false);
 	}
 	else
 	{
 		CompilerContext.MessageLog.Error(
-			*LOCTEXT("MissingDelegate", "@@ could not resolve OnActionExecuted signature.").ToString(),
+			*LOCTEXT("MissingDelegate", "@@ could not resolve OnActionValueChanged signature.").ToString(),
 			this);
 		BreakAllNodeLinks();
 		return;
@@ -380,16 +390,18 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 	UEdGraphPin* EventThen = Schema->FindExecutionPin(*BoundEvent, EGPD_Output);
 	UEdGraphPin* EventAction = BoundEvent->FindPin(ActionPinName, EGPD_Output);
 	UEdGraphPin* EventContext = BoundEvent->FindPin(ContextPinName, EGPD_Output);
+	UEdGraphPin* EventValue = BoundEvent->FindPin(ValuePinName, EGPD_Output);
 
 	UEdGraphPin* CastExec = CastNode->GetExecPin();
 	UEdGraphPin* CastSource = CastNode->GetCastSourcePin();
 	UEdGraphPin* CastValid = CastNode->GetValidCastPin();
 	UEdGraphPin* CastResult = CastNode->GetCastResultPin();
 
-	if (!EventThen || !EventAction || !EventContext || !CastExec || !CastSource || !CastValid || !CastResult)
+	if (!EventThen || !EventAction || !EventContext || !EventValue
+		|| !CastExec || !CastSource || !CastValid || !CastResult)
 	{
 		CompilerContext.MessageLog.Error(
-			*LOCTEXT("ExpandPinFail", "@@ failed to expand DIVE Action Event pins.").ToString(),
+			*LOCTEXT("ExpandPinFail", "@@ failed to expand DIVE Action Value Event pins.").ToString(),
 			this);
 		BreakAllNodeLinks();
 		return;
@@ -401,6 +413,7 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 	UEdGraphPin* UserThen = FindPinChecked(UEdGraphSchema_K2::PN_Then);
 	UEdGraphPin* UserAction = FindPinChecked(ActionPinName);
 	UEdGraphPin* UserContext = FindPinChecked(ContextPinName);
+	UEdGraphPin* UserValue = FindPinChecked(ValuePinName);
 
 	UEdGraphPin* FilteredThen = CastValid;
 	if (!BindingId.IsNone())
@@ -482,28 +495,29 @@ void UK2Node_DIVEActionEvent::ExpandNode(FKismetCompilerContext& CompilerContext
 	CompilerContext.MovePinLinksToIntermediate(*UserThen, *FilteredThen);
 	CompilerContext.MovePinLinksToIntermediate(*UserAction, *CastResult);
 	CompilerContext.MovePinLinksToIntermediate(*UserContext, *EventContext);
+	CompilerContext.MovePinLinksToIntermediate(*UserValue, *EventValue);
 
 	BreakAllNodeLinks();
 }
 
-void UK2Node_DIVEActionEvent::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
+void UK2Node_DIVEActionValueEvent::GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const
 {
 	DIVEUncooked_RegisterActionClassMenuActions(
 		GetClass(),
 		ActionRegistrar,
-		UDIVEDeviceAction::StaticClass(),
+		UDIVEContinuousDeviceAction::StaticClass(),
 		[this](const FSoftClassPath& ClassPath) -> UBlueprintNodeSpawner*
 		{
-			return UDIVEActionEventNodeSpawner::Create(GetClass(), ClassPath);
+			return UDIVEActionValueEventNodeSpawner::Create(GetClass(), ClassPath);
 		});
 }
 
-FText UK2Node_DIVEActionEvent::GetMenuCategory() const
+FText UK2Node_DIVEActionValueEvent::GetMenuCategory() const
 {
 	return LOCTEXT("MenuCategory", "DIVE|Events");
 }
 
-FBlueprintNodeSignature UK2Node_DIVEActionEvent::GetSignature() const
+FBlueprintNodeSignature UK2Node_DIVEActionValueEvent::GetSignature() const
 {
 	FBlueprintNodeSignature NodeSignature = Super::GetSignature();
 	NodeSignature.AddKeyValue(GetActionName().ToString());
@@ -514,12 +528,12 @@ FBlueprintNodeSignature UK2Node_DIVEActionEvent::GetSignature() const
 	return NodeSignature;
 }
 
-TArray<FName> UK2Node_DIVEActionEvent::GetAvailableBindingIds() const
+TArray<FName> UK2Node_DIVEActionValueEvent::GetAvailableBindingIds() const
 {
 	return DIVEUncooked_GetAvailableBindingIds(GetBlueprint());
 }
 
-TSharedPtr<FEdGraphSchemaAction> UK2Node_DIVEActionEvent::GetEventNodeAction(const FText& ActionCategory)
+TSharedPtr<FEdGraphSchemaAction> UK2Node_DIVEActionValueEvent::GetEventNodeAction(const FText& ActionCategory)
 {
 	TSharedPtr<FEdGraphSchemaAction_K2Event> EventNodeAction = MakeShareable(
 		new FEdGraphSchemaAction_K2Event(

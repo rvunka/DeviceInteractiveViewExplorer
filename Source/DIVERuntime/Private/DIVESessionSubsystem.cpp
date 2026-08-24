@@ -643,6 +643,14 @@ void UDIVESessionSubsystem::NotifyInteractionValueChanged(
 	const FDIVEInteractionValue& Value)
 {
 	OnInteractionValueChanged.Broadcast(Action, Context, Value);
+
+	if (Action)
+	{
+		if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
+		{
+			Inspectable->NotifyActionValueChanged(Action, Context, Value);
+		}
+	}
 }
 
 void UDIVESessionSubsystem::HandleActivePawnPhysicalManualRotatePressed()

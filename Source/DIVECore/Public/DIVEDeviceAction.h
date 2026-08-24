@@ -102,6 +102,13 @@ struct DIVECORE_API FDIVEInteractionValue
 
 	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
 	EDIVEInteractionValueUnit Unit = EDIVEInteractionValueUnit::None;
+
+	/**
+	 * When non-empty, FormatInteractionValueReadout prefers domain formatting
+	 * (`{Label}: {Absolute} {Suffix}` / with max) over the Unit glyph.
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "DIVE")
+	FText DisplaySuffix;
 };
 
 /** Per-frame payload for continuous hold/drag updates (cursor, ray, view). */

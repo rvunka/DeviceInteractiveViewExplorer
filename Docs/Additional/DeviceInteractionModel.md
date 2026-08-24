@@ -80,7 +80,9 @@ Standing at the panel **does not** call `RequestSession()` and does not steal th
 
 Recommended **control wiring**:
 
-**Tier 1 (Interact mode, in-plugin):** bind a primitive (tag / name / PartId) to `UDIVERotaryDriveAction`, `UDIVEThreadedDriveAction`, or `UDIVELinearDriveAction`. The action is a stateless mapper; the mesh transform is the state. Catalog instances are shared — do not store per-target runtime state on the action beyond the active gesture.
+**Tier 1 (Interact mode, in-plugin):** bind a primitive (tag / name / PartId) to `UDIVERotaryDriveAction`, `UDIVEThreadedDriveAction`, or `UDIVELinearDriveAction`. The action is a stateless mapper; the mesh transform is the state. Catalog instances are shared — do not store per-target runtime state on the action beyond the active gesture. Min/Max angle and travel are from the part's rest pose (first grab, keyed by primitive + action class), not per-drag deltas.
+
+Optional **domain readout** (`bUseDomainReadout` + `DomainMin`/`DomainMax` + `ReadoutSuffix` on Rotary/Linear) is a **HUD / Value Event mapping** of `Normalized` onto author units (amps, volts, …) — not a second live control value. Device sim / MESS still owns domain truth; write it from **DIVE Action Value Event** on the device graph (fan-out from the active Inspectable). Never bind catalog `Action->OnValueChanged` from BeginPlay — the catalog instance is shared across devices.
 
 **Tier 2 (host implements, both verbs):**
 
@@ -99,7 +101,7 @@ IDIVEProxyDrive (DIVECore) — contract-goal for monitor interact (0 in-plugin i
 - **Interact (tier 1):** Interact-mode primary / menu hold-drag on the built-in drive actions.
 - **Interact (tier 2):** session pick → `BeginProxyDrive` / `ApplyProxyDriveDelta`. Standing-VR: host action host on the same Catalog / Bindings (no camera).
 - **Grab:** GRIP (bridge cursor-pull / VR grip button) on free bodies only.
-- **Sounds:** device component when value/angle actually changes (tier 2); or action/device event from `NotifyInteractionValue` / `NotifyValueChanged` / K2 Action Event (tier 1).
+- **Sounds / live domain:** device component when value/angle actually changes (tier 2); or tier 1 via `NotifyInteractionValue` → session HUD + active Inspectable `OnActionValueChanged` → K2 **DIVE Action Value Event**. One-shot success stays on K2 **DIVE Action Event** / `OnActionExecuted`.
 
 ### DIVE plugin (stays thin)
 

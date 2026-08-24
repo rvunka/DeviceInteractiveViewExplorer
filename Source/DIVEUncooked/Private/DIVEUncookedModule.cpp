@@ -2,7 +2,7 @@
 
 #include "DIVEUncookedModule.h"
 
-#include "K2Nodes/K2Node_DIVEActionEvent.h"
+#include "K2Nodes/DIVEActionEventNodeShared.h"
 #include "Modules/ModuleManager.h"
 
 void FDIVEUncookedModule::ShutdownModule()

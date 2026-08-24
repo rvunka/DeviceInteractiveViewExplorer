@@ -680,6 +680,19 @@ void UDIVEInspectableComponent::NotifyActionExecuted(
 	Action->OnExecuted.Broadcast(Action, Context);
 }
 
+void UDIVEInspectableComponent::NotifyActionValueChanged(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	const FDIVEInteractionValue& Value)
+{
+	if (!Action)
+	{
+		return;
+	}
+
+	OnActionValueChanged.Broadcast(Action, Context, Value);
+}
+
 void UDIVEInspectableComponent::GatherAuthoredBindings(TArray<const FDIVEActionBinding*>& OutBindings) const
 {
 	OutBindings.Reset();
