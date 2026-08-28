@@ -33,6 +33,20 @@ void ApplyDomainReadout(FDIVEInteractionValue& Value, const float DomainMin, con
 	Value.DisplaySuffix = Suffix;
 	Value.Unit = EDIVEInteractionValueUnit::None;
 }
+
+float ClampToLimits(const float Value, const bool bLimit, const float BoundA, const float BoundB)
+{
+	if (!bLimit)
+	{
+		return Value;
+	}
+	return FMath::Clamp(Value, FMath::Min(BoundA, BoundB), FMath::Max(BoundA, BoundB));
+}
+
+float IntegrateAgainstLimits(const float Accumulated, const float Delta, const bool bLimit, const float BoundA, const float BoundB)
+{
+	return ClampToLimits(Accumulated + Delta, bLimit, BoundA, BoundB);
+}
 } // namespace
 
 UDIVEFocusAction::UDIVEFocusAction()
@@ -469,11 +483,7 @@ bool IsOffsetAlongAxis(const FVector& From, const FVector& To, const FVector& Ax
 	return (Delta - Axis * FVector::DotProduct(Delta, Axis)).Size() <= 0.1f;
 }
 
-// Rotary never recaptures: angle-from-rest plus unwrap is the state.
-// Linear recaptures only when the rail orientation was reauthored (rotation left rest).
-// Threaded recaptures only when the pose left the screw (rotation not around Axis, or slide not along Axis).
-// A full-transform Equals here is unsafe: ±180 is one pose with two Euler writings, and a false
-// recapture would reset rest to the stop — the original infinite-spin bug.
+// Recapture only when the part left this action's DOF. Full-transform Equals is unsafe at ±180.
 void RecaptureLinearRestIfReoriented(FDrivenPrimitiveRest& Rest, const UPrimitiveComponent* Target)
 {
 	if (!Target)
@@ -711,6 +721,11 @@ bool UDIVERotaryDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 			Target->GetRelativeRotation().Quaternion(),
 			DriveAxisLocal(Axis)),
 		RestState.CommittedAngleDegrees);
+	AccumulatedDegrees = ClampToLimits(
+		AccumulatedDegrees,
+		bLimitAngle,
+		MinAngleDegrees,
+		MaxAngleDegrees);
 	ApplyAccumulated();
 	InitializePolarGestureState(
 		Context,
@@ -747,7 +762,12 @@ void UDIVERotaryDriveAction::UpdateInteraction_Implementation(const FDIVEInterac
 	{
 		return;
 	}
-	AccumulatedDegrees += DeltaDeg;
+	AccumulatedDegrees = IntegrateAgainstLimits(
+		AccumulatedDegrees,
+		DeltaDeg,
+		bLimitAngle,
+		MinAngleDegrees,
+		MaxAngleDegrees);
 	ApplyAccumulated();
 	NotifyInteractionValue(MakeInteractionValue());
 }
@@ -884,6 +904,7 @@ bool UDIVEThreadedDriveAction::BeginInteraction_Implementation(const FDIVEAction
 			DriveAxisLocal(Axis));
 		AccumulatedTurns = SeedUnwrappedDegrees(PrincipalDegrees, RestState.CommittedTurns * 360.f) / 360.f;
 	}
+	AccumulatedTurns = ClampToLimits(AccumulatedTurns, true, 0.f, TurnsToRelease);
 	bReleased = false;
 	ApplyAccumulated();
 	if (GetAppliedTurns() >= TurnsToRelease - KINDA_SMALL_NUMBER)
@@ -926,7 +947,7 @@ void UDIVEThreadedDriveAction::UpdateInteraction_Implementation(const FDIVEInter
 		return;
 	}
 	const float SignedTurns = (DeltaDeg / 360.f) * (bPositiveDeltaLoosens ? 1.f : -1.f);
-	AccumulatedTurns += SignedTurns;
+	AccumulatedTurns = IntegrateAgainstLimits(AccumulatedTurns, SignedTurns, true, 0.f, TurnsToRelease);
 
 	ApplyAccumulated();
 	NotifyInteractionValue(MakeInteractionValue());
@@ -1150,6 +1171,11 @@ bool UDIVELinearDriveAction::BeginInteraction_Implementation(const FDIVEActionCo
 		RestRelativeTransform,
 		StartRelativeTransform,
 		DriveAxisLocal(Axis));
+	AccumulatedTravelCm = ClampToLimits(
+		AccumulatedTravelCm,
+		bLimitTravel,
+		MinTravelCm,
+		MaxTravelCm);
 	ApplyAccumulated();
 	InitializeLinearGestureState(
 		Context,
@@ -1184,7 +1210,12 @@ void UDIVELinearDriveAction::UpdateInteraction_Implementation(const FDIVEInterac
 	{
 		return;
 	}
-	AccumulatedTravelCm += DeltaCm;
+	AccumulatedTravelCm = IntegrateAgainstLimits(
+		AccumulatedTravelCm,
+		DeltaCm,
+		bLimitTravel,
+		MinTravelCm,
+		MaxTravelCm);
 	ApplyAccumulated();
 	NotifyInteractionValue(MakeInteractionValue());
 }

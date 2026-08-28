@@ -59,8 +59,8 @@ public:
 	virtual bool Execute_Implementation(const FDIVEActionContext& Context) override;
 };
 
-/** Forwards Begin/Delta/End to IDIVEProxyDrive on the pick target (or owner). */
-UCLASS(BlueprintType, EditInlineNew, meta = (DisplayName = "DIVE Proxy Drive Forward Action"))
+/** Session adapter for IDIVEProxyDrive. Hidden from Bindings / Catalog. */
+UCLASS(HideDropdown, NotBlueprintable, meta = (DisplayName = "DIVE Proxy Drive Forward Action"))
 class DIVERUNTIME_API UDIVEProxyDriveForwardAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
@@ -125,17 +125,17 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		EditCondition = "bLimitAngle",
-		ToolTip = "Minimum angle from the part's rest pose (authored relative rotation on first grab), not from each mouse-down."))
+		ToolTip = "Minimum angle from the part's rest pose (authored relative rotation on first grab), not from each mouse-down. Extra drag past the stop is discarded."))
 	float MinAngleDegrees = -180.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		EditCondition = "bLimitAngle",
-		ToolTip = "Maximum angle from the part's rest pose (authored relative rotation on first grab), not from each mouse-down."))
+		ToolTip = "Maximum angle from the part's rest pose (authored relative rotation on first grab), not from each mouse-down. Extra drag past the stop is discarded."))
 	float MaxAngleDegrees = 180.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		ClampMin = "0.0",
-		ToolTip = "0 = no detents. Otherwise snap the applied angle to this step (raw travel still accumulates across frames)."))
+		ToolTip = "0 = no detents. Otherwise snap the applied angle to this step (raw travel still accumulates between detents)."))
 	float DetentStepDegrees = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
@@ -184,7 +184,7 @@ private:
 	UPROPERTY(Transient)
 	FRotator StartRelativeRotation = FRotator::ZeroRotator;
 
-	/** Raw pointer integral from rest. Mesh and HUD use GetAppliedDegrees() (detents + limits). */
+	/** From rest; clamped to Min/Max when limited. */
 	UPROPERTY(Transient)
 	float AccumulatedDegrees = 0.f;
 
@@ -259,7 +259,7 @@ private:
 	UPROPERTY(Transient)
 	FTransform StartRelativeTransform = FTransform::Identity;
 
-	/** Raw pointer integral from rest. Mesh, HUD, and release use GetAppliedTurns() (clamped 0..TurnsToRelease). */
+	/** From rest; clamped to 0..TurnsToRelease. */
 	UPROPERTY(Transient)
 	float AccumulatedTurns = 0.f;
 
@@ -306,17 +306,17 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		EditCondition = "bLimitTravel",
-		ToolTip = "Minimum travel from the part's rest pose (authored relative transform on first grab), not from each mouse-down."))
+		ToolTip = "Minimum travel from the part's rest pose (authored relative transform on first grab), not from each mouse-down. Extra drag past the stop is discarded."))
 	float MinTravelCm = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		EditCondition = "bLimitTravel",
-		ToolTip = "Maximum travel from the part's rest pose (authored relative transform on first grab), not from each mouse-down."))
+		ToolTip = "Maximum travel from the part's rest pose (authored relative transform on first grab), not from each mouse-down. Extra drag past the stop is discarded."))
 	float MaxTravelCm = 10.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		ClampMin = "0.0",
-		ToolTip = "0 = no detents. Otherwise snap the applied travel to this step (raw travel still accumulates across frames)."))
+		ToolTip = "0 = no detents. Otherwise snap the applied travel to this step (raw travel still accumulates between detents)."))
 	float DetentStepCm = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
@@ -365,7 +365,7 @@ private:
 	UPROPERTY(Transient)
 	FTransform StartRelativeTransform = FTransform::Identity;
 
-	/** Raw pointer integral from rest. Mesh and HUD use GetAppliedTravelCm() (detents + limits). */
+	/** From rest; clamped to Min/Max when limited. */
 	UPROPERTY(Transient)
 	float AccumulatedTravelCm = 0.f;
 

@@ -1508,6 +1508,18 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Rotary first gesture reaches the rest-relative MaxAngle"),
 			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(270.f));
+		TestTrue(
+			TEXT("Rotary discards extra polar travel past MaxAngle"),
+			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(260.f));
+		TestTrue(
+			TEXT("Rotary reverse from the stop does not unwind discarded overshoot"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, 170.f, 0.05f));
+		Rotary->UpdateInteraction(MakeZUpPolarUpdate(270.f));
+		TestTrue(
+			TEXT("Rotary can return to MaxAngle after leaving the stop"),
+			FMath::Abs(FMath::FindDeltaAngleDegrees(Sphere->GetRelativeRotation().Yaw, 180.f)) < 0.05f);
 		Rotary->EndInteraction(true);
 		Rotary->MarkInteractionActive(Context);
 		TestTrue(TEXT("Rotary re-Begin after committing the limit"), Rotary->BeginInteraction(Context));
@@ -1750,10 +1762,10 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Linear clamps travel at MaxTravelCm"),
 			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 10.f, 0.05f));
-		Linear->UpdateInteraction(MakeXAxisLinearUpdate(2.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(14.f));
 		TestTrue(
-			TEXT("Linear returns from overshoot to the live pointer, not to the stop"),
-			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 2.f, 0.05f));
+			TEXT("Linear reverse from the stop does not unwind discarded overshoot"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 9.f, 0.05f));
 		Linear->EndInteraction(false);
 
 		Sphere->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));

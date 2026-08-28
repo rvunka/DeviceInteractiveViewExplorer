@@ -198,7 +198,7 @@ bool DIVEUncooked_IsUsableActionClass(const UClass* Class, const UClass* BaseCla
 	}
 
 	if (Class->HasAnyClassFlags(
-			CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_Hidden))
+			CLASS_Abstract | CLASS_Deprecated | CLASS_NewerVersionExists | CLASS_Hidden | CLASS_HideDropDown))
 	{
 		return false;
 	}
