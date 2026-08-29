@@ -192,7 +192,7 @@ public:
 	virtual bool Evaluate_Implementation(const FDIVEActionContext& Context) const;
 };
 
-/** Instant action. Params on the instance; per-target runtime state must not live on instance fields. */
+/** Instant action. Params on the instance. Continuous drives may keep per-primitive rest on the Inspectable copy. */
 UCLASS(Abstract, Blueprintable, BlueprintType, EditInlineNew, DefaultToInstanced)
 class DIVECORE_API UDIVEDeviceAction : public UObject
 {
@@ -217,7 +217,7 @@ public:
 
 	virtual UWorld* GetWorld() const override;
 
-	/** Injected by FDIVEActionWorldScope so catalog-hosted actions have a world during invocation. */
+	/** Injected by FDIVEActionWorldScope when Outer has no world (templates, tests). */
 	void SetExecutionWorld(UWorld* InWorld) { ExecutionWorld = InWorld; }
 	UWorld* GetExecutionWorld() const { return ExecutionWorld.Get(); }
 

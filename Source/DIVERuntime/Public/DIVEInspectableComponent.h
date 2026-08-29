@@ -12,6 +12,7 @@
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#include "UObject/UnrealType.h"
 #endif
 
 #include "DIVEInspectableComponent.generated.h"
@@ -79,7 +80,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
 		DisplayName = "Action Catalog",
-		ToolTip = "Shared Data Asset bindings/sections; merged with component Bindings."))
+		ToolTip = "Template Data Asset. Runtime executes per-Inspectable copies (not the asset inners). Do not bind OnExecuted / OnValueChanged on the catalog template."))
 	TObjectPtr<UDIVEActionCatalogAsset> ActionCatalog;
 
 #if WITH_EDITOR
@@ -111,7 +112,7 @@ public:
 
 	/**
 	 * Live values for this Inspectable's continuous slot (session or headless).
-	 * Do not bind Action->OnValueChanged on a shared catalog instance.
+	 * Bind here or via DIVE Action Value Event — not Action->OnValueChanged on the catalog asset.
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
 	FOnDIVEActionValueChanged OnActionValueChanged;
@@ -302,12 +303,14 @@ public:
 #if WITH_EDITOR
 	/**
 	 * Device-only authoring checks (warnings): equal-specificity primary overlap,
-	 * ComponentTag MatchValues, PartId→anchor coverage, shape pick-channel Block.
+	 * ComponentTag MatchValues, PartId→anchor coverage, shape pick-channel Block,
+	 * catalog-template OnExecuted / OnValueChanged subscribers.
 	 * Shared by IsDataValid and DIVE Scan.
 	 */
 	void AppendDeviceAuthoringValidation(FDataValidationContext& Context) const;
 
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 
 	virtual void OnRegister() override;
@@ -320,13 +323,24 @@ private:
 	UPROPERTY(Transient)
 	mutable FDIVEPartTree SemanticRegistry;
 
-	/** Headless continuous slot (not the session monitor slot). */
+	/**
+	 * One headless/host continuous gesture at a time on this device (not two-hand).
+	 * Separate from the session monitor slot — EndSession must not clear this.
+	 */
 	FDIVEContinuousActionSlot ContinuousSlot;
+
+	/** Runtime copies of ActionCatalog bindings. Not serialized; rebuilt on register / catalog change. */
+	UPROPERTY(Transient)
+	TArray<FDIVEActionBinding> InstancedCatalogBindings;
 
 	bool ShouldSkipDefaultBindingSeed() const;
 	void SeedDefaultBindingsIfNeeded();
 	void EnsureSeededAdminDefaults();
 	void InstanceForeignPrivateActions();
+	void RebuildInstancedCatalogBindings();
+	void DestroyInstancedCatalogActions();
+	bool IsInstancedCatalogAction(const UDIVEDeviceAction* Action) const;
+	void GatherBindingsForAuthoringValidation(TArray<const FDIVEActionBinding*>& OutBindings) const;
 
 	FName ResolveTargetKeyForQuery(const FDIVETargetQuery& Query, const FDIVEFocusTarget& PickTarget) const;
 	bool MatchesComponentNameValue(const UPrimitiveComponent* Primitive, FName MatchValue) const;

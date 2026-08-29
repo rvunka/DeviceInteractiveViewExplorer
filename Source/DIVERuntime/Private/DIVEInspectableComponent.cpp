@@ -2,6 +2,7 @@
 
 #include "DIVEInspectableComponent.h"
 
+#include "Algo/Sort.h"
 #include "Actions/DIVEBuiltInActions.h"
 #include "DIVEAnchorComponent.h"
 #include "DIVEDeviceAction.h"
@@ -59,6 +60,7 @@ void UDIVEInspectableComponent::OnRegister()
 {
 	Super::OnRegister();
 	InstanceForeignPrivateActions();
+	RebuildInstancedCatalogBindings();
 }
 
 void UDIVEInspectableComponent::PreSave(FObjectPreSaveContext SaveContext)
@@ -212,6 +214,19 @@ void UDIVEInspectableComponent::AddAdminDefaultBindings()
 	NotifyProperty(GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, Bindings));
 	NotifyProperty(GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, Sections));
 }
+
+void UDIVEInspectableComponent::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	const FName PropertyName = PropertyChangedEvent.MemberProperty
+		? PropertyChangedEvent.MemberProperty->GetFName()
+		: NAME_None;
+	if (PropertyName == GET_MEMBER_NAME_CHECKED(UDIVEInspectableComponent, ActionCatalog))
+	{
+		RebuildInstancedCatalogBindings();
+	}
+}
 #endif
 
 void UDIVEInspectableComponent::InstanceForeignPrivateActions()
@@ -237,7 +252,7 @@ void UDIVEInspectableComponent::InstanceForeignPrivateActions()
 				continue;
 			}
 
-			// Same package: private inners are legal exports. Catalog / CDO: public shared refs.
+			// Same package: private inners are legal exports. RF_Public / CDO stay (seed chrome, catalog templates).
 			if (Existing->GetOutermost() == Package
 				|| Existing->HasAnyFlags(RF_Public | RF_ClassDefaultObject))
 			{
@@ -251,6 +266,125 @@ void UDIVEInspectableComponent::InstanceForeignPrivateActions()
 				Action = InstancedAction;
 			}
 		}
+	}
+}
+
+bool UDIVEInspectableComponent::IsInstancedCatalogAction(const UDIVEDeviceAction* Action) const
+{
+	if (!Action)
+	{
+		return false;
+	}
+
+	for (const FDIVEActionBinding& Binding : InstancedCatalogBindings)
+	{
+		for (const TObjectPtr<UDIVEDeviceAction>& Candidate : Binding.Actions)
+		{
+			if (Candidate.Get() == Action)
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+void UDIVEInspectableComponent::DestroyInstancedCatalogActions()
+{
+	TArray<UDIVEDeviceAction*> OldActions;
+	for (FDIVEActionBinding& Binding : InstancedCatalogBindings)
+	{
+		for (TObjectPtr<UDIVEDeviceAction>& Action : Binding.Actions)
+		{
+			if (UDIVEDeviceAction* Obj = Action.Get())
+			{
+				OldActions.Add(Obj);
+			}
+			Action = nullptr;
+		}
+	}
+	InstancedCatalogBindings.Reset();
+
+	for (UDIVEDeviceAction* Obj : OldActions)
+	{
+		if (!Obj)
+		{
+			continue;
+		}
+
+		Obj->Rename(
+			nullptr,
+			GetTransientPackage(),
+			REN_DoNotDirty | REN_DontCreateRedirectors);
+		Obj->MarkAsGarbage();
+	}
+}
+
+void UDIVEInspectableComponent::RebuildInstancedCatalogBindings()
+{
+	if (HasAnyFlags(RF_ClassDefaultObject | RF_NeedLoad))
+	{
+		return;
+	}
+
+	if (UDIVEContinuousDeviceAction* Active = ContinuousSlot.ActiveAction.Get())
+	{
+		if (IsInstancedCatalogAction(Active))
+		{
+			EndActiveInteraction(false);
+		}
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UDIVESessionSubsystem* Session = World->GetSubsystem<UDIVESessionSubsystem>())
+		{
+			for (const FDIVEActionBinding& Binding : InstancedCatalogBindings)
+			{
+				for (const TObjectPtr<UDIVEDeviceAction>& Action : Binding.Actions)
+				{
+					Session->EndSessionGestureIfAction(Action.Get(), false);
+				}
+			}
+		}
+	}
+
+	DestroyInstancedCatalogActions();
+
+	if (!ActionCatalog)
+	{
+		return;
+	}
+
+	InstancedCatalogBindings.Reserve(ActionCatalog->Bindings.Num());
+	for (const FDIVEActionBinding& Source : ActionCatalog->Bindings)
+	{
+		FDIVEActionBinding Copy = Source;
+		Copy.Actions.Reset();
+		Copy.Actions.Reserve(Source.Actions.Num());
+		for (UDIVEDeviceAction* Template : Source.Actions)
+		{
+			if (!Template)
+			{
+				Copy.Actions.Add(nullptr);
+				continue;
+			}
+
+			UDIVEDeviceAction* Instanced = DuplicateObject<UDIVEDeviceAction>(Template, this);
+			if (Instanced)
+			{
+				Instanced->ClearFlags(RF_Public | RF_Standalone | RF_Transactional);
+				Instanced->SetFlags(RF_Transient | RF_DuplicateTransient);
+				Instanced->OnExecuted.Clear();
+				if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(Instanced))
+				{
+					Continuous->OnValueChanged.Clear();
+				}
+			}
+			Copy.Actions.Add(Instanced);
+		}
+		InstancedCatalogBindings.Add(MoveTemp(Copy));
 	}
 }
 
@@ -715,12 +849,24 @@ void UDIVEInspectableComponent::GatherAuthoredBindings(TArray<const FDIVEActionB
 		OutBindings.Add(&Binding);
 	}
 
-	if (ActionCatalog)
+	for (const FDIVEActionBinding& Binding : InstancedCatalogBindings)
 	{
-		for (const FDIVEActionBinding& Binding : ActionCatalog->Bindings)
-		{
-			OutBindings.Add(&Binding);
-		}
+		OutBindings.Add(&Binding);
+	}
+}
+
+void UDIVEInspectableComponent::GatherBindingsForAuthoringValidation(
+	TArray<const FDIVEActionBinding*>& OutBindings) const
+{
+	GatherAuthoredBindings(OutBindings);
+	if (!InstancedCatalogBindings.IsEmpty() || !ActionCatalog)
+	{
+		return;
+	}
+
+	for (const FDIVEActionBinding& Binding : ActionCatalog->Bindings)
+	{
+		OutBindings.Add(&Binding);
 	}
 }
 
@@ -1023,16 +1169,51 @@ bool UDIVEInspectableComponent::TryResolvePrimaryAction(
 	TArray<const FDIVEActionBinding*> Matched;
 	GatherMatchingBindings(PickTarget, Matched);
 
-	const FDIVEActionBinding* Winner = SelectPrimaryBinding(Matched);
-	if (!Winner)
+	TArray<const FDIVEActionBinding*> Primaries;
+	Primaries.Reserve(Matched.Num());
+	for (const FDIVEActionBinding* Binding : Matched)
 	{
-		return false;
+		if (Binding && Binding->GetPrimaryAction())
+		{
+			Primaries.Add(Binding);
+		}
 	}
 
-	OutAction = Winner->GetPrimaryAction();
-	OutTargetKey = ResolveTargetKeyForQuery(Winner->Targets, PickTarget);
-	OutBindingId = Winner->BindingId;
-	return OutAction != nullptr;
+	Algo::StableSort(Primaries, [](const FDIVEActionBinding* A, const FDIVEActionBinding* B)
+	{
+		return GetTargetMatchSpecificity(A->Targets.MatchMode)
+			> GetTargetMatchSpecificity(B->Targets.MatchMode);
+	});
+
+	UWorld* World = GetWorld();
+	for (const FDIVEActionBinding* Binding : Primaries)
+	{
+		UDIVEDeviceAction* Candidate = Binding->GetPrimaryAction();
+		if (!Candidate)
+		{
+			continue;
+		}
+
+		const FName TargetKey = ResolveTargetKeyForQuery(Binding->Targets, PickTarget);
+		const FDIVEActionContext Context = MakeActionContext(
+			PickTarget,
+			TargetKey,
+			FVector2D::ZeroVector,
+			FHitResult(),
+			Binding->BindingId);
+		const FDIVEActionWorldScope WorldScope(Candidate, World);
+		if (!Candidate->CanExecute(Context))
+		{
+			continue;
+		}
+
+		OutAction = Candidate;
+		OutTargetKey = TargetKey;
+		OutBindingId = Binding->BindingId;
+		return true;
+	}
+
+	return false;
 }
 
 FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
@@ -1417,7 +1598,55 @@ void UDIVEInspectableComponent::AppendDeviceAuthoringValidation(FDataValidationC
 	DIVE::CollectDevicePrimitives(Owner, DevicePrimitives);
 
 	TArray<const FDIVEActionBinding*> AllBindings;
-	GatherAuthoredBindings(AllBindings);
+	GatherBindingsForAuthoringValidation(AllBindings);
+
+	for (int32 BindingIndex = 0; BindingIndex < AllBindings.Num(); ++BindingIndex)
+	{
+		const FDIVEActionBinding* Binding = AllBindings[BindingIndex];
+		if (!Binding || Binding->PrimaryActionIndex != INDEX_NONE || Binding->Actions.Num() != 1)
+		{
+			continue;
+		}
+
+		const UDIVEDeviceAction* SoleAction = Binding->Actions[0];
+		if (!SoleAction || SoleAction->IsA<UDIVEContinuousDeviceAction>())
+		{
+			continue;
+		}
+
+		Context.AddWarning(FText::FromString(FString::Printf(
+			TEXT("Binding '%s' has a single instant action but PrimaryActionIndex is none. It will not be LMB primary (unlike a sole continuous action). Set PrimaryActionIndex to 0 if that click should run it."),
+			*MakeBindingValidationLabel(Binding, BindingIndex))));
+	}
+
+	if (ActionCatalog)
+	{
+		for (const FDIVEActionBinding& Binding : ActionCatalog->Bindings)
+		{
+			for (UDIVEDeviceAction* Action : Binding.Actions)
+			{
+				if (!Action)
+				{
+					continue;
+				}
+
+				const bool bExecutedBound = Action->OnExecuted.IsBound();
+				bool bValueBound = false;
+				if (const UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(Action))
+				{
+					bValueBound = Continuous->OnValueChanged.IsBound();
+				}
+
+				if (bExecutedBound || bValueBound)
+				{
+					Context.AddWarning(FText::FromString(FString::Printf(
+						TEXT("Catalog template '%s' (binding '%s') has OnExecuted or OnValueChanged bound on the asset. Runtime executes per-Inspectable copies — bind DIVE Action Event / Value Event on the device instead."),
+						*GetNameSafe(Action),
+						*MakeBindingValidationLabel(&Binding, INDEX_NONE))));
+				}
+			}
+		}
+	}
 
 	// Equal-specificity primary overlap on the same interactive primitive.
 	for (UPrimitiveComponent* Primitive : DevicePrimitives)
@@ -1741,7 +1970,7 @@ EDataValidationResult UDIVEInspectableComponent::IsDataValid(FDataValidationCont
 	}
 
 	TArray<const FDIVEActionBinding*> AllBindings;
-	GatherAuthoredBindings(AllBindings);
+	GatherBindingsForAuthoringValidation(AllBindings);
 	if (!DIVEActionBindingValidation::ValidateBindings(AllBindings, KnownSectionIds, Context))
 	{
 		Result = EDataValidationResult::Invalid;

@@ -46,31 +46,18 @@ void FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(UDIVESessionSubsystem&
 
 void FDIVESessionPhysicalDriveOps::ResetPhysicalDriveState(UDIVESessionSubsystem& Session)
 {
-	Session.bProxyDriving = false;
 	Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::None;
 	Session.ActivePawnPhysicalDrive.Reset();
 	Session.ContinuousSlot.Reset();
 	Session.bIgnoreNextPrimaryActionRelease = false;
 }
 
-void FDIVESessionPhysicalDriveOps::ClearProxyDrive(UDIVESessionSubsystem& Session)
-{
-	if (!Session.bProxyDriving)
-	{
-		return;
-	}
-
-	EndActivePhysicalDrive(Session, false);
-	ResetPhysicalDriveState(Session);
-	Session.NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), FDIVEInteractionValue());
-}
-
-bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
+bool FDIVESessionPhysicalDriveOps::TryBeginPawnGrabAtScreenPosition(
 	UDIVESessionSubsystem& Session,
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController)
 {
-	if (!Session.IsSessionActive() || Session.bProxyDriving || !PlayerController)
+	if (!Session.IsSessionActive() || Session.IsSessionGestureActive() || !PlayerController)
 	{
 		return false;
 	}
@@ -123,7 +110,6 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 			{
 				Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive;
 				Session.ActivePawnPhysicalDrive = PawnDriveObject;
-				Session.bProxyDriving = true;
 				return true;
 			}
 		}
@@ -140,7 +126,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 
 void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem& Session, const FDIVEInteractionUpdate& Update)
 {
-	if (!Session.bProxyDriving)
+	if (!Session.IsSessionGestureActive())
 	{
 		return;
 	}
@@ -150,7 +136,7 @@ void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive:
 		if (!Session.ActivePawnPhysicalDrive.GetObject())
 		{
-			ClearProxyDrive(Session);
+			EndSessionGesture(Session, false);
 		}
 		break;
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
@@ -159,23 +145,23 @@ void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem
 			DIVEActionExecution::UpdateContinuousAction(Session.GetWorld(), Session.ContinuousSlot, Update);
 			if (!Continuous->IsInteractionActive())
 			{
-				EndProxyDrive(Session, true);
+				EndSessionGesture(Session, true);
 			}
 		}
 		else
 		{
-			ClearProxyDrive(Session);
+			EndSessionGesture(Session, false);
 		}
 		break;
 	default:
-		ClearProxyDrive(Session);
+		EndSessionGesture(Session, false);
 		break;
 	}
 }
 
-void FDIVESessionPhysicalDriveOps::EndProxyDrive(UDIVESessionSubsystem& Session, const bool bCommit)
+void FDIVESessionPhysicalDriveOps::EndSessionGesture(UDIVESessionSubsystem& Session, const bool bCommit)
 {
-	if (!Session.bProxyDriving)
+	if (!Session.IsSessionGestureActive())
 	{
 		return;
 	}
@@ -187,7 +173,7 @@ void FDIVESessionPhysicalDriveOps::EndProxyDrive(UDIVESessionSubsystem& Session,
 
 void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotatePressed(UDIVESessionSubsystem& Session)
 {
-	if (!Session.bProxyDriving || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive)
+	if (!Session.IsSessionGestureActive() || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive)
 	{
 		return;
 	}
@@ -200,7 +186,7 @@ void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotatePressed(U
 
 void FDIVESessionPhysicalDriveOps::HandleActivePawnPhysicalManualRotateReleased(UDIVESessionSubsystem& Session)
 {
-	if (!Session.bProxyDriving || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive)
+	if (!Session.IsSessionGestureActive() || Session.ActivePhysicalDriveKind != UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::PawnDrive)
 	{
 		return;
 	}

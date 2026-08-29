@@ -214,25 +214,27 @@ void DumpPrimitiveRow(
 	Inspectable->GatherMatchingBindings(PickTarget, Matched);
 
 	// Default AnyPrimitive bindings always match; warn when a pick-proxy has catalog
-	// authored but no catalog binding matched (only component Bindings did).
+	// authored but no catalog copy matched (only component Bindings did).
 	bool bHasCatalogMatch = false;
 	for (const FDIVEActionBinding* Binding : Matched)
 	{
-		if (!Binding || !Inspectable->ActionCatalog)
+		if (!Binding)
 		{
 			continue;
 		}
 
-		for (const FDIVEActionBinding& Candidate : Inspectable->ActionCatalog->Bindings)
+		bool bFromLocalBindings = false;
+		for (const FDIVEActionBinding& Local : Inspectable->Bindings)
 		{
-			if (&Candidate == Binding)
+			if (&Local == Binding)
 			{
-				bHasCatalogMatch = true;
+				bFromLocalBindings = true;
 				break;
 			}
 		}
-		if (bHasCatalogMatch)
+		if (!bFromLocalBindings && Inspectable->ActionCatalog)
 		{
+			bHasCatalogMatch = true;
 			break;
 		}
 	}
@@ -320,11 +322,36 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 		{
 			DumpBinding(Out, Binding, TEXT("Component"));
 		}
-		if (Inspectable->ActionCatalog)
+
+		bool bDumpedCatalogCopy = false;
+		for (const FDIVEActionBinding* Binding : AuthoredBindings)
+		{
+			if (!Binding)
+			{
+				continue;
+			}
+
+			bool bFromLocalBindings = false;
+			for (const FDIVEActionBinding& Local : Inspectable->Bindings)
+			{
+				if (&Local == Binding)
+				{
+					bFromLocalBindings = true;
+					break;
+				}
+			}
+			if (!bFromLocalBindings)
+			{
+				DumpBinding(Out, *Binding, TEXT("Catalog copy"));
+				bDumpedCatalogCopy = true;
+			}
+		}
+
+		if (!bDumpedCatalogCopy && Inspectable->ActionCatalog)
 		{
 			for (const FDIVEActionBinding& Binding : Inspectable->ActionCatalog->Bindings)
 			{
-				DumpBinding(Out, Binding, TEXT("Catalog"));
+				DumpBinding(Out, Binding, TEXT("Catalog template"));
 			}
 		}
 	}
@@ -412,7 +439,7 @@ FString DIVEDebugDump::BuildDeviceDump(AActor* DeviceActor)
 	AppendLine(Out, TEXT("Hint: Match modes = ComponentTag / ComponentName / PartId / AnyPrimitive. Matching bindings are unioned by section."));
 	AppendLine(Out, TEXT("Hint: Menu/section order = Bindings and Sections array order (component, then catalog)."));
 	AppendLine(Out, TEXT("Hint: LMB primary = most specific matching binding with PrimaryActionIndex, or a binding whose only action is continuous (Name > PartId > Tag > Any); equal specificity keeps the earlier binding."));
-	AppendLine(Out, TEXT("Hint: Menu rows include component Bindings + Action Catalog. Device-specific ops usually live in the Catalog."));
+	AppendLine(Out, TEXT("Hint: Menu rows include component Bindings + Action Catalog copies (asset inners are templates, not executed)."));
 	AppendLine(Out, TEXT("==== end ===="));
 	return Out;
 }

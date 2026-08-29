@@ -18,9 +18,7 @@ UWorld* UDIVEDeviceAction::GetWorld() const
 		return nullptr;
 	}
 
-	// Prefer the execution-time world injected by the runtime. This makes catalog-hosted actions
-	// (whose Outer chain leads to an asset package, not a world) behave identically to
-	// component-hosted actions for all Blueprint world-context nodes.
+	// Prefer injected ExecutionWorld. Inspectable copies also walk Outer to the actor.
 	if (UWorld* Injected = ExecutionWorld.Get())
 	{
 		return Injected;
@@ -101,8 +99,7 @@ void UDIVEContinuousDeviceAction::EndInteraction_Implementation(bool bCommit)
 
 void UDIVEContinuousDeviceAction::MarkInteractionActive(const FDIVEActionContext& Context)
 {
-	// Catalog-hosted actions are shared instances: at most one interaction can be active at a time.
-	// If this fires, two concurrent interactions attempted to use the same action object.
+	// At most one interaction per action instance (ensure fires if Begin overlaps).
 	ensure(!bInteractionActive);
 	bInteractionActive = true;
 	ActiveInteractionContext = Context;

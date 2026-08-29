@@ -4,6 +4,9 @@
 
 #include "DIVEDeviceAction.h"
 
+#include "Containers/Map.h"
+#include "UObject/WeakObjectPtr.h"
+
 #include "DIVEBuiltInActions.generated.h"
 
 class UPrimitiveComponent;
@@ -124,17 +127,35 @@ enum class EDIVEDriveAxis : uint8
 	Z
 };
 
-/** Polar gesture around the picked primitive's rim; edge-on falls back to DegreesPerPixel. */
-UCLASS(BlueprintType, EditInlineNew, meta = (
-	DisplayName = "DIVE Rotary Drive Action",
-	ToolTip = "Drag around the rim to rotate the picked primitive around Axis. Begin isolates a child on a simulating device (unweld, Query Only) without disabling parent physics. Engine cylinder is Z-up: Axis Z is spin-in-place."))
-class DIVERUNTIME_API UDIVERotaryDriveAction : public UDIVEContinuousDeviceAction
+/** Per-primitive rest pose + committed travel for one action instance (not process-global). */
+struct FDrivenPrimitiveRest
+{
+	FTransform RelativeTransform = FTransform::Identity;
+	float CommittedAngleDegrees = 0.f;
+	float CommittedTurns = 0.f;
+};
+
+struct FDrivenRestStore
+{
+	TMap<TWeakObjectPtr<const UPrimitiveComponent>, FDrivenPrimitiveRest> Rests;
+
+	void Compact();
+	FDrivenPrimitiveRest& GetOrCapture(const UPrimitiveComponent* Target);
+	FDrivenPrimitiveRest* Find(const UPrimitiveComponent* Target);
+	void CommitAngle(const UPrimitiveComponent* Target, float AngleDegrees);
+	void CommitTurns(const UPrimitiveComponent* Target, float Turns);
+};
+
+/**
+ * Shared polar rim gesture (axis, DegreesPerPixel, isolate, rest store).
+ * Rotary applies rotation; Threaded applies screw + release. Linear does not inherit this.
+ */
+UCLASS(Abstract)
+class DIVERUNTIME_API UDIVEPolarDriveAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
 
 public:
-	UDIVERotaryDriveAction();
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
 		ToolTip = "Local axis of the picked primitive. Engine Shape_Cylinder is Z-up; Axis Z is spin-in-place."))
 	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
@@ -143,6 +164,49 @@ public:
 		ClampMin = "0.01",
 		ToolTip = "Fallback only when the pointer is edge-on to the axis or inside the polar dead zone."))
 	float DegreesPerPixel = 0.25f;
+
+	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
+	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
+	virtual void EndInteraction_Implementation(bool bCommit) override;
+
+protected:
+	// Not C++-pure: UObject CDOs are always constructed, even for UCLASS(Abstract).
+	virtual bool SeedPolarFromRest(UPrimitiveComponent* Target) { (void)Target; return false; }
+	virtual void ApplyPolarDeltaDegrees(float DeltaDegrees) { (void)DeltaDegrees; }
+	virtual void CommitPolarRest(UPrimitiveComponent* Target) { (void)Target; }
+	virtual void RestorePolarOnCancel(UPrimitiveComponent* Target) { (void)Target; }
+	virtual void NotifyPolarValue() {}
+	virtual void ClearPolarAccumulated() {}
+	virtual bool ShouldStopPolarUpdates() const { return false; }
+	virtual bool ShouldRestoreIsolationOnEnd() const { return true; }
+
+	FDrivenRestStore RestStore;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
+
+	uint8 SavedCollisionEnabled = 0;
+	bool bSavedAutoWeld = false;
+	bool bHasSavedIsolation = false;
+	FVector FrozenAxisWorld = FVector::ZeroVector;
+	FVector AxisOrigin = FVector::ZeroVector;
+	FVector PlaneBasisU = FVector::ZeroVector;
+	FVector PlaneBasisV = FVector::ZeroVector;
+	FVector PreviousPlaneVector = FVector::ZeroVector;
+	bool bAwaitingPolarSeed = false;
+};
+
+/** Polar gesture around the picked primitive's rim; edge-on falls back to DegreesPerPixel. */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Rotary Drive Action",
+	ToolTip = "Drag around the rim to rotate the picked primitive around Axis. Begin isolates a child on a simulating device (unweld, Query Only) without disabling parent physics. Engine cylinder is Z-up: Axis Z is spin-in-place."))
+class DIVERUNTIME_API UDIVERotaryDriveAction : public UDIVEPolarDriveAction
+{
+	GENERATED_BODY()
+
+public:
+	UDIVERotaryDriveAction();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive")
 	bool bLimitAngle = true;
@@ -185,20 +249,20 @@ public:
 		ToolTip = "HUD / Value Event suffix (A, V, Ω, …). Empty keeps domain Absolute without a unit glyph."))
 	FText ReadoutSuffix;
 
-	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
-	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
-	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
-	virtual void EndInteraction_Implementation(bool bCommit) override;
-
 	FDIVEInteractionValue MakeInteractionValue() const;
+
+protected:
+	virtual bool SeedPolarFromRest(UPrimitiveComponent* Target) override;
+	virtual void ApplyPolarDeltaDegrees(float DeltaDegrees) override;
+	virtual void CommitPolarRest(UPrimitiveComponent* Target) override;
+	virtual void RestorePolarOnCancel(UPrimitiveComponent* Target) override;
+	virtual void NotifyPolarValue() override;
+	virtual void ClearPolarAccumulated() override;
 
 private:
 	void ApplyAccumulated();
 	float GetAppliedDegrees() const;
 	float GetNormalizedValue() const;
-
-	UPROPERTY(Transient)
-	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
 
 	/** Rest pose for this primitive; limits and apply are relative to this, not to mouse-down. */
 	UPROPERTY(Transient)
@@ -211,17 +275,6 @@ private:
 	/** From rest; clamped to Min/Max when limited. */
 	UPROPERTY(Transient)
 	float AccumulatedDegrees = 0.f;
-
-	uint8 SavedCollisionEnabled = 0;
-	bool bSavedAutoWeld = false;
-	bool bHasSavedIsolation = false;
-	/** Frozen at Begin; first Update seeds the live pointer on the plane perpendicular to Axis. */
-	FVector FrozenAxisWorld = FVector::ZeroVector;
-	FVector AxisOrigin = FVector::ZeroVector;
-	FVector PlaneBasisU = FVector::ZeroVector;
-	FVector PlaneBasisV = FVector::ZeroVector;
-	FVector PreviousPlaneVector = FVector::ZeroVector;
-	bool bAwaitingPolarSeed = false;
 };
 
 /**
@@ -231,21 +284,12 @@ private:
 UCLASS(BlueprintType, EditInlineNew, meta = (
 	DisplayName = "DIVE Threaded Drive Action",
 	ToolTip = "Drag around the rim to unscrew the picked primitive around Axis. Begin isolates a child on a simulating device the same way Rotary does. On complete: detach + Simulate Physics."))
-class DIVERUNTIME_API UDIVEThreadedDriveAction : public UDIVEContinuousDeviceAction
+class DIVERUNTIME_API UDIVEThreadedDriveAction : public UDIVEPolarDriveAction
 {
 	GENERATED_BODY()
 
 public:
 	UDIVEThreadedDriveAction();
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
-		ToolTip = "Local axis of the picked primitive. Engine Shape_Cylinder is Z-up; Axis Z is spin-in-place."))
-	EDIVEDriveAxis Axis = EDIVEDriveAxis::Z;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
-		ClampMin = "0.01",
-		ToolTip = "Fallback only when the pointer is edge-on to the axis or inside the polar dead zone."))
-	float DegreesPerPixel = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (ClampMin = "0.01"))
 	float TurnsToRelease = 4.f;
@@ -259,21 +303,27 @@ public:
 		ToolTip = "If true, positive polar delta around Axis (right-hand rule) loosens toward release."))
 	bool bPositiveDeltaLoosens = true;
 
-	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override;
-	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
-	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
-	virtual void EndInteraction_Implementation(bool bCommit) override;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Drive", meta = (
+		ToolTip = "If true, cancel (End with bCommit=false) restores the mouse-down pose when the part has not detached."))
+	bool bRestoreOnCancel = true;
 
 	FDIVEInteractionValue MakeInteractionValue() const;
+
+protected:
+	virtual bool SeedPolarFromRest(UPrimitiveComponent* Target) override;
+	virtual void ApplyPolarDeltaDegrees(float DeltaDegrees) override;
+	virtual void CommitPolarRest(UPrimitiveComponent* Target) override;
+	virtual void RestorePolarOnCancel(UPrimitiveComponent* Target) override;
+	virtual void NotifyPolarValue() override;
+	virtual void ClearPolarAccumulated() override;
+	virtual bool ShouldStopPolarUpdates() const override;
+	virtual bool ShouldRestoreIsolationOnEnd() const override;
 
 private:
 	void ApplyAccumulated();
 	void ReleaseTarget();
 	float GetAppliedTurns() const;
 	float GetNormalizedValue() const;
-
-	UPROPERTY(Transient)
-	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
 
 	/** Rest pose for this primitive; turns and apply are relative to this, not to mouse-down. */
 	UPROPERTY(Transient)
@@ -286,17 +336,6 @@ private:
 	/** From rest; clamped to 0..TurnsToRelease. */
 	UPROPERTY(Transient)
 	float AccumulatedTurns = 0.f;
-
-	uint8 SavedCollisionEnabled = 0;
-	bool bSavedAutoWeld = false;
-	bool bHasSavedIsolation = false;
-	/** Frozen at Begin; first Update seeds the live pointer on the plane perpendicular to Axis. */
-	FVector FrozenAxisWorld = FVector::ZeroVector;
-	FVector AxisOrigin = FVector::ZeroVector;
-	FVector PlaneBasisU = FVector::ZeroVector;
-	FVector PlaneBasisV = FVector::ZeroVector;
-	FVector PreviousPlaneVector = FVector::ZeroVector;
-	bool bAwaitingPolarSeed = false;
 
 	UPROPERTY(Transient)
 	bool bReleased = false;
@@ -380,6 +419,8 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<UPrimitiveComponent> ActiveTarget;
+
+	FDrivenRestStore RestStore;
 
 	/** Rest pose for this primitive; limits and apply are relative to this, not to mouse-down. */
 	UPROPERTY(Transient)

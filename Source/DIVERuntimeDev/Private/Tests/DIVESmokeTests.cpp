@@ -4,6 +4,7 @@
 
 #include "Actions/DIVEBuiltInActions.h"
 #include "DIVEActionBinding.h"
+#include "DIVEActionCatalogAsset.h"
 #include "DIVEConvention.h"
 #include "DIVEDeviceAction.h"
 #include "DIVEDriveMapping.h"
@@ -676,6 +677,304 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEActionsPrimaryCanExecuteFallbackSmokeTest,
+	"DIVE.Actions.PrimaryCanExecuteFallback",
+	SmokeUnitTestFlags)
+
+bool FDIVEActionsPrimaryCanExecuteFallbackSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped primary CanExecute fallback."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Host = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Host for primary fallback"), Host);
+	if (!Host)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Host,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	TestNotNull(TEXT("Inspectable for primary fallback"), Inspectable);
+	if (!Inspectable)
+	{
+		Host->Destroy();
+		return false;
+	}
+
+	Host->AddInstanceComponent(Inspectable);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+
+	USphereComponent* Switch = MakeSphereOnHost(Host, TEXT("Switch1"), 12.f);
+	TestNotNull(TEXT("Switch primitive"), Switch);
+	if (!Switch)
+	{
+		Host->Destroy();
+		return false;
+	}
+
+	Switch->ComponentTags.Add(TEXT("DIVE.Switch"));
+
+	UDIVENotifyAction* BlockedNotify = NewObject<UDIVENotifyAction>(Inspectable, TEXT("BlockedNotify"));
+	UDIVETestNeverCondition* Never = NewObject<UDIVETestNeverCondition>(BlockedNotify, TEXT("Never"));
+	UDIVEMomentaryPressAction* TagPress = NewObject<UDIVEMomentaryPressAction>(Inspectable, TEXT("TagPress"));
+	TestNotNull(TEXT("Blocked Notify"), BlockedNotify);
+	TestNotNull(TEXT("Never condition"), Never);
+	TestNotNull(TEXT("Tag Press"), TagPress);
+	if (!BlockedNotify || !Never || !TagPress)
+	{
+		Host->Destroy();
+		return false;
+	}
+
+	BlockedNotify->Condition = Never;
+
+	FDIVEActionBinding NameBinding;
+	NameBinding.BindingId = TEXT("NameBlocked");
+	NameBinding.Targets.MatchMode = EDIVETargetMatchMode::ComponentName;
+	NameBinding.Targets.MatchValues = { TEXT("Switch1") };
+	NameBinding.SectionId = DIVE::kSectionStandard;
+	NameBinding.PrimaryActionIndex = 0;
+	NameBinding.Actions.Add(BlockedNotify);
+
+	FDIVEActionBinding TagBinding;
+	TagBinding.BindingId = TEXT("TagPress");
+	TagBinding.Targets.MatchMode = EDIVETargetMatchMode::ComponentTag;
+	TagBinding.Targets.MatchValues = { TEXT("DIVE.Switch") };
+	TagBinding.SectionId = DIVE::kSectionStandard;
+	TagBinding.Actions.Add(TagPress);
+
+	UDIVENotifyAction* SoleInstant = NewObject<UDIVENotifyAction>(Inspectable, TEXT("SoleInstant"));
+	FDIVEActionBinding SoleInstantBinding;
+	SoleInstantBinding.BindingId = TEXT("SoleInstant");
+	SoleInstantBinding.Targets.MatchMode = EDIVETargetMatchMode::ComponentTag;
+	SoleInstantBinding.Targets.MatchValues = { TEXT("DIVE.Switch") };
+	SoleInstantBinding.SectionId = DIVE::kSectionStandard;
+	SoleInstantBinding.Actions.Add(SoleInstant);
+
+	Inspectable->Bindings.Add(NameBinding);
+	Inspectable->Bindings.Add(TagBinding);
+	Inspectable->Bindings.Add(SoleInstantBinding);
+
+	const FDIVEFocusTarget Pick = FDIVEFocusTarget::FromPrimitive(Switch, NAME_None);
+	UDIVEDeviceAction* Resolved = nullptr;
+	FName TargetKey = NAME_None;
+	FName BindingId = NAME_None;
+	TestTrue(
+		TEXT("Primary resolve succeeds when the more specific binding cannot execute"),
+		Inspectable->TryResolvePrimaryAction(Pick, Resolved, TargetKey, BindingId));
+	TestTrue(TEXT("LMB falls back to Tag Press"), Resolved == TagPress);
+	TestEqual(TEXT("Fallback BindingId is TagPress"), BindingId, FName(TEXT("TagPress")));
+
+#if WITH_EDITOR
+	FDataValidationContext Authoring;
+	Inspectable->AppendDeviceAuthoringValidation(Authoring);
+	bool bWarnedSoleInstant = false;
+	for (const FDataValidationContext::FIssue& Issue : Authoring.GetIssues())
+	{
+		if (Issue.Message.ToString().Contains(TEXT("single instant action")))
+		{
+			bWarnedSoleInstant = true;
+			break;
+		}
+	}
+	TestTrue(TEXT("Scan warns that a sole Instant is not implicit LMB"), bWarnedSoleInstant);
+#endif
+
+	Host->Destroy();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEActionsCatalogInstancesSmokeTest,
+	"DIVE.Actions.CatalogInstances",
+	SmokeUnitTestFlags)
+
+bool FDIVEActionsCatalogInstancesSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped catalog instance copies."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* HostA = SpawnSmokeHost(World);
+	ADIVETestPhysicalDrivePawn* HostB = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Host A"), HostA);
+	TestNotNull(TEXT("Host B"), HostB);
+	if (!HostA || !HostB)
+	{
+		if (HostA)
+		{
+			HostA->Destroy();
+		}
+		if (HostB)
+		{
+			HostB->Destroy();
+		}
+		return false;
+	}
+
+	UDIVEActionCatalogAsset* Catalog = NewObject<UDIVEActionCatalogAsset>(
+		GetTransientPackage(),
+		UDIVEActionCatalogAsset::StaticClass(),
+		TEXT("DIVECatalogTemplate"));
+	UDIVERotaryDriveAction* TemplateRotary = NewObject<UDIVERotaryDriveAction>(Catalog, TEXT("CatalogRotary"));
+	TestNotNull(TEXT("Catalog asset"), Catalog);
+	TestNotNull(TEXT("Catalog rotary template"), TemplateRotary);
+	if (!Catalog || !TemplateRotary)
+	{
+		HostA->Destroy();
+		HostB->Destroy();
+		return false;
+	}
+
+	TemplateRotary->bLimitAngle = false;
+	FDIVEActionBinding CatalogBinding;
+	CatalogBinding.BindingId = TEXT("CatalogRotary");
+	CatalogBinding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
+	CatalogBinding.SectionId = DIVE::kSectionStandard;
+	CatalogBinding.Actions.Add(TemplateRotary);
+	Catalog->Bindings.Add(CatalogBinding);
+
+	auto MakeInspectable = [](ADIVETestPhysicalDrivePawn* Host, UDIVEActionCatalogAsset* CatalogAsset, const TCHAR* Name) -> UDIVEInspectableComponent*
+	{
+		UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+			Host,
+			UDIVEInspectableComponent::StaticClass(),
+			Name);
+		if (!Inspectable)
+		{
+			return nullptr;
+		}
+		Inspectable->ActionCatalog = CatalogAsset;
+		Host->AddInstanceComponent(Inspectable);
+		if (!Inspectable->IsRegistered())
+		{
+			Inspectable->RegisterComponent();
+		}
+		return Inspectable;
+	};
+
+	UDIVEInspectableComponent* InspectableA = MakeInspectable(HostA, Catalog, TEXT("DIVEInspectableA"));
+	UDIVEInspectableComponent* InspectableB = MakeInspectable(HostB, Catalog, TEXT("DIVEInspectableB"));
+	TestNotNull(TEXT("Inspectable A"), InspectableA);
+	TestNotNull(TEXT("Inspectable B"), InspectableB);
+	if (!InspectableA || !InspectableB)
+	{
+		HostA->Destroy();
+		HostB->Destroy();
+		return false;
+	}
+
+	USphereComponent* SphereA = MakeSphereOnHost(HostA, TEXT("KnobA"), 8.f);
+	USphereComponent* SphereB = MakeSphereOnHost(HostB, TEXT("KnobB"), 8.f);
+	TestNotNull(TEXT("Sphere A"), SphereA);
+	TestNotNull(TEXT("Sphere B"), SphereB);
+	if (!SphereA || !SphereB)
+	{
+		HostA->Destroy();
+		HostB->Destroy();
+		return false;
+	}
+
+	UDIVEDeviceAction* CopyA = InspectableA->FindActionInstance(
+		UDIVERotaryDriveAction::StaticClass(), TEXT("CatalogRotary"));
+	UDIVEDeviceAction* CopyB = InspectableB->FindActionInstance(
+		UDIVERotaryDriveAction::StaticClass(), TEXT("CatalogRotary"));
+	TestNotNull(TEXT("Inspectable A has a catalog copy"), CopyA);
+	TestNotNull(TEXT("Inspectable B has a catalog copy"), CopyB);
+	TestTrue(TEXT("Copy A is not the catalog template"), CopyA != TemplateRotary);
+	TestTrue(TEXT("Copy B is not the catalog template"), CopyB != TemplateRotary);
+	TestTrue(TEXT("Copy A is owned by Inspectable A"), CopyA && CopyA->GetOuter() == InspectableA);
+	TestTrue(TEXT("Copy B is owned by Inspectable B"), CopyB && CopyB->GetOuter() == InspectableB);
+	TestTrue(TEXT("Two Inspectables do not share one action instance"), CopyA != CopyB);
+	TestFalse(TEXT("Catalog copy is not RF_Public"), CopyA && CopyA->HasAnyFlags(RF_Public));
+
+	const FDIVEFocusTarget PickA = FDIVEFocusTarget::FromPrimitive(SphereA, NAME_None);
+	const FDIVEFocusTarget PickB = FDIVEFocusTarget::FromPrimitive(SphereB, NAME_None);
+	const FDIVEActionContext ContextA = InspectableA->MakeActionContext(
+		PickA, NAME_None, FVector2D::ZeroVector, FHitResult(), TEXT("CatalogRotary"),
+		true, FVector(0.f, 0.f, 200.f), FRotator(-90.f, 0.f, 0.f));
+	const FDIVEActionContext ContextB = InspectableB->MakeActionContext(
+		PickB, NAME_None, FVector2D::ZeroVector, FHitResult(), TEXT("CatalogRotary"),
+		true, FVector(0.f, 0.f, 200.f), FRotator(-90.f, 0.f, 0.f));
+
+	TestTrue(TEXT("Catalog copy A Begin"), InspectableA->ExecuteAction(CopyA, ContextA));
+	TestTrue(TEXT("Catalog copy B Begin while A is live"), InspectableB->ExecuteAction(CopyB, ContextB));
+	TestTrue(TEXT("Inspectable A slot is active"), InspectableA->HasActiveInteraction());
+	TestTrue(TEXT("Inspectable B slot is active"), InspectableB->HasActiveInteraction());
+	TestFalse(TEXT("Catalog template itself is not the live interaction"), TemplateRotary->IsInteractionActive());
+
+	InspectableA->EndActiveInteraction(false);
+	InspectableB->EndActiveInteraction(false);
+
+#if WITH_EDITOR
+	UDIVETestActionValueSink* ExecSink = NewObject<UDIVETestActionValueSink>(GetTransientPackage());
+	TestNotNull(TEXT("Executed sink"), ExecSink);
+	if (ExecSink)
+	{
+		TemplateRotary->OnExecuted.AddDynamic(ExecSink, &UDIVETestActionValueSink::HandleExecuted);
+		FDataValidationContext Authoring;
+		InspectableA->AppendDeviceAuthoringValidation(Authoring);
+		bool bWarnedTemplateDelegate = false;
+		for (const FDataValidationContext::FIssue& Issue : Authoring.GetIssues())
+		{
+			if (Issue.Message.ToString().Contains(TEXT("OnExecuted or OnValueChanged")))
+			{
+				bWarnedTemplateDelegate = true;
+				break;
+			}
+		}
+		TestTrue(TEXT("Scan warns when the catalog template has OnExecuted bound"), bWarnedTemplateDelegate);
+		TemplateRotary->OnExecuted.RemoveDynamic(ExecSink, &UDIVETestActionValueSink::HandleExecuted);
+	}
+#endif
+
+	HostA->Destroy();
+	HostB->Destroy();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FDIVECollectPrimitivesMatchingQuerySmokeTest,
 	"DIVE.Actions.CollectMatchingPrimitives",
 	SmokeUnitTestFlags)
@@ -827,7 +1126,7 @@ bool FDIVEActionWorldContextSmokeTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 
-	// Mimic a catalog-hosted action: Outer is a package, not a world-bound object.
+	// Mimic a catalog template: Outer is a package, not a world-bound object.
 	UDIVEFocusAction* Action = NewObject<UDIVEFocusAction>(GetTransientPackage());
 	TestNotNull(TEXT("Action instance"), Action);
 	if (!Action)
@@ -1932,6 +2231,35 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		Rotary->bUseDomainReadout = false;
 		Rotary->bLimitAngle = false;
 		Sphere->SetRelativeTransform(FTransform::Identity);
+
+		UDIVERotaryDriveAction* RestA = NewObject<UDIVERotaryDriveAction>();
+		UDIVERotaryDriveAction* RestB = NewObject<UDIVERotaryDriveAction>();
+		TestNotNull(TEXT("Independent rest rotary A"), RestA);
+		TestNotNull(TEXT("Independent rest rotary B"), RestB);
+		if (RestA && RestB)
+		{
+			RestA->DegreesPerPixel = 1.f;
+			RestB->DegreesPerPixel = 1.f;
+			RestA->bLimitAngle = false;
+			RestB->bLimitAngle = false;
+			Context.PickHit.ImpactPoint = FVector(10.f, 0.f, 0.f);
+			RestA->MarkInteractionActive(Context);
+			TestTrue(TEXT("Rest A Begin"), RestA->BeginInteraction(Context));
+			RestA->UpdateInteraction(MakeZUpPolarUpdate(0.f));
+			RestA->UpdateInteraction(MakeZUpPolarUpdate(90.f));
+			RestA->EndInteraction(true);
+			TestTrue(
+				TEXT("Rest A committed ~90 yaw"),
+				FMath::IsNearlyEqual(Sphere->GetRelativeRotation().Yaw, 90.f, 0.05f));
+
+			RestB->MarkInteractionActive(Context);
+			TestTrue(TEXT("Rest B Begin on the same primitive"), RestB->BeginInteraction(Context));
+			TestTrue(
+				TEXT("Rest B captures its own rest at the current pose, not A's committed unwrap"),
+				FMath::IsNearlyEqual(RestB->MakeInteractionValue().Absolute, 0.f, 0.05f));
+			RestB->EndInteraction(false);
+			Sphere->SetRelativeTransform(FTransform::Identity);
+		}
 	}
 
 	UDIVEThreadedDriveAction* Threaded = NewObject<UDIVEThreadedDriveAction>();
@@ -1967,6 +2295,18 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Threaded cancel restores start transform"),
 			Sphere->GetRelativeTransform().Equals(FTransform::Identity, 0.05f));
+
+		Threaded->bRestoreOnCancel = false;
+		Threaded->MarkInteractionActive(Context);
+		TestTrue(TEXT("Threaded Begin with restore-on-cancel off"), Threaded->BeginInteraction(Context));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(0.f));
+		Threaded->UpdateInteraction(MakeXAxisPolarUpdate(180.f));
+		Threaded->EndInteraction(false);
+		TestTrue(
+			TEXT("Threaded cancel keeps travel when bRestoreOnCancel is false"),
+			FMath::IsNearlyEqual(Sphere->GetRelativeLocation().X, 1.f, 0.05f));
+		Threaded->bRestoreOnCancel = true;
+		Sphere->SetRelativeTransform(FTransform::Identity);
 
 		Sphere->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
 		const FVector ScrewAxisWorld = Sphere->GetComponentTransform().TransformVectorNoScale(FVector::ForwardVector);
@@ -2094,6 +2434,32 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(
 			TEXT("Linear cancel restores start transform"),
 			Sphere->GetRelativeTransform().Equals(FTransform::Identity, 0.05f));
+
+		Linear->bLimitTravel = false;
+		Linear->MarkInteractionActive(Context);
+		TestTrue(TEXT("Unlimited Linear Begin"), Linear->BeginInteraction(Context));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(0.f));
+		Linear->UpdateInteraction(MakeXAxisLinearUpdate(5.f));
+		{
+			const FDIVEInteractionValue Unlimited = Linear->MakeInteractionValue();
+			TestEqual(
+				TEXT("Unlimited linear Unit is Centimeters"),
+				Unlimited.Unit,
+				EDIVEInteractionValueUnit::Centimeters);
+			TestTrue(
+				TEXT("Unlimited linear Absolute is travel cm, not a 0% Normalized position"),
+				FMath::IsNearlyEqual(Unlimited.Absolute, 5.f, 0.05f));
+			TestTrue(
+				TEXT("Unlimited linear AbsoluteMax is 0 (unbounded)"),
+				FMath::IsNearlyEqual(Unlimited.AbsoluteMax, 0.f, 0.05f));
+			const FString UnlimitedHud =
+				DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Slide")), Unlimited).ToString();
+			TestTrue(TEXT("Unlimited linear HUD prints centimetres"), UnlimitedHud.Contains(TEXT("cm")));
+			TestTrue(TEXT("Unlimited linear HUD prints Absolute travel"), UnlimitedHud.Contains(TEXT("5")));
+		}
+		Linear->EndInteraction(false);
+		Linear->bLimitTravel = true;
+		Sphere->SetRelativeTransform(FTransform::Identity);
 
 		Linear->DetentStepCm = 1.f;
 		Linear->MarkInteractionActive(Context);
@@ -2483,19 +2849,19 @@ bool FDIVEPhysicalGrabOnlySmokeTest::RunTest(const FString& Parameters)
 
 	// Physical must never start a continuous/proxy gesture. Pawn GRIP may still succeed when a
 	// physical-drive backend exists — that is grab, not device proxy.
-	const bool bBegan = Subsystem->TryBeginProxyDriveAtScreenPosition(FVector2D(100.f, 100.f), PC);
+	const bool bBegan = Subsystem->TryBeginPawnGrabAtScreenPosition(FVector2D(100.f, 100.f), PC);
 	if (bBegan)
 	{
 		TestTrue(
 			TEXT("Physical begin that succeeds is pawn GRIP (not continuous/proxy)"),
 			Subsystem->IsPawnPhysicalDriveActive());
-		TestTrue(TEXT("Pawn GRIP reports proxy-driving flag"), Subsystem->IsProxyDriving());
-		Subsystem->EndProxyDrive(true);
-		TestFalse(TEXT("Drive cleared after End"), Subsystem->IsProxyDriving());
+		TestTrue(TEXT("Pawn GRIP reports session gesture active"), Subsystem->IsSessionGestureActive());
+		Subsystem->EndSessionGesture(true);
+		TestFalse(TEXT("Drive cleared after End"), Subsystem->IsSessionGestureActive());
 	}
 	else
 	{
-		TestFalse(TEXT("No drive left active after failed Physical begin"), Subsystem->IsProxyDriving());
+		TestFalse(TEXT("No drive left active after failed Physical begin"), Subsystem->IsSessionGestureActive());
 		AddInfo(TEXT("Physical begin failed (no pick and/or no pawn drive) — proxy auto-start still ruled out."));
 	}
 

@@ -191,7 +191,7 @@ bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
 
 	const UDIVESessionSubsystem* DiveSubsystem = World->GetSubsystem<UDIVESessionSubsystem>();
 	// Suppress orbit zoom while any session gesture is live (Interact hold or Physical GRIP).
-	return DiveSubsystem && DiveSubsystem->IsProxyDriving();
+	return DiveSubsystem && DiveSubsystem->IsSessionGestureActive();
 }
 
 void UDIVELegacyKbmInputComponent::ZoomIn()

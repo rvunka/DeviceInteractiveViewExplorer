@@ -139,7 +139,7 @@ void UDIVESessionSubsystem::EndSession(EDIVESessionEndReason Reason)
 
 	CloseContextMenu();
 	FDIVESessionPickOps::ClearPickHover(*this);
-	FDIVESessionPhysicalDriveOps::ClearProxyDrive(*this);
+	FDIVESessionPhysicalDriveOps::EndSessionGesture(*this, false);
 	FDIVESessionIsolationOps::ClearIsolation(*this);
 	FocusStack.Reset();
 	InteractionMode = EDIVESessionInteractionMode::Interact;
@@ -254,7 +254,7 @@ void UDIVESessionSubsystem::SetInteractionMode(EDIVESessionInteractionMode NewMo
 
 	if (NewMode != EDIVESessionInteractionMode::Physical)
 	{
-		FDIVESessionPhysicalDriveOps::ClearProxyDrive(*this);
+		FDIVESessionPhysicalDriveOps::EndSessionGesture(*this, false);
 	}
 
 	InteractionMode = NewMode;
@@ -537,16 +537,28 @@ void UDIVESessionSubsystem::ClearIsolation()
 	FDIVESessionIsolationOps::ClearIsolation(*this);
 }
 
+bool UDIVESessionSubsystem::IsSessionGestureActive() const
+{
+	return ActivePhysicalDriveKind != EDIVEActivePhysicalDriveKind::None;
+}
+
 bool UDIVESessionSubsystem::IsPawnPhysicalDriveActive() const
 {
-	return bProxyDriving && ActivePhysicalDriveKind == EDIVEActivePhysicalDriveKind::PawnDrive;
+	return ActivePhysicalDriveKind == EDIVEActivePhysicalDriveKind::PawnDrive;
+}
+
+bool UDIVESessionSubsystem::TryBeginPawnGrabAtScreenPosition(
+	const FVector2D& ScreenPosition,
+	APlayerController* PlayerController)
+{
+	return FDIVESessionPhysicalDriveOps::TryBeginPawnGrabAtScreenPosition(*this, ScreenPosition, PlayerController);
 }
 
 bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
 	const FVector2D& ScreenPosition,
 	APlayerController* PlayerController)
 {
-	return FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(*this, ScreenPosition, PlayerController);
+	return TryBeginPawnGrabAtScreenPosition(ScreenPosition, PlayerController);
 }
 
 void UDIVESessionSubsystem::UpdateActiveInteraction(const FDIVEInteractionUpdate& Update)
@@ -554,16 +566,21 @@ void UDIVESessionSubsystem::UpdateActiveInteraction(const FDIVEInteractionUpdate
 	FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(*this, Update);
 }
 
+void UDIVESessionSubsystem::EndSessionGesture(bool bCommit)
+{
+	FDIVESessionPhysicalDriveOps::EndSessionGesture(*this, bCommit);
+}
+
 void UDIVESessionSubsystem::EndProxyDrive(bool bCommit)
 {
-	FDIVESessionPhysicalDriveOps::EndProxyDrive(*this, bCommit);
+	EndSessionGesture(bCommit);
 }
 
 bool UDIVESessionSubsystem::TryBeginContinuousAction(
 	UDIVEContinuousDeviceAction* Action,
 	const FDIVEActionContext& Context)
 {
-	if (!IsSessionActive() || bProxyDriving || !Action)
+	if (!IsSessionActive() || IsSessionGestureActive() || !Action)
 	{
 		return false;
 	}
@@ -590,8 +607,17 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 
 	ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::ContinuousAction;
 	ActivePawnPhysicalDrive.Reset();
-	bProxyDriving = true;
 	return true;
+}
+
+void UDIVESessionSubsystem::EndSessionGestureIfAction(const UDIVEDeviceAction* Action, const bool bCommit)
+{
+	if (!Action || ContinuousSlot.ActiveAction.Get() != Action)
+	{
+		return;
+	}
+
+	EndSessionGesture(bCommit);
 }
 
 void UDIVESessionSubsystem::HandleContinuousActionValueChanged(

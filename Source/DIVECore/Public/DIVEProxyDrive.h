@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DIVEDeviceAction.h"
 #include "DIVEProxyDriveTypes.h"
 #include "UObject/Interface.h"
 
@@ -25,7 +26,7 @@ class UDIVEProxyDrive : public UInterface
  */
 class DIVECORE_API IDIVEProxyDrive
 {
-	GENERATED_IINTERFACE_BODY()
+	GENERATED_BODY()
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|ProxyDrive")
@@ -36,6 +37,20 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void ApplyProxyDriveDelta(FVector2D ScreenDelta);
+
+	/**
+	 * Per-frame Interact update (cursor, ray, view). Default forwards ScreenDelta to ApplyProxyDriveDelta.
+	 * Override when the device needs PickRayDir / ViewLocation (zero ScreenDelta must not drop the frame).
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|ProxyDrive")
+	void ApplyProxyDriveUpdate(const FDIVEInteractionUpdate& Update);
+	virtual void ApplyProxyDriveUpdate_Implementation(const FDIVEInteractionUpdate& Update)
+	{
+		if (UObject* Self = Cast<UObject>(this))
+		{
+			Execute_ApplyProxyDriveDelta(Self, Update.ScreenDelta);
+		}
+	}
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void EndProxyDrive(bool bCommit);

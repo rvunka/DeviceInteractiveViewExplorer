@@ -123,7 +123,7 @@ void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	if (bOrbitKeyHeld)
 	{
-		if (Subsystem && Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive())
+		if (Subsystem && Subsystem->IsSessionGestureActive() && !Subsystem->IsPawnPhysicalDriveActive())
 		{
 			// Same mouse delta drives the gesture; orbiting would steal/double-apply it and desync mapping.
 			bHasLastOrbitMousePosition = false;
@@ -134,7 +134,7 @@ void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		}
 	}
 
-	if (Subsystem && Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive() && !ShouldSuppressSessionInput())
+	if (Subsystem && Subsystem->IsSessionGestureActive() && !Subsystem->IsPawnPhysicalDriveActive() && !ShouldSuppressSessionInput())
 	{
 		ApplyPrimaryActionDragFromMouse();
 	}
@@ -143,7 +143,7 @@ void UDIVEPlayerComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		&& Subsystem->IsSessionActive()
 		&& Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Interact
 		&& !ShouldSuppressSessionInput()
-		&& !Subsystem->IsProxyDriving())
+		&& !Subsystem->IsSessionGestureActive())
 	{
 		UDIVEInspectableComponent* Inspectable = Subsystem->GetActiveInspectable();
 		if (!Inspectable || !Inspectable->HasPickHoverOverlay())
@@ -341,7 +341,7 @@ bool UDIVEPlayerComponent::IsLocallyControlledOwner() const
 void UDIVEPlayerComponent::ApplyPrimaryActionDragFromMouse()
 {
 	UDIVESessionSubsystem* Subsystem = GetSessionSubsystem();
-	if (!Subsystem || !Subsystem->IsProxyDriving())
+	if (!Subsystem || !Subsystem->IsSessionGestureActive())
 	{
 		return;
 	}
@@ -453,10 +453,10 @@ void UDIVEPlayerComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosi
 	PrimaryActionLastPosition = ScreenPosition;
 
 	// Continuous / proxy already active (e.g. started from context menu): click commits/ends.
-	if (Subsystem->IsProxyDriving())
+	if (Subsystem->IsSessionGestureActive())
 	{
 		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
-		Subsystem->EndProxyDrive(true);
+		Subsystem->EndSessionGesture(true);
 		if (bSessionPresentationActive)
 		{
 			ApplySessionInputMode(PlayerController);
@@ -466,7 +466,7 @@ void UDIVEPlayerComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosi
 
 	if (Subsystem->GetInteractionMode() == EDIVESessionInteractionMode::Physical)
 	{
-		if (Subsystem->TryBeginProxyDriveAtScreenPosition(ScreenPosition, PlayerController))
+		if (Subsystem->TryBeginPawnGrabAtScreenPosition(ScreenPosition, PlayerController))
 		{
 			if (UGameViewportClient* ViewportClient = GetWorld() ? GetWorld()->GetGameViewport() : nullptr)
 			{
@@ -497,14 +497,14 @@ void UDIVEPlayerComponent::RoutePrimaryActionReleased()
 			return;
 		}
 
-		const bool bWasProxyDriving = Subsystem->IsProxyDriving();
-		if (bWasProxyDriving)
+		const bool bWasSessionGesture = Subsystem->IsSessionGestureActive();
+		if (bWasSessionGesture)
 		{
 			Subsystem->HandleActivePawnPhysicalManualRotateReleased();
-			Subsystem->EndProxyDrive(true);
+			Subsystem->EndSessionGesture(true);
 		}
 
-		if (bWasProxyDriving && bSessionPresentationActive)
+		if (bWasSessionGesture && bSessionPresentationActive)
 		{
 			if (APlayerController* PlayerController = GetLocalPlayerController())
 			{
@@ -756,7 +756,7 @@ void UDIVEPlayerComponent::HandleOrbitDelta(FVector2D Delta)
 
 	if (UDIVESessionSubsystem* Subsystem = GetSessionSubsystem())
 	{
-		if (Subsystem->IsProxyDriving() && !Subsystem->IsPawnPhysicalDriveActive())
+		if (Subsystem->IsSessionGestureActive() && !Subsystem->IsPawnPhysicalDriveActive())
 		{
 			return;
 		}
@@ -783,7 +783,7 @@ void UDIVEPlayerComponent::HandleZoomIn()
 			return;
 		}
 
-		if (Subsystem->IsSessionActive() && !Subsystem->IsProxyDriving())
+		if (Subsystem->IsSessionActive() && !Subsystem->IsSessionGestureActive())
 		{
 			Subsystem->ApplyZoomInput(1.f);
 		}
@@ -805,7 +805,7 @@ void UDIVEPlayerComponent::HandleZoomOut()
 			return;
 		}
 
-		if (Subsystem->IsSessionActive() && !Subsystem->IsProxyDriving())
+		if (Subsystem->IsSessionActive() && !Subsystem->IsSessionGestureActive())
 		{
 			Subsystem->ApplyZoomInput(-1.f);
 		}
@@ -1120,10 +1120,10 @@ void UDIVEPlayerComponent::HandleContextMenuRequested()
 	bOrbitKeyHeld = false;
 	bHasLastOrbitMousePosition = false;
 
-	if (Subsystem->IsProxyDriving())
+	if (Subsystem->IsSessionGestureActive())
 	{
 		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
-		Subsystem->EndProxyDrive(false);
+		Subsystem->EndSessionGesture(false);
 	}
 }
 

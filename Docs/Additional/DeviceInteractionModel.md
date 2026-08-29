@@ -80,9 +80,9 @@ Standing at the panel **does not** call `RequestSession()` and does not steal th
 
 Recommended **control wiring**:
 
-**Tier 1 (Interact mode, in-plugin):** bind a primitive (tag / name / PartId) to `UDIVERotaryDriveAction`, `UDIVEThreadedDriveAction`, or `UDIVELinearDriveAction`. The action is a stateless mapper; the mesh transform is the state. Catalog instances are shared — do not store per-target runtime state on the action beyond the active gesture. Min/Max angle and travel are from the part's rest pose (first grab, keyed by primitive + action class), not per-drag deltas.
+**Tier 1 (Interact mode, in-plugin):** bind a primitive (tag / name / PartId) to `UDIVERotaryDriveAction`, `UDIVEThreadedDriveAction`, or `UDIVELinearDriveAction`. The mesh transform is the live pose. Each Inspectable holds a catalog **copy**; rest pose / committed travel lives on that copy keyed by primitive (`FDrivenRestStore`), not on the asset template. Min/Max angle and travel are from the part's rest pose (first grab), not per-drag deltas.
 
-Optional **domain readout** (`bUseDomainReadout` + `DomainMin`/`DomainMax` + `ReadoutSuffix` on Rotary/Linear) is a **HUD / Value Event mapping** of `Normalized` onto author units (amps, volts, …) — not a second live control value. Device sim / MESS still owns domain truth; write it from **DIVE Action Value Event** on the device graph (fan-out from the active Inspectable). Never bind catalog `Action->OnValueChanged` from BeginPlay — the catalog instance is shared across devices.
+Optional **domain readout** (`bUseDomainReadout` + `DomainMin`/`DomainMax` + `ReadoutSuffix` on Rotary/Linear) is a **HUD / Value Event mapping** of `Normalized` onto author units (amps, volts, …) — not a second live control value. Device sim / MESS still owns domain truth; write it from **DIVE Action Value Event** on the device graph (fan-out from the active Inspectable). Never bind catalog-asset `Action->OnValueChanged` from BeginPlay — the asset is a template; runtime executes per-Inspectable copies.
 
 **Tier 2 (host implements, both verbs):**
 
@@ -94,12 +94,13 @@ IDIVEProxyDrive (DIVECore) — contract-goal for monitor interact (0 in-plugin i
   CanProxyDrive(FDIVEProxyDriveContext) → bool
   BeginProxyDrive(FDIVEProxyDriveContext)
   ApplyProxyDriveDelta(ScreenDelta)
+  ApplyProxyDriveUpdate(FDIVEInteractionUpdate)  // default → ApplyProxyDriveDelta(ScreenDelta)
   EndProxyDrive(bCommit)
   GetProxyDriveNormalizedValue(OutNormalized) → bool
 ```
 
 - **Interact (tier 1):** Interact-mode primary / menu hold-drag on the built-in drive actions.
-- **Interact (tier 2):** session pick → `BeginProxyDrive` / `ApplyProxyDriveDelta`. Standing-VR: host action host on the same Catalog / Bindings (no camera).
+- **Interact (tier 2):** session pick → `BeginProxyDrive` / `ApplyProxyDriveUpdate`. Standing-VR: host action host on the same Catalog / Bindings (no camera).
 - **Grab:** GRIP (bridge cursor-pull / VR grip button) on free bodies only.
 - **Sounds / live domain:** device component when value/angle actually changes (tier 2); or tier 1 via `NotifyInteractionValue` → session HUD + active Inspectable `OnActionValueChanged` → K2 **DIVE Action Value Event**. One-shot success stays on K2 **DIVE Action Event** / `OnActionExecuted`.
 
@@ -179,7 +180,7 @@ Flow:
 2. **Default entries**: component **Bindings** (Focus, Isolate, Simulate Physics, Delete Mesh unless removed; hidden in Shipping).
 3. **Device extensions**: **Action Catalog** (and/or extra Bindings) — `UDIVEDeviceAction` instances.
 4. Custom row click → **`UDIVEDeviceAction::Execute`** / continuous **`BeginInteraction`**. See **`QUICKSTART.md`** §1.
-5. Display state (enabled / checked / visible / label) comes from **`GetDisplayState`** on the action — no `Is_*` reflection. Default: `CanExecute` false → gray; **Condition** false → hidden **and** `CanExecute` false (primary blocked). Predicate reads device state, not the shared catalog instance. Cover-after-bolts: **`QUICKSTART.md`** §1.
+5. Display state (enabled / checked / visible / label) comes from **`GetDisplayState`** on the action — no `Is_*` reflection. Default: `CanExecute` false → gray; **Condition** false → hidden **and** `CanExecute` false (primary blocked). Predicate reads device state, not the catalog **asset template**. Cover-after-bolts: **`QUICKSTART.md`** §1.
 6. Section **Header** (optional) is drawn above the separator between menu sections.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**. Standing-VR uses a **separate** world-space menu (design doc §10), not this Slate widget and not ACTS.
@@ -253,6 +254,7 @@ IDIVEProxyDrive (DIVECore)
   CanProxyDrive(FDIVEProxyDriveContext) → bool
   BeginProxyDrive(FDIVEProxyDriveContext)   // Context includes ViewLocation/Rotation + PickRayDir
   ApplyProxyDriveDelta(ScreenDelta)
+  ApplyProxyDriveUpdate(FDIVEInteractionUpdate)  // default → ApplyProxyDriveDelta(ScreenDelta)
   EndProxyDrive(bCommit)
   GetProxyDriveNormalizedValue(OutNormalized) → bool
 ```
