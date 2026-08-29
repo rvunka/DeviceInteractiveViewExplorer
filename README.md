@@ -14,7 +14,7 @@ DIVE provides:
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
 - **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** — monitor adapter for the interact verb (tier 2; host implements; zero in-plugin backends)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (`FDIVECameraSettings` under DIVE | Camera)
-- Self-contained **DIVERuntime** (no ACTS / MESS); optional **GRIP** via sibling plugin **DIVEGRIPBridge** for Physical-mode pawn grab. DIVE `.uplugin` does **not** list GRIP — `DIVERuntimeDev` / the bridge detect it via UBT `ReadAvailablePlugins`. `DIVE.Dump*` implementation stays in `DIVEUncooked` and is linked from RuntimeDev only in **editor** targets.
+- Self-contained **DIVERuntime** (no ACTS / MESS); optional **GRIP** via sibling plugin **DIVEGRIPBridge** for Physical-mode pawn grab. DIVE `.uplugin` and `DIVERuntimeDev` do **not** list or link GRIP — the bridge detects it via UBT `ReadAvailablePlugins`. `DIVE.Dump*` implementation stays in `DIVEUncooked` and is linked from RuntimeDev only in **editor** targets.
 
 **Input:** `UDIVEPlayerComponent` on the **locally controlled pawn** — BlueprintCallable `Handle*` methods (target for Enhanced Input). Session chrome and context menu live on the same component. Legacy dev component forwards `BindKey` only.
 

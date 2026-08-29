@@ -64,13 +64,15 @@ Hover overlay still applies only to `UMeshComponent`.
 | **Action Catalog** | Data Asset for sections + bindings |
 | **Device Action** | BP parented to `DIVE Device Action` — override **Execute** |
 | **Continuous Device Action** | BP for hold/drag — override **Begin / Update / End Interaction** |
-| **Action Condition** | BP predicate — override **Evaluate** (optional menu visibility) |
+| **Action Condition** | BP predicate — override **Evaluate** (hide the row **and** fail `CanExecute`) |
 
-Then add an **instance** of your action BP inside a binding’s Actions array (Catalog or component Bindings). Shipped continuous mappers: **DIVE Rotary Drive Action** (knob), **DIVE Threaded Drive Action** (nut — detaches + Simulate Physics at `TurnsToRelease`), and **DIVE Linear Drive Action** (slider / rail — centimetres along Axis).
+Then add an **instance** of your action BP inside a binding’s Actions array (Catalog or component Bindings). Shipped continuous mappers: **DIVE Rotary Drive Action** (knob), **DIVE Threaded Drive Action** (nut — detaches + Simulate Physics at `TurnsToRelease`), **DIVE Linear Drive Action** (slider / rail — centimetres along Axis), and **DIVE Momentary Press Action** (hold / PTT — value `1` while held, `0` on release). Instant click / toggle is **not** Press: a **DIVE Device Action** BP (`Execute` flips device state; `GetDisplayState.bChecked` reads it). **DIVE Notify Action** only when you do not need a menu checkmark — Notify does not set `bChecked`.
 
-Default **`GetDisplayState`**: `CanExecute == false` → row **gray** (`bEnabled`); optional **Condition** false → row **hidden** (`bVisible`). Override `GetDisplayState` only when you need a checked mark or a custom label.
+Default **`GetDisplayState`**: `CanExecute == false` → row **gray** (`bEnabled`); optional **Condition** false → row **hidden** (`bVisible`) **and** `CanExecute` false (Interact primary / LMB is blocked too). Override `GetDisplayState` only when you need a checked mark or a custom label — call Super, or keep both gates.
 
 **Session** is a **World Subsystem** (`UDIVESessionSubsystem`). From Blueprints use **Get World Subsystem**, not Game Instance Subsystem. Catalog-hosted actions get a valid world via runtime `ExecutionWorld` injection — Blueprint world-context nodes work when the action runs.
+
+**Headless / standing-VR host (no camera):** `UDIVEInspectableComponent::ExecuteAction` / `UpdateActiveInteraction` / `EndActiveInteraction` run the same Catalog / Bindings without `RequestSession()`. Pass view/ray via `MakeActionContext(..., bOverrideView=true, ...)`. Menu query: `AppendConfiguredContextMenuEntries(Pick, Entries, World)` hides Focus/Isolate (`Presentation=Session`). Camera-session menu uses the default `Session` filter.
 
 On `UDIVEInspectableComponent`:
 
@@ -80,21 +82,28 @@ On `UDIVEInspectableComponent`:
 **Where to put logic (no BeginPlay dump):**
 
 1. **Default:** put the handler in the **action BP** (`Execute` / continuous overrides). Use `Context.DeviceHost` / `Context.Target` there. Call a Blueprint Interface or function on the device when you need domain side-effects.
-2. **Device-owned (no action logic):** in the binding’s Actions add **DIVE Notify Action**. Set **DisplayName** (menu label, default `Notify`) and optional **BindingId**. On the device Event Graph add **DIVE Action Event (DIVE Notify Action)**. Empty BindingId = any Notify slot; set BindingId to split two Notify rows. Use `Context.Target` when several parts share one binding (e.g. tagged lamps).
-3. **Optional Condition:** Content Browser → **DIVE → Action Condition** → `Evaluate` returns false to **hide** the menu row (example: “Remove Cover” only after bolts are gone). Assign the Condition instance on the action. Leave **None** if always visible.
-4. **Device Action Event (EI-like):** on the device Actor BP Event Graph, search **DIVE Action Event** or browse **DIVE → Events**. Pick the entry for your action class. Empty **BindingId** (Details) = any instance of that class; set BindingId to fire only for that catalog/component slot (two Unscrew bindings can have two event nodes). Fires when that action succeeds on this actor's Inspectable (instant `Execute` returned true, or continuous `Begin`). Pins: typed `Action` + `Context` (`Context.BindingId` is filled from the matched slot). Still prefer putting heavy logic in the action BP; use the event when the device graph must react.
-5. **Device Action Value Event (live drag):** same palette (**DIVE → Events**), same class + BindingId picker as Action Event — **not Rotary-only**. Any continuous class that calls `NotifyInteractionValue` / `NotifyValueChanged` (Rotate, Slide, Unscrew, continuous BP). Fires while the session reports live `FDIVEInteractionValue` on **this** actor's Inspectable (not other devices). Pins: typed `Action` + `Context` + `Value`. Use `Value.Absolute` for MESS / sound. **Do not** bind catalog `Action->OnValueChanged` from BeginPlay — catalog instances are shared across devices.
-6. **Device fan-out (optional):** Inspectable **On Action Executed** / **On Action Value Changed** (Details **+**) still broadcast — useful for logging/debug. Prefer the K2 Event nodes over Cast chains.
-7. **Avoid** wiring everything from device BeginPlay via `FindActionInstance` + per-action `OnExecuted` / `OnValueChanged` unless you intentionally listen to a shared C++/foreign action class.
+2. **Device-owned (no action logic):** in the binding’s Actions add **DIVE Notify Action**. Set **DisplayName** (menu label, default `Notify`) and optional **BindingId**. On the device Event Graph add **DIVE Action Event (DIVE Notify Action)**. Empty BindingId = any Notify slot; set BindingId to split two Notify rows. Use `Context.Target` when several parts share one binding (e.g. tagged lamps). Toggle / latching / N-position click is Instant, not Momentary Press: use a **DIVE Device Action** BP if the menu needs `bChecked` (override `GetDisplayState`, read the device). Notify + Action Event is enough when the device graph owns the flip and the row does not need a checkmark. Instant LMB needs `PrimaryActionIndex` (unlike a sole continuous action).
+3. **Momentary hold (PTT, spring):** bind **DIVE Momentary Press Action** as Interact primary (or as the binding’s only continuous action). Down → `Value.Normalized = 1`, release → `0`. Cursor drag is ignored. Device: **DIVE Action Value Event (DIVE Momentary Press Action)** — not catalog `OnValueChanged`. **DIVE Action Event** fires at **Begin** (finger down), not at release. From the context menu a continuous action latches until the next primary — prefer LMB / trigger hold for PTT; do not put Press in the menu unless latch-until-click is the UX you want. **Do not** use Linear/Rotary Drive as a button.
+4. **Optional Condition:** instanced on the action (`Condition`; **None** = always visible). Content Browser → **DIVE → Action Condition** → override **Evaluate(`Context`)**. Keep **Evaluate** pure (no flags, no Notify) — `GetDisplayState` may call it more than once. `false` omits the menu row and fails `CanExecute`, so the session will not Execute / Begin that action (menu click and Interact primary share `ExecuteResolvedAction`). It runs when the menu is **built** and again at Execute/Begin — after the last bolt pops, open the menu again or primary the cover. Read **device** state (`Context.DeviceHost` / `Context.Target`) — not fields on the catalog action instance (shared across devices). If you override `CanExecute` on the action, call Super so Condition still applies. Cover-after-bolts recipe below.
+5. **Device Action Event (EI-like):** on the device Actor BP Event Graph, search **DIVE Action Event** or browse **DIVE → Events**. Pick the entry for your action class. Empty **BindingId** (Details) = any instance of that class; set BindingId to fire only for that catalog/component slot (two Unscrew bindings can have two event nodes). Fires when that action succeeds on this actor's Inspectable (instant `Execute` returned true, or continuous **`Begin`** — start of the drag, **not** Threaded `TurnsToRelease`). Pins: typed `Action` + `Context` (`Context.BindingId` is filled from the matched slot). Still prefer putting heavy logic in the action BP; use the event when the device graph must react.
+6. **Device Action Value Event (live drag):** same palette (**DIVE → Events**), same class + BindingId picker as Action Event — **not Rotary-only**. Any continuous class that calls `NotifyInteractionValue` / `NotifyValueChanged` (Rotate, Slide, Unscrew, Momentary Press, continuous BP). Fires while the session reports live `FDIVEInteractionValue` on **this** actor's Inspectable (not other devices) — every drag tick, not a one-shot “complete”. Pins: typed `Action` + `Context` + `Value`. Use `Value.Absolute` for MESS / sound. Threaded: `Absolute` is turns, `AbsoluteMax` is `TurnsToRelease`; a domain flag is `Absolute >= AbsoluteMax` (same frame as detach). Momentary Press: `Normalized` is `1` (down) or `0` (up), edges only. **Do not** bind catalog `Action->OnValueChanged` from BeginPlay — catalog instances are shared across devices.
+7. **Device fan-out (optional):** Inspectable **On Action Executed** / **On Action Value Changed** (Details **+**) still broadcast — useful for logging/debug. Prefer the K2 Event nodes over Cast chains.
+8. **Avoid** wiring everything from device BeginPlay via `FindActionInstance` + per-action `OnExecuted` / `OnValueChanged` unless you intentionally listen to a shared C++/foreign action class.
 
 Matching bindings are **unioned** by section (not winner-take-all). Duplicate DisplayNames in one section log a warning. Duplicate non-empty **BindingId** is an error.
 
-Example — tagged bolts → continuous unscrew BP:
+Example — bolts then cover (Threaded Drive + Condition):
 
-1. Tag bolt meshes `DIVE.Bolt`.
-2. Content Browser → **DIVE → Continuous Device Action** → `BP_Unscrew` (params + Begin/Update/End; on complete call device interface e.g. `NotifyBoltRemoved`).
-3. **DIVE → Action Catalog** → section `Maintenance`, binding Match=Component Tag `DIVE.Bolt`, add `BP_Unscrew` instance.
-4. Assign catalog on Inspectable. Optional: `PrimaryActionIndex` for LMB in Interact mode. Binding Details shows **Matched → Targets: N components** (same pick rules as the session) and **Select** highlights those meshes on a placed device or in the Blueprint viewport / Components tree. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
+Two bindings, two actions. The cover does **not** subscribe to catalog `Action->OnExecuted`. **DIVE Action Event** on Threaded Drive fires at **Begin** (you started unscrewing), not when the nut detaches.
+
+1. Tag bolt meshes `DIVE.Bolt`. Tag (or name) the cover `DIVE.Cover`. Visibility **Block** on the pick channel.
+2. **DIVE → Action Catalog**, section e.g. `Maintenance`:
+   - Binding Match = Component Tag `DIVE.Bolt` → instanced **DIVE Threaded Drive Action**. A binding whose only action is that drive is LMB primary. At `TurnsToRelease` the bolt **detaches** (`DetachFromComponent`) and **Simulate Physics**.
+   - Binding Match = Component Tag `DIVE.Cover` → **DIVE Device Action** `BP_RemoveCover` (override **Execute**: hide/destroy the cover, or call a device interface; return **true** so Action Event can fire).
+3. **DIVE → Action Condition** `BP_CoverAfterBolts`. **Evaluate** returns `true` only when no tagged bolt is still fastened. With shipped Threaded Drive, walk `Context.DeviceHost` for primitives tagged `DIVE.Bolt` (detach does **not** destroy them — do not count components). Treat a bolt as released when **attach parent is empty** (`DetachFromComponent`). Do **not** key off `IsSimulatingPhysics` alone: Admin **Simulate Physics** can enable it without unscrewing. If any tagged bolt still has an attach parent, return `false`. Assign this Condition on the **Remove Cover** instance — not on Threaded. Leave Threaded’s Condition **None**.
+4. Assign the catalog on Inspectable. Optional: `PrimaryActionIndex` on the bolt binding if that binding has more than one action. Binding Details shows **Matched → Targets: N components** (same pick rules as the session) and **Select** highlights those meshes on a placed device or in the Blueprint viewport / Components tree. When several bindings match the pick, LMB uses the **most specific** Match Mode (Component Name > Part Id > Component Tag > Any Primitive); equal specificity keeps the **earlier** binding in the Bindings array (component, then catalog). Menu rows and sections follow the same array order.
+
+Need a domain flag (MESS / sound) instead of querying meshes: **DIVE Action Value Event** on Threaded Drive — when `Value.Absolute >= Value.AbsoluteMax`, record `Context.Target` on the device; Condition reads that set. Same-frame as detach; earlier ticks are still below the cap. A custom Continuous BP that calls a device interface from `NotifyInteractionCompleted` is the same idea. State stays on the device, not on the catalog instance.
 
 **Continuous actions:**
 - **Primary (hold):** press → `BeginInteraction` → drag while held → release → `EndInteraction`.
@@ -102,9 +111,10 @@ Example — tagged bolts → continuous unscrew BP:
 - Session marks the action active and subscribes to `OnValueChanged` **before** `Begin`, so the initial `NotifyInteractionValue` / `NotifyValueChanged` reaches the HUD. For self-finishing gestures call **`NotifyInteractionCompleted`** from `UpdateInteraction` (do not rely on setting a hidden flag in Begin).
 - **Rotate / Unscrew:** drag around the rim in the plane perpendicular to the axis (polar angle maps 1:1 to degrees/turns). Edge-on views or a dead zone near the axis fall back to `DegreesPerPixel` on `ScreenDelta`. VR can reuse the same polar helper with a hand point later.
 - **Slide:** drag along the rail — pointer maps 1:1 to centimetres on Axis (`MapPointerToAxisTravel`). Looking along the rail falls back to `CmPerPixel` on `ScreenDelta`.
+- **Press:** no pointer mapping. Begin emits `1`, End emits `0`, Update is silent. Cancel still emits `0`.
 - **Domain readout (optional, Rotary / Linear):** with angle/travel limited, enable **Use Domain Readout**, set **Domain Min/Max** and free **Readout Suffix** (`A`, `V`, `Ω`). Gesture stays in degrees/cm; HUD and Value Event expose `Absolute` as the lerp onto that scale. Not a second live state — mapping for chip/graph only. Unlimited wrap does not map to domain units.
 
-Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Default widget is a compact chip next to the driven primitive (cursor fallback). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit / optional DisplaySuffix). Rotary/Threaded/Linear call **`NotifyInteractionValue`**; proxy forward still uses **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Default widget is a compact chip next to the driven primitive (cursor fallback). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit / optional DisplaySuffix). Rotary/Threaded/Linear call **`NotifyInteractionValue`**; Momentary Press and proxy forward use **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
 
 Interaction parameters live on the action instance; device domain state lives on the device (see `Additional/DeviceInteractionModel.md`).
 
@@ -159,7 +169,7 @@ Click menu row
  → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Interact mode when **`PrimaryActionIndex`** is set on a matching binding, or when that binding's **only** action is continuous (Rotate / Unscrew). Winner among overlapping primaries: **Name > PartId > Tag > AnyPrimitive**; equal specificity → earlier binding in the list (Scan warns if more than one).
+Same path from **primary action** (`IA_DIVE_PrimaryAction` → `HandlePrimaryActionPressed`) in Interact mode when **`PrimaryActionIndex`** is set on a matching binding, or when that binding's **only** action is continuous (Rotate / Unscrew / Press). Winner among overlapping primaries: **Name > PartId > Tag > AnyPrimitive**; equal specificity → earlier binding in the list (Scan warns if more than one).
 
 ### Primary action path (production)
 
@@ -170,7 +180,7 @@ IA_DIVE_PrimaryAction Started
  → most-specific matching binding PrimaryActionIndex (or the sole continuous action) → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-In Physical mode the same `HandlePrimaryAction*` routes to proxy drive / GRIP — not catalog primary actions.
+In Physical mode the same `HandlePrimaryAction*` routes to pawn GRIP grab only — not catalog primary actions and not device `IDIVEProxyDrive` auto-discovery (proxy is an Interact catalog / ForwardAction binding).
 
 Default rows come from component **Bindings** (Focus, Isolate, Simulate Physics, Delete Mesh). Device-specific rows: **Action Catalog** (and/or extra rows in Bindings). To hide Admin in editor, delete that binding or those actions; **Add Admin Defaults** restores them. Shipping hides Admin automatically.
 ---
@@ -195,7 +205,7 @@ Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional **Show Vie
 
 | Tier | When | Where state lives |
 |------|------|-------------------|
-| **1 — kinematic (now)** | Knobs, unscrewable nuts, sliders, levers that only need to move in the DIVE session | Mesh transform. Bind **DIVE Rotary Drive Action** / **DIVE Threaded Drive Action** / **DIVE Linear Drive Action** (Interact mode, same hold/drag as any continuous action). |
+| **1 — kinematic (now)** | Knobs, unscrewable nuts, sliders, levers that only need to move in the DIVE session; hold buttons | Mesh transform (drives) or 1/0 (Press). Bind **DIVE Rotary Drive Action** / **DIVE Threaded Drive Action** / **DIVE Linear Drive Action** / **DIVE Momentary Press Action** (Interact mode). |
 | **2 — device control (by trigger)** | VR parity, Chaos constraints, MESS, the same part usable outside DIVE | Control component on the device + `IDIVEProxyDrive` / registry. Same **Interact** gesture on the monitor; standing-VR reuses Catalog / Bindings via a host action host (**no** camera session). **Physical** mode is GRIP grab of free bodies. DIVE ships the contract; host implements it (zero in-plugin backends today). |
 
 Do **not** add a second DIVE-only control asset layer — that would be another source of truth.

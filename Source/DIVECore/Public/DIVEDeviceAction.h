@@ -56,6 +56,29 @@ struct DIVECORE_API FDIVEActionContext
 	FVector PickRayDir = FVector::ForwardVector;
 };
 
+UENUM(BlueprintType)
+enum class EDIVEActionPresentation : uint8
+{
+	/** Visible in camera session and standing-VR / headless host menus. */
+	Both UMETA(DisplayName = "Both"),
+	/** Camera session only (Focus, Isolate, orbit chrome). Hidden from standing-VR menus. */
+	Session UMETA(DisplayName = "Session Only"),
+	/** Standing-VR / headless host only. Hidden from the camera-session Slate menu. */
+	World UMETA(DisplayName = "World Only")
+};
+
+/** True when ActionPres should appear for a Session or World menu builder. */
+inline bool ActionMatchesPresentationFilter(
+	const EDIVEActionPresentation ActionPres,
+	const EDIVEActionPresentation ForContext)
+{
+	if (ActionPres == EDIVEActionPresentation::Both)
+	{
+		return true;
+	}
+	return ActionPres == ForContext;
+}
+
 USTRUCT(BlueprintType)
 struct DIVECORE_API FDIVEActionDisplayState
 {
@@ -180,11 +203,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Action")
 	FText DisplayName;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Action", meta = (
+		ToolTip = "Session = camera DIVE menu only. World = standing-VR / headless host only. Both = default for catalog ops."))
+	EDIVEActionPresentation Presentation = EDIVEActionPresentation::Both;
+
 	UPROPERTY(EditAnywhere, Instanced, BlueprintReadOnly, Category = "Action", meta = (
 		ToolTip = "Optional. None = always show. DIVE Action Condition BP for Evaluate."))
 	TObjectPtr<UDIVEActionCondition> Condition;
 
-	/** Fan-out from UDIVEInspectableComponent::NotifyActionExecuted after a successful session Execute/Begin. */
+	/** Fan-out from UDIVEInspectableComponent::NotifyActionExecuted after a successful Execute/Begin. */
 	UPROPERTY(BlueprintAssignable, Category = "Action")
 	FOnDIVEActionExecuted OnExecuted;
 
@@ -255,8 +282,7 @@ public:
 	bool BeginInteraction(const FDIVEActionContext& Context);
 	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Action", meta = (
-		ToolTip = "v0.8-dev: receives FDIVEInteractionUpdate (cursor, ray, view) instead of ScreenDelta alone."))
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Action")
 	void UpdateInteraction(const FDIVEInteractionUpdate& Update);
 	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update);
 

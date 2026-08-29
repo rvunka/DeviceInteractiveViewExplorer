@@ -2,7 +2,7 @@
 
 #include "DIVESessionSubsystem.h"
 
-#include "Actions/DIVEBuiltInActions.h"
+#include "DIVEActionExecution.h"
 #include "DIVECameraRig.h"
 #include "DIVEInspectableComponent.h"
 #include "DIVELog.h"
@@ -67,13 +67,6 @@ bool UDIVESessionSubsystem::TryBeginSession(
 	}
 
 	Inspectable->BuildSemanticRegistry();
-
-	// Internal proxy-drive action: Physical-mode IDIVEProxyDrive hits share the continuous-action
-	// slot (pre-rev2 routing). Target: Interact verb / catalog ForwardAction, not Physical pick.
-	if (!InternalProxyDriveAction)
-	{
-		InternalProxyDriveAction = NewObject<UDIVEProxyDriveForwardAction>(this, TEXT("InternalProxyDriveAction"));
-	}
 
 	ActiveDeviceHost = DeviceHost;
 	ActiveInspectable = Inspectable;
@@ -405,20 +398,6 @@ bool UDIVESessionSubsystem::ExecuteResolvedAction(
 		return false;
 	}
 
-	FDIVEActionWorldScope WorldScope(Action, GetWorld());
-	if (!Action->CanExecute(Context))
-	{
-		UE_LOG(
-			LogDIVE,
-			Verbose,
-			TEXT("Action '%s' (%s) CanExecute=false Target=%s Binding=%s"),
-			*Action->GetResolvedDisplayName().ToString(),
-			*GetNameSafe(Action->GetClass()),
-			*GetNameSafe(Context.Target.Get()),
-			*Context.BindingId.ToString());
-		return false;
-	}
-
 	if (UDIVEContinuousDeviceAction* Continuous = Cast<UDIVEContinuousDeviceAction>(Action))
 	{
 		if (!TryBeginContinuousAction(Continuous, Context))
@@ -434,13 +413,12 @@ bool UDIVESessionSubsystem::ExecuteResolvedAction(
 		return true;
 	}
 
-	if (!Action->Execute(Context))
-	{
-		return false;
-	}
-
-	Inspectable->NotifyActionExecuted(Action, Context);
-	return true;
+	return DIVEActionExecution::ExecuteResolvedAction(
+		GetWorld(),
+		Inspectable,
+		ContinuousSlot,
+		Action,
+		Context);
 }
 
 void UDIVESessionSubsystem::CloseContextMenu()
@@ -590,42 +568,29 @@ bool UDIVESessionSubsystem::TryBeginContinuousAction(
 		return false;
 	}
 
-	FDIVEActionWorldScope WorldScope(Action, GetWorld());
-	if (!Action->CanExecute(Context))
+	UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get();
+	if (!Inspectable)
 	{
-		UE_LOG(
-			LogDIVE,
-			Verbose,
-			TEXT("Continuous '%s' (%s) CanExecute=false Target=%s Binding=%s"),
-			*Action->GetResolvedDisplayName().ToString(),
-			*GetNameSafe(Action->GetClass()),
-			*GetNameSafe(Context.Target.Get()),
-			*Context.BindingId.ToString());
 		return false;
 	}
 
-	// Mark + HUD subscribe before Begin: Begin's NotifyInteractionValue must have Context and a listener.
-	Action->MarkInteractionActive(Context);
 	Action->OnValueChanged.AddUniqueDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
 
-	if (!Action->BeginInteraction(Context))
+	if (!DIVEActionExecution::TryBeginContinuousAction(
+			GetWorld(),
+			Inspectable,
+			ContinuousSlot,
+			Action,
+			Context))
 	{
 		Action->OnValueChanged.RemoveDynamic(this, &UDIVESessionSubsystem::HandleContinuousActionValueChanged);
-		Action->EndInteraction(false);
 		NotifyInteractionValueChanged(nullptr, FDIVEActionContext(), FDIVEInteractionValue());
 		return false;
 	}
 
 	ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::ContinuousAction;
-	ActiveContinuousAction = Action;
 	ActivePawnPhysicalDrive.Reset();
 	bProxyDriving = true;
-
-	if (UDIVEInspectableComponent* Inspectable = ActiveInspectable.Get())
-	{
-		Inspectable->NotifyActionExecuted(Action, Context);
-	}
-
 	return true;
 }
 
@@ -634,7 +599,8 @@ void UDIVESessionSubsystem::HandleContinuousActionValueChanged(
 	const FDIVEActionContext& Context,
 	const FDIVEInteractionValue& Value)
 {
-	NotifyInteractionValueChanged(Action, Context, Value);
+	// Inspectable already receives values via DIVEActionExecution's binding.
+	OnInteractionValueChanged.Broadcast(Action, Context, Value);
 }
 
 void UDIVESessionSubsystem::NotifyInteractionValueChanged(

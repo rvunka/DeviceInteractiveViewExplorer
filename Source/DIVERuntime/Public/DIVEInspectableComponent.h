@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "DIVEActionCatalogAsset.h"
+#include "DIVEActionExecution.h"
 #include "DIVEConvention.h"
 #include "DIVETypes.h"
 #include "Engine/EngineTypes.h"
@@ -102,15 +103,15 @@ public:
 	FOnDIVESessionLifecycle OnSessionLifecycle;
 
 	/**
-	 * Fired by the session after a successful instant Execute, or after a successful continuous Begin.
+	 * After a successful instant Execute or continuous Begin (session or headless).
 	 * NotifyActionExecuted also fans out to Action->OnExecuted (K2 listens here).
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
 	FOnDIVEActionExecuted OnActionExecuted;
 
 	/**
-	 * Live continuous-action values while this Inspectable owns the active session gesture.
-	 * Session forwards only to the active Inspectable — do not bind Action->OnValueChanged on a shared catalog instance.
+	 * Live values for this Inspectable's continuous slot (session or headless).
+	 * Do not bind Action->OnValueChanged on a shared catalog instance.
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "DIVE|Actions")
 	FOnDIVEActionValueChanged OnActionValueChanged;
@@ -255,16 +256,48 @@ public:
 
 	void AppendConfiguredContextMenuEntries(
 		const FDIVEFocusTarget& PickTarget,
-		TArray<FDIVEContextMenuEntry>& InOutEntries) const;
+		TArray<FDIVEContextMenuEntry>& InOutEntries,
+		EDIVEActionPresentation PresentationFilter = EDIVEActionPresentation::Session) const;
 
 	UMaterialInterface* ResolvePickHoverOverlayMaterial(const FDIVEFocusTarget& PickTarget) const;
 
+	/**
+	 * Build an action context for the pick. Optional ViewLocation/ViewRotation override the
+	 * session camera (pass non-zero / valid rotation from a host ray for headless execute).
+	 * When bOverrideView is false, an active session camera is used if present.
+	 */
 	FDIVEActionContext MakeActionContext(
 		const FDIVEFocusTarget& PickTarget,
 		FName TargetKey,
 		const FVector2D& ScreenPosition = FVector2D::ZeroVector,
 		const FHitResult& PickHit = FHitResult(),
-		FName BindingId = NAME_None) const;
+		FName BindingId = NAME_None,
+		bool bOverrideView = false,
+		FVector ViewLocation = FVector::ZeroVector,
+		FRotator ViewRotation = FRotator::ZeroRotator) const;
+
+	/**
+	 * Headless / host execute: runs Catalog / Bindings actions without an active camera session.
+	 * Continuous gestures use this component's slot (separate from the session monitor slot).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Actions")
+	bool ExecuteAction(UDIVEDeviceAction* Action, const FDIVEActionContext& Context);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Actions")
+	void UpdateActiveInteraction(const FDIVEInteractionUpdate& Update);
+
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Actions")
+	void EndActiveInteraction(bool bCommit = true);
+
+	UFUNCTION(BlueprintPure, Category = "DIVE|Actions")
+	bool HasActiveInteraction() const;
+
+	/** Bound by DIVEActionExecution while a continuous gesture is active on this Inspectable. */
+	UFUNCTION()
+	void HandleContinuousActionValueChanged(
+		UDIVEDeviceAction* Action,
+		const FDIVEActionContext& Context,
+		const FDIVEInteractionValue& Value);
 
 #if WITH_EDITOR
 	/**
@@ -281,10 +314,14 @@ public:
 	virtual void OnComponentCreated() override;
 	virtual void PostInitProperties() override;
 	virtual void PreSave(FObjectPreSaveContext SaveContext) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	UPROPERTY(Transient)
 	mutable FDIVEPartTree SemanticRegistry;
+
+	/** Headless continuous slot (not the session monitor slot). */
+	FDIVEContinuousActionSlot ContinuousSlot;
 
 	bool ShouldSkipDefaultBindingSeed() const;
 	void SeedDefaultBindingsIfNeeded();

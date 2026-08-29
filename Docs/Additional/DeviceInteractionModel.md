@@ -109,7 +109,7 @@ IDIVEProxyDrive (DIVECore) — contract-goal for monitor interact (0 in-plugin i
 |----------|----------------|
 | Session, camera rig, focus stack | Authoring constraints on devices; standing-VR camera steal |
 | Ray pick from DIVE camera | GRIP hand physics; VR controller aim (host) |
-| `IDIVEProxyDrive` hook (routing in session subsystem) | Implementations on devices (game module) |
+| `IDIVEProxyDrive` / ForwardAction catalog binding | Implementations on devices (game module); Physical auto-discovery |
 | `Handle*` input API for Enhanced Input | MESS / electrical solver |
 | Context menu **data** (Catalog / Bindings, `GetDisplayState`) | Session Slate widget in HMD; ACTS world menu; host world-space menu widget |
 
@@ -152,7 +152,7 @@ Available regardless of `EDIVESessionInteractionMode`:
 ```text
 EDIVESessionInteractionMode  (DIVECore)
   Interact  — interact verb: primary → binding PrimaryActionIndex (or sole continuous action); hover overlay; explicit focus via HandleFocusUnderCursor / context menu
-  Physical  — grab verb: primary → pawn physical drive (GRIP bridge). Code today also tries IDIVEProxyDrive first (pre-rev2); target: grab only
+  Physical  — grab verb: primary → pawn physical drive (GRIP bridge) only
   Logical   — planned; not yet in the enum (v1 roadmap)
 ```
 
@@ -160,9 +160,8 @@ Mode is **not** tied to a single mouse button. It is **policy** for routing **mu
 
 | Policy area | Example behaviour per mode |
 |-------------|----------------------------|
-| `HandlePrimaryAction*` | Physical → grab (code today: device proxy first, then GRIP); Interact → catalog action / hover |
+| `HandlePrimaryAction*` | Physical → grab (pawn GRIP); Interact → catalog action / hover |
 | Context menu contents | Component Bindings + Action Catalog |
-| Hit highlight / filter | Physical may prefer grabbable primitives |
 | HUD / cursor | Show active mode label |
 
 Mode does **not** disable orbit, context menu, or focus stack.
@@ -180,7 +179,7 @@ Flow:
 2. **Default entries**: component **Bindings** (Focus, Isolate, Simulate Physics, Delete Mesh unless removed; hidden in Shipping).
 3. **Device extensions**: **Action Catalog** (and/or extra Bindings) — `UDIVEDeviceAction` instances.
 4. Custom row click → **`UDIVEDeviceAction::Execute`** / continuous **`BeginInteraction`**. See **`QUICKSTART.md`** §1.
-5. Display state (enabled / checked / visible / label) comes from **`GetDisplayState`** on the action — no `Is_*` reflection. Default: `CanExecute` false → gray; **Condition** false → hidden.
+5. Display state (enabled / checked / visible / label) comes from **`GetDisplayState`** on the action — no `Is_*` reflection. Default: `CanExecute` false → gray; **Condition** false → hidden **and** `CanExecute` false (primary blocked). Predicate reads device state, not the shared catalog instance. Cover-after-bolts: **`QUICKSTART.md`** §1.
 6. Section **Header** (optional) is drawn above the separator between menu sections.
 
 Remapping «open menu» to RMB, Q, or gamepad — **IMC only**. Standing-VR uses a **separate** world-space menu (design doc §10), not this Slate widget and not ACTS.
@@ -192,7 +191,7 @@ Target API: **`HandlePrimaryActionPressed/Released`** (project maps **`IA_DIVE_P
 | Mode | Primary action (press/hold/release) |
 |------|-------------------------------------|
 | **Interact** | Binding `PrimaryActionIndex` when configured, or the binding's only action if it is continuous (Name > PartId > Tag > Any; ties = earlier Bindings entry); hover overlay on pickable mesh. Kinematic knobs/nuts: bind Rotary/Threaded as primary (polar rim). Sliders: bind Linear as primary (cm along Axis; edge-on falls back to `CmPerPixel`). Begin isolates the driven child from a simulating parent (unweld, Query Only for the gesture). Engine cylinder is Z-up: Rotary Axis Z spins in place; Linear default Axis X is travel. |
-| **Physical** | Pawn GRIP grab via DIVEGRIPBridge. Code today also tries `IDIVEProxyDrive` via `InternalProxyDriveAction` first — target (tier 2): proxy lives on Interact, Physical is grab-only. |
+| **Physical** | Pawn GRIP grab via DIVEGRIPBridge. Device `IDIVEProxyDrive` is Interact catalog / `UDIVEProxyDriveForwardAction` — not Physical primary. |
 | **Logical** | Planned (v1 roadmap); not yet in the enum |
 
 While held, the session ticks `UpdateInteraction(FDIVEInteractionUpdate)` (cursor, ray, view — not ScreenDelta alone). Still **semantic**, not raw «mouse moved».
@@ -224,7 +223,7 @@ v0.4-dev removed the DIVE-local kinematic hinge. v0.7 removed the checklist **op
 | Current behaviour | Notes |
 |-------------------|-------|
 | `EDIVESessionInteractionMode` + `SetInteractionMode` | Interact / Physical |
-| `HandlePrimaryAction*` | Interact → binding `PrimaryActionIndex` (when set, or sole continuous action); hover overlay; Physical → pawn GRIP grab (code today also tries device proxy first) |
+| `HandlePrimaryAction*` | Interact → binding `PrimaryActionIndex` (when set, or sole continuous action); hover overlay; Physical → pawn GRIP grab |
 | Context menu + widget | Focus, Isolate, Simulate, Delete (Bindings; Admin hidden in Shipping); custom from Catalog |
 | Action Catalog / Bindings + `UDIVEDeviceAction` | Object actions; continuous via shared interaction slot |
 | Hover overlay | `DIVE|Pick|Hover` on inspectable; exclusions via `PickInteractionExclusions` |
@@ -265,7 +264,7 @@ Prefer **device registry** at session start (primitive / tag → control compone
 - **Interact (tier 1, code):** catalog continuous actions in Interact mode.
 - **Interact (tier 2, target):** same gesture / binding forwards to `IDIVEProxyDrive` / registry. Not yet the Physical-mode pick path.
 - **Grab (Physical):** GRIP bridge cursor-pull / VR grip button on free bodies.
-- **Physical pick (code today, pre-rev2):** `HandlePrimaryAction*` → registry or `IDIVEProxyDrive` first, then pawn GRIP. Move proxy off this path when tier 2 starts.
+- **Physical pick:** `HandlePrimaryAction*` → pawn GRIP only. Device proxy is an Interact binding / `UDIVEProxyDriveForwardAction`.
 - **Value HUD:** compact chip next to the driven primitive (cursor fallback). `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each delta (`NotifyValueChanged`). Rotary/Threaded/Linear send `FDIVEInteractionValue` via `NotifyInteractionValue` (signed Absolute + Unit; widget formats).
 - **Sounds / MESS:** only in device component when value changes.
 
@@ -309,7 +308,7 @@ DIVERuntime          GRIPRuntime          DIVEGRIPBridge (sibling plugin)
 **Option A — Device proxy drive (tier 2 interact, not a grab)**
 
 1. Device registers controls (registry) or implements `IDIVEProxyDrive` on control components.
-2. **Target:** Interact-mode catalog / `UDIVEProxyDriveForwardAction` routes pick → device `IDIVEProxyDrive` (deterministic DOF). **Code today** still auto-discovers this on Physical primary (`InternalProxyDriveAction`) — leftover from mixing verbs; do not treat as the product path.
+2. **Interact (tier 2):** catalog / `UDIVEProxyDriveForwardAction` routes pick → device `IDIVEProxyDrive` (deterministic DOF). Physical primary is pawn GRIP only.
 3. GRIP is not involved on the monitor for these controls; VR uses a host trigger-hold interactor on the same component, not a grab.
 
 **Option B — Pawn physical drive (generic simulating-mesh drag)**
@@ -318,7 +317,7 @@ DIVERuntime          GRIPRuntime          DIVEGRIPBridge (sibling plugin)
    - Slot **Player** → `GRIP Hand` — gameplay grab
    - Slot **Dive** → `GRIP Hand Dive` — Physical drag
    - DIVE Player **Physical Drive Provider**: picker → `UGRIPRigComponent::GetHand(Dive)` (property **GRIP Rig Slot**, default `Dive`) → name `GRIP Hand Dive` (no sole-Hand fallback)
-2. In **Physical** mode, if no device proxy handles the pick, session falls back to `IDIVEPawnPhysicalDrive` on the pawn.
+2. In **Physical** mode the session routes the pick to `IDIVEPawnPhysicalDrive` on the pawn (no device-proxy auto-discovery).
 3. Provider calls GRIP Hand API (`TryGrabFromHit`, `SetHandWorldTransform`, aim suppress via Rig `SetSlotAimSuppressed` on Dive) — see GRIP `INTEGRATION.md` / multi-hand slots.
 4. Cursor-follow drag: provider deprojects screen position each tick onto the grab-depth ray. **Hold R** while dragging to manual-rotate. The session does **not** push `ScreenDelta`. Value HUD / `OnInteractionValueChanged` are **not** fed from this pawn path. Device `IDIVEProxyDrive` feeds the HUD only when `GetProxyDriveNormalizedValue` returns true (polled by `UDIVEProxyDriveForwardAction`). Wheel while pawn-drive: `HandleZoomIn/Out` → `HandlePawnPhysicalGrabHoldDistanceScroll`.
 5. Do not add a Physical-drive ActorComponent; the provider is a UObject on DIVE Player.
@@ -327,13 +326,13 @@ See GRIP [`ARCHITECTURE.md`](../../GraspRigidbodyInertialPhysics/Docs/ARCHITECTU
 
 Use **B** for «grab and pull» on simulating bodies (admin **Simulate Physics** + Physical mode). Use **A** for deterministic kinematic drive (training sim, snap ticks, no physics jitter) — Interact verb, not Physical grab.
 
-**Routing priority in Physical mode (code today)**
+**Routing priority in Physical mode**
 
 ```text
-Pick hit → IDIVEProxyDrive (device) → IDIVEPawnPhysicalDrive (pawn GRIP) → fail (Warning log)
+Pick hit → IDIVEPawnPhysicalDrive (pawn GRIP) → fail (Warning log)
 ```
 
-**Target (rev 2, when tier 2 starts):** Physical pick is pawn GRIP only. Device proxy is an Interact binding / ForwardAction, same gesture as Rotary/Threaded.
+Device proxy is an Interact catalog binding / `UDIVEProxyDriveForwardAction`, same gesture as Rotary/Threaded.
 
 ### Dependency summary
 
@@ -361,7 +360,7 @@ VR planning (standing at the panel — **product decision**, not «game later»)
 | Panel | trigger + dedicated menu button | DIVE **action graph** via host action host; **no** camera session |
 | Grab | grip | GRIP on grabbable bodies |
 
-`BuildContextMenuEntries` / `TryBeginContinuousAction` today require an active session. Query (`AppendConfiguredContextMenuEntries`, `TryResolvePrimaryAction`) does not. Headless action host is tier-2/VR work — do not start without a trigger. Full table: [`../Design_PhysicalControls_OneState_TwoInputs.md`](../Design_PhysicalControls_OneState_TwoInputs.md) §8–§10.
+Query (`AppendConfiguredContextMenuEntries`, `TryResolvePrimaryAction`) and headless execute (`Inspectable::ExecuteAction` / Update / End) do **not** require an active camera session. Session wrappers (`BuildContextMenuEntries`, `TryBeginContinuousAction`) and Focus/Isolate **execution** still do. Standing-VR host uses the Inspectable API + its own tick/input — see [`../Design_PhysicalControls_OneState_TwoInputs.md`](../Design_PhysicalControls_OneState_TwoInputs.md) §8–§10.
 
 ---
 

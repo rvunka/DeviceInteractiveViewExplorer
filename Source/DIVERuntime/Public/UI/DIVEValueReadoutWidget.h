@@ -22,9 +22,6 @@ public:
 	void SetReadout(FText Label, const FDIVEInteractionValue& Value);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
-	void SetNormalizedReadout(FText Label, float NormalizedValue);
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")
 	void SetWorldAnchor(UPrimitiveComponent* Primitive);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|UI")

@@ -59,8 +59,14 @@ public:
 	virtual bool Execute_Implementation(const FDIVEActionContext& Context) override;
 };
 
-/** Session adapter for IDIVEProxyDrive. Hidden from Bindings / Catalog. */
-UCLASS(HideDropdown, NotBlueprintable, meta = (DisplayName = "DIVE Proxy Drive Forward Action"))
+/**
+ * Continuous Interact binding that forwards Begin/Update/End to a device IDIVEProxyDrive.
+ * Requires an IDIVEProxyDrive (or registry) on the device for the picked primitive.
+ * Physical mode is grab-only — do not auto-discover proxy there.
+ */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Proxy Drive Forward Action",
+	ToolTip = "Forwards the Interact hold/drag to a device IDIVEProxyDrive / control registry. Bind as Interact primary or menu continuous action — not used by Physical grab."))
 class DIVERUNTIME_API UDIVEProxyDriveForwardAction : public UDIVEContinuousDeviceAction
 {
 	GENERATED_BODY()
@@ -90,6 +96,24 @@ public:
 	UDIVENotifyAction();
 
 	virtual bool Execute_Implementation(const FDIVEActionContext& Context) override;
+};
+
+/**
+ * Momentary hold (PTT / spring). Begin = pressed (1), End = released (0). Not a toggle.
+ */
+UCLASS(BlueprintType, EditInlineNew, meta = (
+	DisplayName = "DIVE Momentary Press Action",
+	ToolTip = "Hold: Begin=pressed (1), End=released (0). Not a toggle. Bind as Interact primary. Device: DIVE Action Value Event."))
+class DIVERUNTIME_API UDIVEMomentaryPressAction : public UDIVEContinuousDeviceAction
+{
+	GENERATED_BODY()
+
+public:
+	UDIVEMomentaryPressAction();
+
+	virtual bool BeginInteraction_Implementation(const FDIVEActionContext& Context) override;
+	virtual void UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update) override;
+	virtual void EndInteraction_Implementation(bool bCommit) override;
 };
 
 UENUM(BlueprintType)

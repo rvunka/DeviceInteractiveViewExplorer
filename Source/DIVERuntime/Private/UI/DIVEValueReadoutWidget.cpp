@@ -98,13 +98,6 @@ void UDIVEValueReadoutWidget::SetReadout(FText Label, const FDIVEInteractionValu
 	UpdateChipPosition();
 }
 
-void UDIVEValueReadoutWidget::SetNormalizedReadout(FText Label, const float NormalizedValue)
-{
-	FDIVEInteractionValue Value;
-	Value.Normalized = FMath::Clamp(NormalizedValue, 0.f, 1.f);
-	SetReadout(MoveTemp(Label), Value);
-}
-
 void UDIVEValueReadoutWidget::SetWorldAnchor(UPrimitiveComponent* Primitive)
 {
 	WorldAnchor = Primitive;

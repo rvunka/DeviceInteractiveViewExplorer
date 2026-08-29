@@ -9,37 +9,8 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 
-#if DIVE_WITH_GRIP
-#include "Hand/GRIPHandComponent.h"
-#include "Hand/GRIPRigComponent.h"
-#endif
-
 namespace DIVEGripLegacyDevQueryPrivate
 {
-#if DIVE_WITH_GRIP
-	bool IsGripOwningMouseWheel(const AActor* Owner)
-	{
-		if (!Owner)
-		{
-			return false;
-		}
-
-		TInlineComponentArray<UActorComponent*> Components(Owner);
-		for (UActorComponent* Component : Components)
-		{
-			if (const UGRIPHandComponent* Hand = Cast<UGRIPHandComponent>(Component))
-			{
-				if (Hand->IsGrabbing() && !Hand->IsManualRotateActive())
-				{
-					return true;
-				}
-			}
-		}
-
-		return false;
-	}
-#endif
-
 	const UDIVESessionSubsystem* GetDiveSubsystem(const AActor* Owner)
 	{
 		if (!Owner)
@@ -50,53 +21,30 @@ namespace DIVEGripLegacyDevQueryPrivate
 		UWorld* World = Owner->GetWorld();
 		return World ? World->GetSubsystem<UDIVESessionSubsystem>() : nullptr;
 	}
-
-	bool ShouldDeferMouseWheelToGrip(const AActor* Owner)
-	{
-#if DIVE_WITH_GRIP
-		return IsGripOwningMouseWheel(Owner);
-#else
-		(void)Owner;
-		return false;
-#endif
-	}
 }
 
 bool DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(const AActor* Owner, const float WheelDelta)
 {
-	if (!DIVEGripLegacyDevQueryPrivate::ShouldDeferMouseWheelToGrip(Owner) || FMath::IsNearlyZero(WheelDelta))
+	if (!Owner || FMath::IsNearlyZero(WheelDelta))
 	{
 		return false;
 	}
 
 	const UDIVESessionSubsystem* DiveSubsystem = DIVEGripLegacyDevQueryPrivate::GetDiveSubsystem(Owner);
-	if (DiveSubsystem && DiveSubsystem->IsPawnPhysicalDriveActive())
+	if (!DiveSubsystem || !DiveSubsystem->IsPawnPhysicalDriveActive())
 	{
-		APawn* Pawn = const_cast<APawn*>(Cast<APawn>(Owner));
-		if (IDIVEPawnPhysicalDrive* Drive = DIVEPawnPhysicalDriveResolve::FindOnPawn(Pawn))
-		{
-			if (UObject* DriveObject = Cast<UObject>(Drive))
-			{
-				IDIVEPawnPhysicalDrive::Execute_HandlePawnPhysicalGrabHoldDistanceScroll(DriveObject, WheelDelta);
-				return true;
-			}
-		}
+		return false;
 	}
 
-#if DIVE_WITH_GRIP
-	if (UGRIPRigComponent* Rig = Owner->FindComponentByClass<UGRIPRigComponent>())
+	APawn* Pawn = const_cast<APawn*>(Cast<APawn>(Owner));
+	if (IDIVEPawnPhysicalDrive* Drive = DIVEPawnPhysicalDriveResolve::FindOnPawn(Pawn))
 	{
-		const FName SlotId = Rig->FindUniqueGrabbingSlotId(true);
-		if (!SlotId.IsNone())
+		if (UObject* DriveObject = Cast<UObject>(Drive))
 		{
-			Rig->HandleGrabHoldDistanceScroll(SlotId, WheelDelta);
+			IDIVEPawnPhysicalDrive::Execute_HandlePawnPhysicalGrabHoldDistanceScroll(DriveObject, WheelDelta);
 			return true;
 		}
 	}
-#else
-	(void)Owner;
-	(void)WheelDelta;
-#endif
 
 	return false;
 }

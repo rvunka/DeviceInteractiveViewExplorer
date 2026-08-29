@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "DIVEActionExecution.h"
 #include "DIVEDeviceAction.h"
 #include "DIVEPawnPhysicalDrive.h"
 #include "DIVETypes.h"
@@ -12,7 +13,6 @@
 
 class ADIVECameraRig;
 class UDIVEInspectableComponent;
-class UDIVEProxyDriveForwardAction;
 class UMaterialInterface;
 class UPrimitiveComponent;
 class AActor;
@@ -71,7 +71,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	bool IsIsolationActiveForTarget(const FDIVEFocusTarget& Target) const;
 
-	/** True while device proxy drive or pawn physical drive is active. */
+	/** True while a session continuous gesture is live (Interact catalog hold or Physical pawn GRIP). */
 	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
 	bool IsProxyDriving() const { return bProxyDriving; }
 
@@ -191,7 +191,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	bool TryBeginProxyDriveAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
-	/** Updates active proxy drive or continuous device action. */
+	/** Updates the session continuous slot or ticks pawn GRIP while Physical drag is active. */
 	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
 	void UpdateActiveInteraction(const FDIVEInteractionUpdate& Update);
 
@@ -254,15 +254,8 @@ private:
 	bool bProxyDriving = false;
 	EDIVEActivePhysicalDriveKind ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::None;
 	TWeakInterfacePtr<IDIVEPawnPhysicalDrive> ActivePawnPhysicalDrive;
-	TWeakObjectPtr<UDIVEContinuousDeviceAction> ActiveContinuousAction;
-
-	/**
-	 * Internal action instance that routes Physical-mode IDIVEProxyDrive hits through the standard
-	 * continuous-action slot (pre-rev2). Target: Interact catalog / ForwardAction, not Physical pick.
-	 * Created once per session in TryBeginSession and reused.
-	 */
-	UPROPERTY(Transient)
-	TObjectPtr<UDIVEProxyDriveForwardAction> InternalProxyDriveAction;
+	/** Monitor continuous-action slot (shared mutex with pawn GRIP via bProxyDriving). */
+	FDIVEContinuousActionSlot ContinuousSlot;
 
 	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Interact;
 

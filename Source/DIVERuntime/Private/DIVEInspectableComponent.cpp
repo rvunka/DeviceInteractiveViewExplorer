@@ -67,6 +67,12 @@ void UDIVEInspectableComponent::PreSave(FObjectPreSaveContext SaveContext)
 	Super::PreSave(SaveContext);
 }
 
+void UDIVEInspectableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	EndActiveInteraction(false);
+	Super::EndPlay(EndPlayReason);
+}
+
 bool UDIVEInspectableComponent::ShouldSkipDefaultBindingSeed() const
 {
 	const UPackage* Package = GetOutermost();
@@ -94,6 +100,14 @@ void UDIVEInspectableComponent::SeedDefaultBindingsIfNeeded()
 		GetOrCreateNamedAction<UDIVEFocusAction>(this, DIVE::kSeededFocusAction);
 	UDIVEIsolateAction* IsolateAction =
 		GetOrCreateNamedAction<UDIVEIsolateAction>(this, DIVE::kSeededIsolateAction);
+	if (FocusAction)
+	{
+		FocusAction->Presentation = EDIVEActionPresentation::Session;
+	}
+	if (IsolateAction)
+	{
+		IsolateAction->Presentation = EDIVEActionPresentation::Session;
+	}
 
 	FDIVEActionBinding StandardBinding;
 	StandardBinding.BindingId = DIVE::kBindingBuiltInStandard;
@@ -1026,7 +1040,10 @@ FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
 	FName TargetKey,
 	const FVector2D& ScreenPosition,
 	const FHitResult& PickHit,
-	FName BindingId) const
+	FName BindingId,
+	const bool bOverrideView,
+	const FVector ViewLocation,
+	const FRotator ViewRotation) const
 {
 	FDIVEActionContext Context;
 	Context.DeviceHost = GetOwner();
@@ -1040,7 +1057,12 @@ FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
 	Context.ScreenPosition = ScreenPosition;
 	Context.PickHit = PickHit;
 
-	if (UWorld* World = GetWorld())
+	if (bOverrideView)
+	{
+		Context.ViewLocation = ViewLocation;
+		Context.ViewRotation = ViewRotation;
+	}
+	else if (UWorld* World = GetWorld())
 	{
 		if (const UDIVESessionSubsystem* Session = World->GetSubsystem<UDIVESessionSubsystem>())
 		{
@@ -1064,9 +1086,67 @@ FDIVEActionContext UDIVEInspectableComponent::MakeActionContext(
 	return Context;
 }
 
+bool UDIVEInspectableComponent::ExecuteAction(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context)
+{
+	return DIVEActionExecution::ExecuteResolvedAction(
+		GetWorld(),
+		this,
+		ContinuousSlot,
+		Action,
+		Context);
+}
+
+void UDIVEInspectableComponent::UpdateActiveInteraction(const FDIVEInteractionUpdate& Update)
+{
+	if (!ContinuousSlot.ActiveAction.IsValid())
+	{
+		ContinuousSlot.Reset();
+		return;
+	}
+
+	if (!ContinuousSlot.IsActive())
+	{
+		EndActiveInteraction(true);
+		return;
+	}
+
+	DIVEActionExecution::UpdateContinuousAction(GetWorld(), ContinuousSlot, Update);
+	if (ContinuousSlot.ActiveAction.IsValid() && !ContinuousSlot.ActiveAction->IsInteractionActive())
+	{
+		EndActiveInteraction(true);
+	}
+}
+
+void UDIVEInspectableComponent::EndActiveInteraction(const bool bCommit)
+{
+	if (!ContinuousSlot.ActiveAction.IsValid() && !ContinuousSlot.IsActive())
+	{
+		ContinuousSlot.Reset();
+		return;
+	}
+
+	DIVEActionExecution::EndContinuousAction(GetWorld(), this, ContinuousSlot, bCommit);
+}
+
+bool UDIVEInspectableComponent::HasActiveInteraction() const
+{
+	return ContinuousSlot.IsActive();
+}
+
+void UDIVEInspectableComponent::HandleContinuousActionValueChanged(
+	UDIVEDeviceAction* Action,
+	const FDIVEActionContext& Context,
+	const FDIVEInteractionValue& Value)
+{
+	NotifyActionValueChanged(Action, Context, Value);
+}
+
 void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 	const FDIVEFocusTarget& PickTarget,
-	TArray<FDIVEContextMenuEntry>& InOutEntries) const
+	TArray<FDIVEContextMenuEntry>& InOutEntries,
+	const EDIVEActionPresentation PresentationFilter) const
 {
 	TArray<const FDIVEActionBinding*> Matched;
 	GatherMatchingBindings(PickTarget, Matched);
@@ -1110,6 +1190,11 @@ void UDIVEInspectableComponent::AppendConfiguredContextMenuEntries(
 		for (UDIVEDeviceAction* Action : Binding->Actions)
 		{
 			if (!Action)
+			{
+				continue;
+			}
+
+			if (!ActionMatchesPresentationFilter(Action->Presentation, PresentationFilter))
 			{
 				continue;
 			}

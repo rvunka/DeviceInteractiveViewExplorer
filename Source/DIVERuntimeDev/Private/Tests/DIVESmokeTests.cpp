@@ -24,6 +24,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/DefaultPawn.h"
+#include "Tests/DIVEActionValueSinkTestTypes.h"
 #include "Tests/DIVEPawnPhysicalDriveTestTypes.h"
 #include "Tests/DIVEProxyDriveTestTypes.h"
 #include "UObject/Package.h"
@@ -539,6 +540,18 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 				static_cast<UDIVEDeviceAction*>(SoleRotary));
 		}
 
+		UDIVEMomentaryPressAction* SolePress = NewObject<UDIVEMomentaryPressAction>();
+		TestNotNull(TEXT("Sole momentary press for implicit primary"), SolePress);
+		if (SolePress)
+		{
+			FDIVEActionBinding ImplicitPress;
+			ImplicitPress.Actions.Add(SolePress);
+			TestEqual(
+				TEXT("Sole Momentary Press is implicit LMB primary"),
+				ImplicitPress.GetPrimaryAction(),
+				static_cast<UDIVEDeviceAction*>(SolePress));
+		}
+
 		FDIVEActionBinding SoleFocus;
 		SoleFocus.Actions.Add(Focus);
 		TestNull(
@@ -863,6 +876,348 @@ bool FDIVEActionWorldContextSmokeTest::RunTest(const FString& Parameters)
 		AddInfo(TEXT("No live Engine world — skipped non-null ExecutionWorld injection assert."));
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEActionsHeadlessExecuteSmokeTest,
+	"DIVE.Actions.HeadlessExecute",
+	SmokeUnitTestFlags)
+
+bool FDIVEActionsHeadlessExecuteSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped headless execute."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Device = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Headless host"), Device);
+	if (!Device)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Device,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	TestNotNull(TEXT("Inspectable"), Inspectable);
+	if (!Inspectable)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	Device->AddInstanceComponent(Inspectable);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+
+	USphereComponent* HitSphere = MakeSphereOnHost(Device, TEXT("HitPrim"), 12.f);
+	TestNotNull(TEXT("Hit sphere"), HitSphere);
+	if (!HitSphere)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	UDIVENotifyAction* Notify = NewObject<UDIVENotifyAction>(Inspectable, TEXT("HeadlessNotify"));
+	TestNotNull(TEXT("Notify action"), Notify);
+	if (!Notify)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	FDIVEActionBinding Binding;
+	Binding.BindingId = TEXT("HeadlessNotifyBinding");
+	Binding.Targets.MatchMode = EDIVETargetMatchMode::AnyPrimitive;
+	Binding.SectionId = DIVE::kSectionStandard;
+	Binding.PrimaryActionIndex = 0;
+	Binding.Actions.Add(Notify);
+	Inspectable->Bindings.Add(Binding);
+
+	const FDIVEFocusTarget Pick = FDIVEFocusTarget::FromPrimitive(HitSphere, NAME_None);
+	const FDIVEActionContext Context = Inspectable->MakeActionContext(
+		Pick,
+		NAME_None,
+		FVector2D(10.f, 10.f),
+		FHitResult(),
+		Binding.BindingId,
+		true,
+		FVector(0.f, 0.f, 100.f),
+		FRotator(-90.f, 0.f, 0.f));
+
+	TestEqual(TEXT("View override applied"), Context.ViewLocation.Z, 100.0);
+	TestFalse(TEXT("No camera session required"), Inspectable->IsSessionActive());
+
+	TestTrue(TEXT("Headless Notify ExecuteAction"), Inspectable->ExecuteAction(Notify, Context));
+	TestFalse(TEXT("Notify leaves no continuous slot"), Inspectable->HasActiveInteraction());
+
+	// Continuous Begin/Update/End without a camera session (kinematic rotary on the hit sphere).
+	UDIVERotaryDriveAction* Rotary = NewObject<UDIVERotaryDriveAction>(Inspectable, TEXT("HeadlessRotary"));
+	TestNotNull(TEXT("Rotary action"), Rotary);
+	if (Rotary)
+	{
+		Rotary->bLimitAngle = false;
+		const FDIVEActionContext RotaryContext = Inspectable->MakeActionContext(
+			Pick,
+			NAME_None,
+			FVector2D::ZeroVector,
+			FHitResult(),
+			NAME_None,
+			true,
+			FVector(0.f, 0.f, 200.f),
+			FRotator(-90.f, 0.f, 0.f));
+
+		TestTrue(TEXT("Headless Rotary Begin"), Inspectable->ExecuteAction(Rotary, RotaryContext));
+		TestTrue(TEXT("Headless continuous active after Begin"), Inspectable->HasActiveInteraction());
+		if (Inspectable->HasActiveInteraction())
+		{
+			FDIVEInteractionUpdate Update;
+			Update.DeltaTime = 0.016f;
+			Update.ScreenDelta = FVector2D(4.f, 0.f);
+			Update.ScreenPosition = FVector2D(100.f, 100.f);
+			Update.ViewLocation = RotaryContext.ViewLocation;
+			Update.ViewRotation = RotaryContext.ViewRotation;
+			Update.PickRayDir = RotaryContext.PickRayDir;
+			Inspectable->UpdateActiveInteraction(Update);
+			Inspectable->EndActiveInteraction(true);
+			TestFalse(TEXT("Headless continuous cleared after End"), Inspectable->HasActiveInteraction());
+		}
+	}
+
+	// Presentation filter: Focus is Session-only.
+	UDIVEFocusAction* Focus = NewObject<UDIVEFocusAction>(Inspectable, TEXT("HeadlessFocus"));
+	TestNotNull(TEXT("Focus action"), Focus);
+	if (Focus)
+	{
+		TestEqual(
+			TEXT("Focus Presentation is Session"),
+			Focus->Presentation,
+			EDIVEActionPresentation::Session);
+		TestTrue(
+			TEXT("Focus matches Session filter"),
+			ActionMatchesPresentationFilter(Focus->Presentation, EDIVEActionPresentation::Session));
+		TestFalse(
+			TEXT("Focus hidden from World filter"),
+			ActionMatchesPresentationFilter(Focus->Presentation, EDIVEActionPresentation::World));
+	}
+
+	TArray<FDIVEContextMenuEntry> WorldEntries;
+	Inspectable->AppendConfiguredContextMenuEntries(Pick, WorldEntries, EDIVEActionPresentation::World);
+	bool bWorldHasFocus = false;
+	bool bWorldHasNotify = false;
+	for (const FDIVEContextMenuEntry& Entry : WorldEntries)
+	{
+		if (Entry.Action && Entry.Action->IsA<UDIVEFocusAction>())
+		{
+			bWorldHasFocus = true;
+		}
+		if (Entry.Action && Entry.Action->IsA<UDIVENotifyAction>())
+		{
+			bWorldHasNotify = true;
+		}
+	}
+	TestFalse(TEXT("World menu omits Focus"), bWorldHasFocus);
+	TestTrue(TEXT("World menu keeps Notify (Both)"), bWorldHasNotify);
+
+	TArray<FDIVEContextMenuEntry> SessionEntries;
+	Inspectable->AppendConfiguredContextMenuEntries(Pick, SessionEntries, EDIVEActionPresentation::Session);
+	bool bSessionHasFocus = false;
+	for (const FDIVEContextMenuEntry& Entry : SessionEntries)
+	{
+		if (Entry.Action && Entry.Action->IsA<UDIVEFocusAction>())
+		{
+			bSessionHasFocus = true;
+			break;
+		}
+	}
+	TestTrue(TEXT("Session menu includes seeded Focus"), bSessionHasFocus);
+
+	// Focus Execute via headless must not start a camera session.
+	if (Focus)
+	{
+		(void)Inspectable->ExecuteAction(Focus, Context);
+		TestFalse(
+			TEXT("Headless Focus Execute does not activate a camera session"),
+			Inspectable->IsSessionActive());
+	}
+
+	Device->Destroy();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEActionsMomentaryPressSmokeTest,
+	"DIVE.Actions.MomentaryPress",
+	SmokeUnitTestFlags)
+
+bool FDIVEActionsMomentaryPressSmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	const UClass* PressClass = UDIVEMomentaryPressAction::StaticClass();
+	TestNotNull(TEXT("MomentaryPress class"), PressClass);
+	if (PressClass)
+	{
+		TestFalse(
+			TEXT("MomentaryPress is authorable in Catalog (not HideDropdown)"),
+			PressClass->HasAnyClassFlags(CLASS_HideDropDown));
+		TestTrue(
+			TEXT("MomentaryPress is a continuous action"),
+			PressClass->IsChildOf(UDIVEContinuousDeviceAction::StaticClass()));
+	}
+
+	UDIVEMomentaryPressAction* Press = NewObject<UDIVEMomentaryPressAction>();
+	TestNotNull(TEXT("MomentaryPress instance"), Press);
+	if (!Press)
+	{
+		return false;
+	}
+
+	const FDIVEActionContext EmptyContext;
+	TestTrue(TEXT("MomentaryPress CanExecute without a pick"), Press->CanExecute(EmptyContext));
+	TestFalse(TEXT("MomentaryPress Execute is not instant"), Press->Execute(EmptyContext));
+
+	UDIVETestActionValueSink* Sink = NewObject<UDIVETestActionValueSink>();
+	TestNotNull(TEXT("Value sink"), Sink);
+	if (!Sink)
+	{
+		return false;
+	}
+
+	Press->OnValueChanged.AddUniqueDynamic(Sink, &UDIVETestActionValueSink::HandleValue);
+	Press->MarkInteractionActive(EmptyContext);
+	TestTrue(TEXT("MomentaryPress Begin"), Press->BeginInteraction(EmptyContext));
+	TestTrue(TEXT("Pressed while the slot is live"), Press->IsInteractionActive());
+	TestEqual(TEXT("Begin emits pressed (1)"), Sink->Normalized.Num(), 1);
+	if (Sink->Normalized.Num() >= 1)
+	{
+		TestEqual(TEXT("Pressed normalized"), Sink->Normalized[0], 1.f);
+	}
+
+	FDIVEInteractionUpdate Drag;
+	Drag.ScreenDelta = FVector2D(12.f, -8.f);
+	Drag.DeltaTime = 0.016f;
+	Press->UpdateInteraction(Drag);
+	TestEqual(TEXT("Update does not re-emit (edges only)"), Sink->Normalized.Num(), 1);
+
+	Press->EndInteraction(true);
+	TestFalse(TEXT("Released after End"), Press->IsInteractionActive());
+	TestEqual(TEXT("End emits released (0)"), Sink->Normalized.Num(), 2);
+	if (Sink->Normalized.Num() >= 2)
+	{
+		TestEqual(TEXT("Released normalized"), Sink->Normalized[1], 0.f);
+	}
+
+	Press->EndInteraction(false);
+	TestEqual(TEXT("Second End does not emit another 0"), Sink->Normalized.Num(), 2);
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			if (UWorld* Candidate = Context.World())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No live Engine world — skipped headless MomentaryPress execute."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Device = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Headless host"), Device);
+	if (!Device)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Device,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	if (!Inspectable)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	Device->AddInstanceComponent(Inspectable);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+
+	USphereComponent* HitSphere = MakeSphereOnHost(Device, TEXT("PressPrim"), 12.f);
+	UDIVEMomentaryPressAction* HeadlessPress = NewObject<UDIVEMomentaryPressAction>(
+		Inspectable,
+		TEXT("HeadlessPress"));
+	if (!HitSphere || !HeadlessPress)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	const FDIVEFocusTarget Pick = FDIVEFocusTarget::FromPrimitive(HitSphere, NAME_None);
+	const FDIVEActionContext Context = Inspectable->MakeActionContext(
+		Pick,
+		NAME_None,
+		FVector2D(10.f, 10.f),
+		FHitResult(),
+		NAME_None,
+		true,
+		FVector(0.f, 0.f, 100.f),
+		FRotator(-90.f, 0.f, 0.f));
+
+	UDIVETestActionValueSink* HeadlessSink = NewObject<UDIVETestActionValueSink>();
+	if (!HeadlessSink)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	Inspectable->OnActionValueChanged.AddUniqueDynamic(
+		HeadlessSink,
+		&UDIVETestActionValueSink::HandleValue);
+
+	TestTrue(TEXT("Headless MomentaryPress Begin"), Inspectable->ExecuteAction(HeadlessPress, Context));
+	TestTrue(TEXT("Headless press occupies the Inspectable slot"), Inspectable->HasActiveInteraction());
+	Inspectable->EndActiveInteraction(false);
+	TestFalse(TEXT("Headless press cleared after End"), Inspectable->HasActiveInteraction());
+	TestEqual(TEXT("Headless executor emits 1 then 0"), HeadlessSink->Normalized.Num(), 2);
+	if (HeadlessSink->Normalized.Num() >= 2)
+	{
+		TestEqual(TEXT("Headless pressed"), HeadlessSink->Normalized[0], 1.f);
+		TestEqual(TEXT("Headless released (cancel still 0)"), HeadlessSink->Normalized[1], 0.f);
+	}
+
+	Device->Destroy();
 	return true;
 }
 
@@ -2013,6 +2368,139 @@ bool FDIVEProxyDriveResolveHierarchySmokeTest::RunTest(const FString& Parameters
 
 	Child->Destroy();
 	Root->Destroy();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FDIVEPhysicalGrabOnlySmokeTest,
+	"DIVE.PawnPhysicalDrive.PhysicalGrabOnly",
+	SmokeUnitTestFlags)
+
+bool FDIVEPhysicalGrabOnlySmokeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	TestNull(
+		TEXT("InternalProxyDriveAction property removed from session"),
+		FindFProperty<FProperty>(UDIVESessionSubsystem::StaticClass(), TEXT("InternalProxyDriveAction")));
+
+	const UClass* ForwardClass = UDIVEProxyDriveForwardAction::StaticClass();
+	TestNotNull(TEXT("ForwardAction class"), ForwardClass);
+	if (ForwardClass)
+	{
+		TestFalse(
+			TEXT("ForwardAction is authorable in Catalog (not HideDropdown)"),
+			ForwardClass->HasAnyClassFlags(CLASS_HideDropDown));
+		TestTrue(
+			TEXT("ForwardAction is BlueprintType / EditInlineNew continuous"),
+			ForwardClass->IsChildOf(UDIVEContinuousDeviceAction::StaticClass()));
+	}
+
+	UWorld* World = nullptr;
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			UWorld* Candidate = Context.World();
+			if (!Candidate)
+			{
+				continue;
+			}
+			if (Candidate->WorldType != EWorldType::Game && Candidate->WorldType != EWorldType::PIE)
+			{
+				continue;
+			}
+			if (Candidate->GetSubsystem<UDIVESessionSubsystem>())
+			{
+				World = Candidate;
+				break;
+			}
+		}
+	}
+
+	if (!World)
+	{
+		AddInfo(TEXT("No Game/PIE world — skipped Physical routing asserts."));
+		return true;
+	}
+
+	UDIVESessionSubsystem* Subsystem = World->GetSubsystem<UDIVESessionSubsystem>();
+	APlayerController* PC = DIVEPlayerQuery::FindLocalPlayerController(World);
+	if (!Subsystem || !PC)
+	{
+		AddInfo(TEXT("No session subsystem or local PC — skipped Physical routing asserts."));
+		return true;
+	}
+
+	if (Subsystem->IsSessionActive())
+	{
+		AddInfo(TEXT("A DIVE session is already active — skipped to avoid clobbering PIE."));
+		return true;
+	}
+
+	ADIVETestPhysicalDrivePawn* Device = SpawnSmokeHost(World);
+	TestNotNull(TEXT("Device host"), Device);
+	if (!Device)
+	{
+		return false;
+	}
+
+	UDIVEInspectableComponent* Inspectable = NewObject<UDIVEInspectableComponent>(
+		Device,
+		UDIVEInspectableComponent::StaticClass(),
+		TEXT("DIVEInspectable"));
+	UDIVETestProxyDriveComponent* Drive = NewObject<UDIVETestProxyDriveComponent>(Device, TEXT("TestProxy"));
+	USphereComponent* HitSphere = MakeSphereOnHost(Device, TEXT("ProxyHit"), 16.f);
+	if (!Inspectable || !Drive || !HitSphere)
+	{
+		Device->Destroy();
+		return false;
+	}
+
+	Device->AddInstanceComponent(Inspectable);
+	Device->AddInstanceComponent(Drive);
+	if (!Inspectable->IsRegistered())
+	{
+		Inspectable->RegisterComponent();
+	}
+	if (!Drive->IsRegistered())
+	{
+		Drive->RegisterComponent();
+	}
+
+	TestTrue(
+		TEXT("Proxy resolves on the hit sphere"),
+		DIVEProxyDriveResolve::FindProxyDriveForHit(HitSphere) != nullptr);
+
+	if (!Subsystem->TryBeginSession(Device, Inspectable, FDIVESessionParams()))
+	{
+		AddInfo(TEXT("TryBeginSession failed — skipped Physical routing."));
+		Device->Destroy();
+		return true;
+	}
+
+	Subsystem->SetInteractionMode(EDIVESessionInteractionMode::Physical);
+
+	// Physical must never start a continuous/proxy gesture. Pawn GRIP may still succeed when a
+	// physical-drive backend exists — that is grab, not device proxy.
+	const bool bBegan = Subsystem->TryBeginProxyDriveAtScreenPosition(FVector2D(100.f, 100.f), PC);
+	if (bBegan)
+	{
+		TestTrue(
+			TEXT("Physical begin that succeeds is pawn GRIP (not continuous/proxy)"),
+			Subsystem->IsPawnPhysicalDriveActive());
+		TestTrue(TEXT("Pawn GRIP reports proxy-driving flag"), Subsystem->IsProxyDriving());
+		Subsystem->EndProxyDrive(true);
+		TestFalse(TEXT("Drive cleared after End"), Subsystem->IsProxyDriving());
+	}
+	else
+	{
+		TestFalse(TEXT("No drive left active after failed Physical begin"), Subsystem->IsProxyDriving());
+		AddInfo(TEXT("Physical begin failed (no pick and/or no pawn drive) — proxy auto-start still ruled out."));
+	}
+
+	Subsystem->EndSession(EDIVESessionEndReason::Forced);
+	Device->Destroy();
 	return true;
 }
 

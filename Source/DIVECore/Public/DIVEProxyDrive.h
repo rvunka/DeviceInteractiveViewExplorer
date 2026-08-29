@@ -20,8 +20,8 @@ class UDIVEProxyDrive : public UInterface
  * control must live on the device (MESS, VR parity, reuse outside the session).
  * Interact-mode knobs/nuts/sliders today use DIVERuntime continuous drive actions
  * (kinematic mesh transform), not this interface.
- * Session routing today still starts this path from Physical primary (see
- * `TryBeginProxyDriveAtScreenPosition`); target policy moves it to Interact.
+ * Bind `UDIVEProxyDriveForwardAction` as an Interact catalog primary / menu continuous
+ * action to forward the gesture onto this interface. Physical mode is pawn GRIP grab only.
  */
 class DIVECORE_API IDIVEProxyDrive
 {

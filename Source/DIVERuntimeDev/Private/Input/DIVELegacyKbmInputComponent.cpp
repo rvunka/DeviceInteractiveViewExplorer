@@ -178,14 +178,10 @@ void UDIVELegacyKbmInputComponent::OrbitReleased()
 
 bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
 {
-#if DIVE_WITH_GRIP
 	if (DIVEGripLegacyDevQuery::TryForwardMouseWheelToGrip(GetOwner(), WheelDelta))
 	{
 		return true;
 	}
-#else
-	(void)WheelDelta;
-#endif
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -194,7 +190,7 @@ bool UDIVELegacyKbmInputComponent::TryRouteZoomWheel(const float WheelDelta)
 	}
 
 	const UDIVESessionSubsystem* DiveSubsystem = World->GetSubsystem<UDIVESessionSubsystem>();
-	// Suppress orbit zoom while physical drive is active (wheel routes to grab depth instead).
+	// Suppress orbit zoom while any session gesture is live (Interact hold or Physical GRIP).
 	return DiveSubsystem && DiveSubsystem->IsProxyDriving();
 }
 

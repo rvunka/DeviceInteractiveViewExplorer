@@ -70,7 +70,7 @@
 Ключевые следствия:
 
 - **Монитор уже готов.** Ярус 1 (Rotary/Threaded в Interact) — это и есть interact-глагол. Миграция на ярус 2: тот же биндинг, действие вместо записи в transform форвардит дельту в компонент (через `IDIVEProxyDrive` / registry — контракт V1–V4 доращен заранее). Авторинг каталога не меняется.
-- **`IDIVEProxyDrive` = мониторный адаптер interact-глагола.** Не «опциональная кинематика», как в ревизии 1, а штатный вход яруса 2 со стороны DIVE. **Код сегодня** всё ещё стартует этот путь с Physical primary (`TryBeginProxyDriveAtScreenPosition`) — хвост ревизии 1; перенос на Interact — работа яруса 2.
+- **`IDIVEProxyDrive` = мониторный адаптер interact-глагола.** Не «опциональная кинематика», как в ревизии 1, а штатный вход яруса 2 со стороны DIVE. Биндить `UDIVEProxyDriveForwardAction` в Catalog / Bindings (Interact). Physical primary — только pawn GRIP.
 - **VR-интерактор — не GRIP и не камера DIVE.** Host-компонент: резолв хита на inspectable, primary с курка, world-меню с отдельной кнопки, маппинг дельты позы руки на ось (брат `MapScreenDeltaToAxisAngle`). Исполнение идёт через **граф действий DIVE** (тот же Catalog / Bindings), не через новый VR-каталог. GRIP остаётся чистым grab-движком. Камера сессии во standing-VR **не** включается (§8–§10).
 - **Кнопки** — дискретный случай того же глагола: клик курка / клик LMB / строка меню → `Execute` → компонент.
 
@@ -154,11 +154,14 @@ DIVE склеен из двух слоёв. Во VR у панели нужен �
 
 Порядок постройки, когда дойдёте до VR: сначала headless-слот Begin/Update/End без камеры, потом world-меню. Меню без слота крутилку не закроет.
 
-### Факт кода сегодня (шов, не баг продукта)
+### Факт кода сегодня
 
 - Query строк: `UDIVEInspectableComponent::AppendConfiguredContextMenuEntries` и `TryResolvePrimaryAction` **сессии не требуют**.
-- `UDIVESessionSubsystem::BuildContextMenuEntries`, `TryBeginContinuousAction`, Focus/Isolate, chrome — требуют `IsSessionActive()`.
-- Значит standing-VR нельзя «просто вызвать сессию»; нужен action host, который владеет continuous-слотом без презентации. Не делать это, пока нет триггера яруса 2 / VR.
+- Headless execute: `UDIVEInspectableComponent::ExecuteAction` / `UpdateActiveInteraction` / `EndActiveInteraction` — слот на Inspectable, **без** `RequestSession()` / камеры. Сессионные обёртки (`ExecuteResolvedAction`, `TryBeginContinuousAction`) по-прежнему требуют `IsSessionActive()`.
+- `AppendConfiguredContextMenuEntries(..., PresentationFilter)`: `Session` → Session+Both; `World` → World+Both. Focus/Isolate = `EDIVEActionPresentation::Session`.
+- Focus/Isolate **исполнение** и chrome по-прежнему привязаны к камерной сессии.
+- Хост action host: pick (`DIVEPick`) + resolve / menu query + Inspectable execute API. World-виджет и VR-ввод — вне DIVERuntime.
+- Hold-кнопка: `UDIVEMomentaryPressAction` (Begin=1, End=0). Тумблер — instant Device Action BP (`GetDisplayState.bChecked` с устройства). Notify — только если галочка в меню не нужна.
 
 ---
 
@@ -168,11 +171,11 @@ DIVE склеен из двух слоёв. Во VR у панели нужен �
 
 Это **не** 2D Slate-меню сессии и **не** ACTS world menu. Хост рисует world-space панель у точки хита (или у off-hand); выбор лучом, подтверждение курком. DIVE отдаёт уже собранный список строк.
 
-### Фильтр строк (не as-is)
+### Фильтр строк
 
-`GetDisplayState` остаётся (Condition прячет, `CanExecute` серит). Плюс доступность действия:
+`GetDisplayState` остаётся (Condition прячет, `CanExecute` серит). Плюс `EDIVEActionPresentation` на действии:
 
-| Значение (чертёж; в коде ещё нет) | Монитор-сессия | Standing-VR |
+| Значение | Монитор-сессия (`PresentationFilter=Session`) | Standing-VR (`PresentationFilter=World`) |
 |-----------------------------------|----------------|-------------|
 | `Session` | показывать | скрыть |
 | `World` | скрыть | показывать |
@@ -197,8 +200,8 @@ Isolate во VR не должен прятать соседние шкафы у�
 
 1. **Дом action host / VR-интерактора:** host game module или `DeviceControlKit`; touch-volume vs переиспользование aim.
 2. **Маппинг дельты руки на ось** — хелпер уровня компонент-кита (брат `MapScreenDeltaToAxisAngle`).
-3. **Headless continuous-слот** — вынести владение Begin/Update/End из «только активная камера-сессия» (сегодня `TryBeginContinuousAction` требует `IsSessionActive()`).
-4. **`Session | World | Both` на действии** — или эквивалент, чтобы Focus не всплывал у панели.
+3. **Headless continuous-слот** — `UDIVEInspectableComponent::ExecuteAction` / Update / End (сделано). Хост тикает Update и зовёт End.
+4. **`Session | World | Both` на действии** — `EDIVEActionPresentation` + фильтр в `AppendConfiguredContextMenuEntries` (сделано).
 5. **HUD при VR-жесте:** событие компонента / `NotifyValueChanged` → host UI; DIVE-HUD сессии остаётся мониторным.
 6. **Haptics на детентах** (VR) — событие компонента → контроллер.
 7. Раскладка `IA_DeviceMenu` на конкретную кнопку контроллера — хост.

@@ -52,6 +52,7 @@ float IntegrateAgainstLimits(const float Accumulated, const float Delta, const b
 UDIVEFocusAction::UDIVEFocusAction()
 {
 	DisplayName = NSLOCTEXT("DIVE", "ContextMenuFocus", "Focus");
+	Presentation = EDIVEActionPresentation::Session;
 }
 
 bool UDIVEFocusAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
@@ -78,6 +79,7 @@ bool UDIVEFocusAction::Execute_Implementation(const FDIVEActionContext& Context)
 UDIVEIsolateAction::UDIVEIsolateAction()
 {
 	DisplayName = NSLOCTEXT("DIVE", "ContextMenuIsolate", "Isolate");
+	Presentation = EDIVEActionPresentation::Session;
 }
 
 bool UDIVEIsolateAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
@@ -295,6 +297,37 @@ bool UDIVENotifyAction::Execute_Implementation(const FDIVEActionContext& Context
 	}
 
 	return true;
+}
+
+UDIVEMomentaryPressAction::UDIVEMomentaryPressAction()
+{
+	DisplayName = NSLOCTEXT("DIVE", "MomentaryPress", "Press");
+}
+
+bool UDIVEMomentaryPressAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
+{
+	if (!CanExecute(Context))
+	{
+		return false;
+	}
+
+	NotifyValueChanged(1.f);
+	return true;
+}
+
+void UDIVEMomentaryPressAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
+{
+	(void)Update;
+}
+
+void UDIVEMomentaryPressAction::EndInteraction_Implementation(const bool bCommit)
+{
+	(void)bCommit;
+	if (IsInteractionActive())
+	{
+		NotifyValueChanged(0.f);
+	}
+	NotifyInteractionCompleted();
 }
 
 namespace

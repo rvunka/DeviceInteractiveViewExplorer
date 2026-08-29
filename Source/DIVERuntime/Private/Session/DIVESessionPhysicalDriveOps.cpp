@@ -2,13 +2,11 @@
 
 #include "Session/DIVESessionPhysicalDriveOps.h"
 
-#include "Actions/DIVEBuiltInActions.h"
+#include "DIVEActionExecution.h"
 #include "DIVEDeviceAction.h"
 #include "DIVELog.h"
 #include "DIVEPawnPhysicalDrive.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
-#include "DIVEProxyDriveResolve.h"
-#include "DIVEInspectableComponent.h"
 #include "DIVECameraRig.h"
 #include "DIVESessionSubsystem.h"
 #include "GameFramework/PlayerController.h"
@@ -26,15 +24,21 @@ void FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(UDIVESessionSubsystem&
 		}
 		break;
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
-		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
+	{
+		UDIVEContinuousDeviceAction* Continuous = Session.ContinuousSlot.ActiveAction.Get();
+		DIVEActionExecution::EndContinuousAction(
+			Session.GetWorld(),
+			Session.ActiveInspectable.Get(),
+			Session.ContinuousSlot,
+			bCommit);
+		if (Continuous)
 		{
-			FDIVEActionWorldScope WorldScope(Continuous, Session.GetWorld());
 			Continuous->OnValueChanged.RemoveDynamic(
 				&Session,
 				&UDIVESessionSubsystem::HandleContinuousActionValueChanged);
-			Continuous->EndInteraction(bCommit);
 		}
 		break;
+	}
 	default:
 		break;
 	}
@@ -45,7 +49,7 @@ void FDIVESessionPhysicalDriveOps::ResetPhysicalDriveState(UDIVESessionSubsystem
 	Session.bProxyDriving = false;
 	Session.ActivePhysicalDriveKind = UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::None;
 	Session.ActivePawnPhysicalDrive.Reset();
-	Session.ActiveContinuousAction.Reset();
+	Session.ContinuousSlot.Reset();
 	Session.bIgnoreNextPrimaryActionRelease = false;
 }
 
@@ -89,26 +93,8 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 		return false;
 	}
 
-	// Device proxy path: route through InternalProxyDriveAction so the interaction uses the single
-	// continuous-action slot instead of a parallel device-proxy code path.
-	if (DIVEProxyDriveResolve::FindProxyDriveForHit(HitComponent))
-	{
-		UDIVEInspectableComponent* Inspectable = Session.ActiveInspectable.Get();
-		if (Inspectable && Session.InternalProxyDriveAction)
-		{
-			const FDIVEActionContext Context = Inspectable->MakeActionContext(
-				PickTarget,
-				NAME_None,
-				ScreenPosition,
-				HitResult);
-			if (Session.TryBeginContinuousAction(Session.InternalProxyDriveAction.Get(), Context))
-			{
-				return true;
-			}
-		}
-	}
-
-	// Pawn physical drive (e.g. GRIP): own lifecycle, separate from the action system.
+	// Physical = grab only. Device IDIVEProxyDrive is an Interact catalog binding
+	// (UDIVEProxyDriveForwardAction), not auto-discovered on Physical primary.
 	FDIVEProxyDriveContext DriveContext;
 	DriveContext.ScreenPosition = ScreenPosition;
 	DriveContext.FocusTarget = PickTarget;
@@ -146,7 +132,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginProxyDriveAtScreenPosition(
 	UE_LOG(
 		LogDIVE,
 		Warning,
-		TEXT("DIVE: Physical pick on '%s' had no device proxy drive and no pawn physical drive backend."),
+		TEXT("DIVE: Physical pick on '%s' had no pawn physical drive backend."),
 		*GetNameSafe(HitComponent));
 
 	return false;
@@ -168,17 +154,9 @@ void FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(UDIVESessionSubsystem
 		}
 		break;
 	case UDIVESessionSubsystem::EDIVEActivePhysicalDriveKind::ContinuousAction:
-		if (UDIVEContinuousDeviceAction* Continuous = Session.ActiveContinuousAction.Get())
+		if (UDIVEContinuousDeviceAction* Continuous = Session.ContinuousSlot.ActiveAction.Get())
 		{
-			FDIVEInteractionUpdate Frame = Update;
-			if (Frame.DeltaTime <= 0.f)
-			{
-				Frame.DeltaTime = Session.GetWorld() ? Session.GetWorld()->GetDeltaSeconds() : 0.f;
-			}
-			{
-				FDIVEActionWorldScope WorldScope(Continuous, Session.GetWorld());
-				Continuous->UpdateInteraction(Frame);
-			}
+			DIVEActionExecution::UpdateContinuousAction(Session.GetWorld(), Session.ContinuousSlot, Update);
 			if (!Continuous->IsInteractionActive())
 			{
 				EndProxyDrive(Session, true);

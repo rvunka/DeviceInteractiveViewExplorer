@@ -70,7 +70,7 @@ hidden meshes need tag `DIVE.PickProxy`.
 `EDIVESessionInteractionMode` in **DIVECore**: **Interact** | **Physical**.
 
 - Resets to **Interact** on session start/end
-- **Physical (code today):** `TryBeginProxyDrive*` via `HandlePrimaryAction*` — device `IDIVEProxyDrive` first, then pawn GRIP grab. **Target:** GRIP grab only; proxy belongs to Interact (tier 2).
+- **Physical:** `HandlePrimaryAction*` → pawn GRIP grab only (`TryBeginProxyDriveAtScreenPosition`). Device `IDIVEProxyDrive` is an Interact catalog binding (`UDIVEProxyDriveForwardAction`), not auto-discovered on Physical primary.
 - **Interact:** binding `PrimaryActionIndex` when set, or the sole continuous action on that binding; hover overlay on pick; explicit focus via `HandleFocusUnderCursor` / context menu
 
 ### Enhanced Input (host Content)
@@ -102,12 +102,13 @@ In-session menu at cursor — **not** ACTS. Focus / Isolate / Admin are normal *
 | Interact-mode hover | **DIVE \| Pick \| Hover** — `Hover Overlay Material` + optional `Pick Hover Overlay By Component` |
 | Non-interactive meshes | `Pick Interaction Exclusions` or `Skip Component Tag` |
 | Door, slider, knob (kinematic) | **Interact** mode + polar rim (`UDIVERotaryDriveAction` / `UDIVEThreadedDriveAction`) or linear rail (`UDIVELinearDriveAction`) |
+| Hold button / PTT | **Interact** primary + `UDIVEMomentaryPressAction` (value `1`/`0`; not a toggle) |
 | Device-owned DOF / VR-parity control | **Interact** verb → host control component; monitor via `IDIVEProxyDrive` / registry (zero in-plugin implementors); standing-VR via host action host on the same Catalog / Bindings (**no** camera session — [`Design_PhysicalControls_OneState_TwoInputs.md`](Design_PhysicalControls_OneState_TwoInputs.md) §8–§10) |
 | Cable, grab | GRIP + MESS in host project |
 
 ## Proxy drive
 
-Panel controls are an **interact** verb (deterministic gesture), not a GRIP grab — see [`Design_PhysicalControls_OneState_TwoInputs.md`](Design_PhysicalControls_OneState_TwoInputs.md). DIVECore exposes **`IDIVEProxyDrive`** / **`IDIVEDeviceControlRegistry`** so the monitor session can forward that gesture to a device control component (contract-goal — zero in-plugin implementors). Standing-VR reuses the **action graph** (Catalog / Bindings) through a host action host — it does **not** open the DIVE camera session. GRIP grab (bridge cursor-pull / grip button) stays for **free bodies**. Kinematic knobs/nuts/sliders in-session use the built-in continuous actions above (state = mesh transform).
+Panel controls are an **interact** verb (deterministic gesture), not a GRIP grab — see [`Design_PhysicalControls_OneState_TwoInputs.md`](Design_PhysicalControls_OneState_TwoInputs.md). DIVECore exposes **`IDIVEProxyDrive`** / **`IDIVEDeviceControlRegistry`** so the monitor session can forward that gesture to a device control component (contract-goal — zero in-plugin implementors). Standing-VR reuses the **action graph** (Catalog / Bindings) through a host action host — it does **not** open the DIVE camera session. GRIP grab (bridge cursor-pull / grip button) stays for **free bodies**. Kinematic knobs/nuts/sliders in-session use the built-in continuous actions above (state = mesh transform). Hold buttons use `UDIVEMomentaryPressAction` (state = 1 while held). Toggles stay instant: a Device Action BP with `GetDisplayState.bChecked` from the device (Notify does not set `bChecked`).
 
 ## Anchor (viewpoint only)
 
@@ -126,7 +127,7 @@ _Future:_ world-level focus dim via custom depth / post-process (not actor hidin
 1. `RequestSession()` → mode **Interact**; camera blends to start focus.
 2. Orbit (`IA_DIVE_Orbit`), zoom, back, exit — always.
 3. **`IA_DIVE_ContextMenu`** / `HandleContextMenuRequested` → Focus, Isolate at cursor pick.
-4. **`IA_DIVE_SetMode_Physical`** / `SetInteractionMode(Physical)` → **`IA_DIVE_PrimaryAction`** drives pawn GRIP grab (and today still tries `IDIVEProxyDrive` first).
+4. **`IA_DIVE_SetMode_Physical`** / `SetInteractionMode(Physical)` → **`IA_DIVE_PrimaryAction`** drives pawn GRIP grab only.
 
 ## Editor
 
@@ -134,13 +135,15 @@ _Future:_ world-level focus dim via custom depth / post-process (not actor hidin
 
 **DIVE Dump Device** (same menu) or console in PIE — dump implementation in `DIVEUncooked`; console from `DIVERuntimeDev`:
 
-Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.BindingResolve`, `DIVE.Actions.CollectMatchingPrimitives`, `DIVE.Actions.ComponentNameMatch`, `DIVE.Actions.ExecutionWorld`, `DIVE.Inspectable.IsDataValid`, `DIVE.Drive.Mapping`, `DIVE.Drive.BuiltInActions`, `DIVE.ProxyDrive.ResolveHierarchy`, `DIVE.PawnPhysicalDrive.Resolve`, `DIVE.Player.IsDataValid`, `DIVE.Session.Lifecycle` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
+Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.BindingResolve`, `DIVE.Actions.CollectMatchingPrimitives`, `DIVE.Actions.ComponentNameMatch`, `DIVE.Actions.ExecutionWorld`, `DIVE.Actions.HeadlessExecute`, `DIVE.Actions.MomentaryPress`, `DIVE.Inspectable.IsDataValid`, `DIVE.Drive.Mapping`, `DIVE.Drive.BuiltInActions`, `DIVE.ProxyDrive.ResolveHierarchy`, `DIVE.PawnPhysicalDrive.Resolve`, `DIVE.PawnPhysicalDrive.PhysicalGrabOnly`, `DIVE.Player.IsDataValid`, `DIVE.Session.Lifecycle` (Editor / PIE; not run in `UnrealEditor-Cmd` commandlet).
 
 | Smoke | What it covers |
 |-------|----------------|
 | `DIVE.ContextMenu.DefaultBindings` | Native CDO Bindings empty; instance seeds public Focus/Admin; register instances foreign private actions |
 | `DIVE.Actions.BindingResolve` | Primary index, implicit sole-continuous primary, specificity, continuous/notify, Focus `CanExecute` |
 | `DIVE.Actions.ExecutionWorld` | Catalog action world injection |
+| `DIVE.Actions.HeadlessExecute` | Notify + continuous Begin/End without session; Presentation Session/World filter; Focus does not open camera |
+| `DIVE.Actions.MomentaryPress` | Begin=1 / End=0, Update silent, cancel still 0; headless Inspectable slot |
 | `DIVE.Actions.CollectMatchingPrimitives` | CDO Collect empty; live owner + tagged sphere when a world exists |
 | `DIVE.Actions.ComponentNameMatch` | Name normalize / FocusId is not a name match |
 | `DIVE.Inspectable.IsDataValid` | Authored Standard+Admin valid; duplicate SectionId fails; live Inspectable Valid; Add Admin Defaults restores BuiltIn.Admin |
@@ -148,6 +151,7 @@ Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.Bindin
 | `DIVE.Drive.BuiltInActions` | Rotary/Threaded polar + Linear travel begin-update-cancel, re-seed after lost projection, detents, limit return |
 | `DIVE.ProxyDrive.ResolveHierarchy` | Registry on root resolves a child-actor hit; N>1 registries → null |
 | `DIVE.PawnPhysicalDrive.Resolve` | Null pawn; N>1 unnamed → null; named match (when a live world exists). Production resolve requires **exactly one** implementor |
+| `DIVE.PawnPhysicalDrive.PhysicalGrabOnly` | `InternalProxyDriveAction` gone; ForwardAction catalog-authorable; Physical begin does not auto-start device proxy |
 | `DIVE.Player.IsDataValid` | CDO valid; non-Pawn owner invalid (live world) |
 | `DIVE.Session.Lifecycle` | Live world + local PC: Begin → active → End. Skips without PIE/PC (no `CreateWorld`) |
 
@@ -157,9 +161,9 @@ Automation smoke tests: `DIVE.ContextMenu.DefaultBindings`, `DIVE.Actions.Bindin
 |--------|------|------|------|
 | **DIVERuntime** | no | no | no |
 | **DIVEGRIPBridge** (sibling plugin) | no | yes (§7 bridge) | no |
-| **DIVERuntimeDev** | no | UBT enable check (§6.2.9) | no |
+| **DIVERuntimeDev** | no | no | no |
 
-**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (`ProjectDescriptor` / `Plugins.ReadAvailablePlugins` in `DIVEGRIPBridge.Build.cs` and `DIVERuntimeDev.Build.cs`). Unlisted project plugins still follow `IsEnabledByDefault` (GRIP is not required in the host `.uproject`). Without GRIP the bridge compiles as a no-op stub. DIVE `.uplugin` must **not** depend on `DIVEGRIPBridge` (cycle) or Optional GRIP (GRIP is owned by the bridge / host). No Enhanced Input assets or `BindKey` in production Runtime modules.
+**DIVERuntime** does not link other gameplay plugins. **DIVEGRIPBridge** is a **separate sibling plugin** (`Plugins/DIVEGRIPBridge/`) for Physical-mode pawn grab: enable it in the host `.uproject` alongside DIVE. It **links GRIP only when GraspRigidbodyInertialPhysics is enabled** for the target (`ProjectDescriptor` / `Plugins.ReadAvailablePlugins` in `DIVEGRIPBridge.Build.cs`). Unlisted project plugins still follow `IsEnabledByDefault` (GRIP is not required in the host `.uproject`). Without GRIP the bridge compiles as a no-op stub. DIVE `.uplugin` must **not** depend on `DIVEGRIPBridge` (cycle) or Optional GRIP (GRIP is owned by the bridge / host); `DIVERuntimeDev` likewise must not link `GRIPRuntime`. No Enhanced Input assets or `BindKey` in production Runtime modules.
 
 **Pawn physical drive:** `IDIVEPawnPhysicalDrive` is cursor-pull (backend ticks / reads cursor). The session does not push `ScreenDelta` to the pawn drive. Production resolve requires **exactly one** implementor (N>1 unnamed → nullptr). Pawn-drive drag does not broadcast `OnInteractionValueChanged` / value HUD. Continuous actions receive **`FDIVEInteractionUpdate`** each tick (cursor, `ScreenDelta`, view, pick ray); the player assembles it from the active camera rig. Device `IDIVEProxyDrive` (when implemented) still receives `ScreenDelta` via `ApplyProxyDriveDelta`; `UDIVEProxyDriveForwardAction` polls `GetProxyDriveNormalizedValue` at Begin and after each update; rotary/threaded/linear call `NotifyInteractionValue` (`FDIVEInteractionValue`); proxy forward uses `NotifyValueChanged` (Normalized only).
 
