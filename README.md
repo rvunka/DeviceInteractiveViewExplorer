@@ -12,7 +12,6 @@ DIVE provides:
 - **In-session context menu** — component **Bindings** (Focus/Isolate/Simulate/Delete) + **Action Catalog** (`UDIVEDeviceAction`). Standing-VR reuses the same action graph via a host action host — it does **not** open the camera session (see `Docs/Design_PhysicalControls_OneState_TwoInputs.md` §8–§10).
 - **Primary action** — `PrimaryActionIndex` on binding; among matches LMB uses specificity (Name > PartId > Tag > Any), ties keep earlier Bindings entry (`IA_DIVE_PrimaryAction` → `HandlePrimaryAction*`); hover overlay under **DIVE | Pick | Hover**
 - Optional **`UDIVEAnchorComponent`** for named camera viewpoints and semantic AOI
-- **`IDIVEProxyDrive`** + **`IDIVEDeviceControlRegistry`** — monitor adapter for the interact verb (tier 2; host implements; zero in-plugin backends)
 - Camera sensitivity on **`UDIVEInspectableComponent`** (`FDIVECameraSettings` under DIVE | Camera)
 - Self-contained **DIVERuntime** (no ACTS / MESS); optional **GRIP** via sibling plugin **DIVEGRIPBridge** for Physical-mode pawn grab. DIVE `.uplugin` and `DIVERuntimeDev` do **not** list or link GRIP — the bridge detects it via UBT `ReadAvailablePlugins`. `DIVE.Dump*` implementation stays in `DIVEUncooked` and is linked from RuntimeDev only in **editor** targets.
 
@@ -22,7 +21,7 @@ DIVE provides:
 
 | Module | Role |
 |--------|------|
-| **DIVECore** | Shared types, `FDIVEFocusTarget`, `UDIVEDeviceAction`, `IDIVEProxyDrive`, `IDIVEDeviceControlRegistry`, conventions |
+| **DIVECore** | Shared types, `FDIVEFocusTarget`, `UDIVEDeviceAction`, `IDIVEPawnPhysicalDrive`, conventions |
 | **DIVERuntime** | Subsystem, components, camera rig, context menu UI, **`UDIVEPlayerComponent`** (sole pawn ActorComponent) |
 | **DIVERuntimeDev** | `UDIVELegacyKbmInputComponent`; registers `DIVE.Dump*` console (dump implementation in DIVEUncooked) |
 | *(sibling plugin)* **DIVEGRIPBridge** | Enable separately: instanced **DIVE GRIP Physical Drive** on DIVE Player |
@@ -35,8 +34,8 @@ DIVE provides:
 4. On the locally controlled pawn: **`UDIVEPlayerComponent`**.
 5. Optional PIE: **`UDIVELegacyKbmInputComponent`** (`DIVERuntimeDev`) — RMB context menu, MMB orbit, etc.
 6. Open session: ACTS `OnActionExecuted` → `TryRequestSessionFromActionId` (`OpenDIVE` / `DIVE::kActionOpenDIVE`), or `RequestSession()` — see `Docs/QUICKSTART.md` §3.
-7. Custom menu: **Action Catalog / Bindings** + action instances — **`Docs/QUICKSTART.md`** §1. Knobs/nuts: Rotary/Threaded drive on a tagged mesh (§2).
-8. Physical controls: host implements `IDIVEDeviceControlRegistry` / `IDIVEProxyDrive` (see `Docs/Additional/DeviceInteractionModel.md` §6). For generic GRIP drag: enable **`DIVEGRIPBridge`**; on the pawn add **GRIP Rig** with slots Player + Dive (not Hand from Add Component). Player auto-creates the GRIP Physical Drive provider.
+7. Custom menu: **Action Catalog / Bindings** + action instances — **`Docs/QUICKSTART.md`** §1. Knobs/nuts: Rotary/Threaded drive on a tagged mesh; sounds/domain via K2 Action / Value Event (§2).
+8. Physical GRIP drag: enable **`DIVEGRIPBridge`**; on the pawn add **GRIP Rig** with slots Player + Dive (not Hand from Add Component). Player auto-creates the GRIP Physical Drive provider.
 
 See `Docs/QUICKSTART.md`, `Docs/ARCHITECTURE.md`, and `Docs/Additional/DeviceInteractionModel.md`.
 

@@ -10,7 +10,6 @@
 #include "DIVECameraRig.h"
 #include "DIVESessionSubsystem.h"
 #include "GameFramework/PlayerController.h"
-#include "Engine/World.h"
 #include "Session/DIVESessionPickOps.h"
 
 void FDIVESessionPhysicalDriveOps::EndActivePhysicalDrive(UDIVESessionSubsystem& Session, const bool bCommit)
@@ -80,9 +79,7 @@ bool FDIVESessionPhysicalDriveOps::TryBeginPawnGrabAtScreenPosition(
 		return false;
 	}
 
-	// Physical = grab only. Device IDIVEProxyDrive is an Interact catalog binding
-	// (UDIVEProxyDriveForwardAction), not auto-discovered on Physical primary.
-	FDIVEProxyDriveContext DriveContext;
+	FDIVEPawnPhysicalDriveContext DriveContext;
 	DriveContext.ScreenPosition = ScreenPosition;
 	DriveContext.FocusTarget = PickTarget;
 	DriveContext.HitComponent = HitComponent;

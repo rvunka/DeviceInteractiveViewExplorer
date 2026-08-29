@@ -25,7 +25,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sections")
 	TArray<FDIVEMenuSection> Sections;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bindings")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bindings", meta = (
+		TitleProperty = "BindingId"))
 	TArray<FDIVEActionBinding> Bindings;
 
 	/**

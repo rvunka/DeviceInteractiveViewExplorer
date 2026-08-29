@@ -92,6 +92,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DIVE|Actions", meta = (
 		DisplayName = "Bindings",
+		TitleProperty = "BindingId",
 		ToolTip = "Filled when you add the component (Focus, Isolate, Simulate Physics, Delete Mesh). Delete any binding or action to drop it."))
 	TArray<FDIVEActionBinding> Bindings;
 

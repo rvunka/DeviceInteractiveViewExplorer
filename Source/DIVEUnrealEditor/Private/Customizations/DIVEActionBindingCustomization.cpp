@@ -95,10 +95,14 @@ void FDIVEActionBindingCustomization::CustomizeHeader(
 {
 	(void)StructCustomizationUtils;
 
+	StructHandle = StructPropertyHandle;
+
 	HeaderRow
 		.NameContent()
 		[
-			StructPropertyHandle->CreatePropertyNameWidget()
+			SNew(STextBlock)
+			.Text(this, &FDIVEActionBindingCustomization::GetCollapsedHeaderText)
+			.Font(FAppStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
 		]
 		.ValueContent()
 		[
@@ -232,6 +236,69 @@ void FDIVEActionBindingCustomization::CustomizeChildren(
 					]
 				];
 		}
+	}
+}
+
+FText FDIVEActionBindingCustomization::GetCollapsedHeaderText() const
+{
+	if (!StructHandle.IsValid())
+	{
+		return LOCTEXT("BindingUntitled", "Binding");
+	}
+
+	TArray<void*> RawData;
+	StructHandle->AccessRawData(RawData);
+	if (RawData.Num() != 1 || !RawData[0])
+	{
+		return StructHandle->GetPropertyDisplayName();
+	}
+
+	const FDIVEActionBinding& Binding = *static_cast<const FDIVEActionBinding*>(RawData[0]);
+
+	const FString IdLabel = Binding.BindingId.IsNone() ? FString() : Binding.BindingId.ToString();
+
+	FString ActionLabel;
+	if (const UDIVEDeviceAction* Primary = Binding.GetPrimaryAction())
+	{
+		ActionLabel = Primary->GetResolvedDisplayName().ToString();
+	}
+
+	if (!IdLabel.IsEmpty() && !ActionLabel.IsEmpty())
+	{
+		return FText::FromString(IdLabel + TEXT("  ·  ") + ActionLabel);
+	}
+	if (!IdLabel.IsEmpty())
+	{
+		return FText::FromString(IdLabel);
+	}
+	if (!ActionLabel.IsEmpty())
+	{
+		return FText::FromString(ActionLabel);
+	}
+
+	switch (Binding.Targets.MatchMode)
+	{
+	case EDIVETargetMatchMode::AnyPrimitive:
+		return LOCTEXT("BindingAnyPrimitive", "Any Primitive");
+	case EDIVETargetMatchMode::ComponentName:
+		return Binding.Targets.MatchValues.Num() > 0
+			? FText::Format(
+				LOCTEXT("BindingName", "Name: {0}"),
+				FText::FromName(Binding.Targets.MatchValues[0]))
+			: LOCTEXT("BindingNameEmpty", "Component Name");
+	case EDIVETargetMatchMode::PartId:
+		return Binding.Targets.MatchValues.Num() > 0
+			? FText::Format(
+				LOCTEXT("BindingPartId", "PartId: {0}"),
+				FText::FromName(Binding.Targets.MatchValues[0]))
+			: LOCTEXT("BindingPartIdEmpty", "Part Id");
+	case EDIVETargetMatchMode::ComponentTag:
+	default:
+		return Binding.Targets.MatchValues.Num() > 0
+			? FText::Format(
+				LOCTEXT("BindingTag", "Tag: {0}"),
+				FText::FromName(Binding.Targets.MatchValues[0]))
+			: LOCTEXT("BindingUntitled", "Binding");
 	}
 }
 

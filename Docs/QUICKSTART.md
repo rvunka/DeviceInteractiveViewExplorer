@@ -114,7 +114,7 @@ Need a domain flag (MESS / sound) instead of querying meshes: **DIVE Action Valu
 - **Press:** no pointer mapping. Begin emits `1`, End emits `0`, Update is silent. Cancel still emits `0`.
 - **Domain readout (optional, Rotary / Linear):** with angle/travel limited, enable **Use Domain Readout**, set **Domain Min/Max** and free **Readout Suffix** (`A`, `V`, `Ω`). Gesture stays in degrees/cm; HUD and Value Event expose `Absolute` as the lerp onto that scale. Not a second live state — mapping for chip/graph only. Unlimited wrap does not map to domain units.
 
-Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Default widget is a compact chip next to the driven primitive (cursor fallback). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit / optional DisplaySuffix). Rotary/Threaded/Linear call **`NotifyInteractionValue`**; Momentary Press and proxy forward use **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. `UDIVEProxyDriveForwardAction` polls `IDIVEProxyDrive::GetProxyDriveNormalizedValue` at Begin and after each delta. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
+Value HUD listens to session `OnInteractionValueChanged` (overridable widget class on DIVE Player). Default widget is a compact chip next to the driven primitive (cursor fallback). Payload is `FDIVEInteractionValue` (Normalized 0..1 plus signed Absolute + Unit / optional DisplaySuffix). Rotary/Threaded/Linear call **`NotifyInteractionValue`**; Momentary Press uses **`NotifyValueChanged`** (Normalized only). The widget formats the string — actions do not. **Pawn GRIP Physical drag does not** (cursor-pull has no normalized value).
 
 Interaction parameters live on the action instance; device domain state lives on the device (see `Additional/DeviceInteractionModel.md`).
 
@@ -180,7 +180,7 @@ IA_DIVE_PrimaryAction Started
  → most-specific matching binding PrimaryActionIndex (or the sole continuous action) → UDIVEDeviceAction::Execute / BeginInteraction
 ```
 
-In Physical mode the same `HandlePrimaryAction*` routes to pawn GRIP grab only — not catalog primary actions and not device `IDIVEProxyDrive` auto-discovery (proxy is an Interact catalog / ForwardAction binding).
+In Physical mode the same `HandlePrimaryAction*` routes to pawn GRIP grab only — not catalog primary actions.
 
 Default rows come from component **Bindings** (Focus, Isolate, Simulate Physics, Delete Mesh). Device-specific rows: **Action Catalog** (and/or extra rows in Bindings). To hide Admin in editor, delete that binding or those actions; **Add Admin Defaults** restores them. Shipping hides Admin automatically.
 ---
@@ -201,12 +201,12 @@ Focus via mesh pick, context menu, or `DefaultStartFocusId`. Optional **Show Vie
 
 ## 2. Physical controls
 
-**Two tiers**
+**Paths**
 
-| Tier | When | Where state lives |
+| Path | When | Where state lives |
 |------|------|-------------------|
-| **1 — kinematic (now)** | Knobs, unscrewable nuts, sliders, levers that only need to move in the DIVE session; hold buttons | Mesh transform (drives) or 1/0 (Press). Bind **DIVE Rotary Drive Action** / **DIVE Threaded Drive Action** / **DIVE Linear Drive Action** / **DIVE Momentary Press Action** (Interact mode). |
-| **2 — device control (by trigger)** | VR parity, Chaos constraints, MESS, the same part usable outside DIVE | Control component on the device + `IDIVEProxyDrive` / registry. Same **Interact** gesture on the monitor; standing-VR reuses Catalog / Bindings via a host action host (**no** camera session). **Physical** mode is GRIP grab of free bodies. DIVE ships the contract; host implements it (zero in-plugin backends today). |
+| **1 — kinematic (now)** | Knobs, unscrewable nuts, sliders, levers; hold buttons | Mesh transform (drives) or 1/0 (Press). Bind **DIVE Rotary Drive Action** / **DIVE Threaded Drive Action** / **DIVE Linear Drive Action** / **DIVE Momentary Press Action** (Interact mode). Sounds / domain: K2 Action / Value Event on the device. |
+| **Standing-VR** | Same parts without the DIVE camera | Same Catalog / Bindings via a host action host (**no** camera session). **Physical** mode is GRIP grab of free bodies. |
 
 Do **not** add a second DIVE-only control asset layer — that would be another source of truth.
 

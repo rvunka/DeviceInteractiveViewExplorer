@@ -352,21 +352,6 @@ void UDIVEPlayerComponent::ApplyPrimaryActionDragFromMouse()
 		return;
 	}
 
-	if (Subsystem->IsPawnPhysicalDriveActive())
-	{
-		float MouseDeltaX = 0.f;
-		float MouseDeltaY = 0.f;
-		PlayerController->GetInputMouseDelta(MouseDeltaX, MouseDeltaY);
-		if (!FMath::IsNearlyZero(MouseDeltaX) || !FMath::IsNearlyZero(MouseDeltaY))
-		{
-			FDIVEInteractionUpdate Update;
-			Update.ScreenDelta = FVector2D(MouseDeltaX, MouseDeltaY);
-			Update.DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
-			Subsystem->UpdateActiveInteraction(Update);
-		}
-		return;
-	}
-
 	FVector2D CurrentPosition;
 	if (!TryGetCursorScreenPosition(CurrentPosition))
 	{
@@ -452,7 +437,7 @@ void UDIVEPlayerComponent::RoutePrimaryActionPressed(const FVector2D& ScreenPosi
 
 	PrimaryActionLastPosition = ScreenPosition;
 
-	// Continuous / proxy already active (e.g. started from context menu): click commits/ends.
+	// Gesture already active (Interact hold or Physical GRIP): click commits/ends.
 	if (Subsystem->IsSessionGestureActive())
 	{
 		Subsystem->HandleActivePawnPhysicalManualRotateReleased();
@@ -1311,7 +1296,7 @@ void UDIVEPlayerComponent::HideContextMenu()
 	}
 }
 
-bool UDIVEPlayerComponent::CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) const
+bool UDIVEPlayerComponent::CanBeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) const
 {
 	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
 	{
@@ -1320,7 +1305,7 @@ bool UDIVEPlayerComponent::CanBeginPawnPhysicalDrive_Implementation(const FDIVEP
 	return false;
 }
 
-bool UDIVEPlayerComponent::BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context)
+bool UDIVEPlayerComponent::BeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context)
 {
 	if (UObject* DriveObject = PhysicalDriveInterfaceObject(PhysicalDriveProvider))
 	{

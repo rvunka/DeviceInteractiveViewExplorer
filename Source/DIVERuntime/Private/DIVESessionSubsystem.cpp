@@ -5,7 +5,6 @@
 #include "DIVEActionExecution.h"
 #include "DIVECameraRig.h"
 #include "DIVEInspectableComponent.h"
-#include "DIVELog.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/DIVESessionFocusOps.h"
@@ -554,13 +553,6 @@ bool UDIVESessionSubsystem::TryBeginPawnGrabAtScreenPosition(
 	return FDIVESessionPhysicalDriveOps::TryBeginPawnGrabAtScreenPosition(*this, ScreenPosition, PlayerController);
 }
 
-bool UDIVESessionSubsystem::TryBeginProxyDriveAtScreenPosition(
-	const FVector2D& ScreenPosition,
-	APlayerController* PlayerController)
-{
-	return TryBeginPawnGrabAtScreenPosition(ScreenPosition, PlayerController);
-}
-
 void UDIVESessionSubsystem::UpdateActiveInteraction(const FDIVEInteractionUpdate& Update)
 {
 	FDIVESessionPhysicalDriveOps::UpdateActiveInteraction(*this, Update);
@@ -569,11 +561,6 @@ void UDIVESessionSubsystem::UpdateActiveInteraction(const FDIVEInteractionUpdate
 void UDIVESessionSubsystem::EndSessionGesture(bool bCommit)
 {
 	FDIVESessionPhysicalDriveOps::EndSessionGesture(*this, bCommit);
-}
-
-void UDIVESessionSubsystem::EndProxyDrive(bool bCommit)
-{
-	EndSessionGesture(bCommit);
 }
 
 bool UDIVESessionSubsystem::TryBeginContinuousAction(

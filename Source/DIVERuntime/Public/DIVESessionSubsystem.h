@@ -75,16 +75,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE|Session")
 	bool IsSessionGestureActive() const;
 
-	/** @deprecated Use IsSessionGestureActive. Not IDIVEProxyDrive. */
-	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive", meta = (
-		DeprecatedFunction,
-		DeprecationMessage = "Use IsSessionGestureActive. This is the session gesture (Interact hold or Physical pawn GRIP), not IDIVEProxyDrive."))
-	bool IsProxyDriving() const { return IsSessionGestureActive(); }
-
 	/** Call from PrimaryActionReleased after menu-started continuous Begin. */
 	bool ConsumeIgnoreNextPrimaryActionRelease();
 
-	UFUNCTION(BlueprintPure, Category = "DIVE|ProxyDrive")
+	UFUNCTION(BlueprintPure, Category = "DIVE|Session")
 	bool IsPawnPhysicalDriveActive() const;
 
 	UFUNCTION(BlueprintPure, Category = "DIVE|Session")
@@ -197,29 +191,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Session")
 	bool TryBeginPawnGrabAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
 
-	/** @deprecated Use TryBeginPawnGrabAtScreenPosition. Physical grab only — not IDIVEProxyDrive. */
-	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive", meta = (
-		DeprecatedFunction,
-		DeprecationMessage = "Use TryBeginPawnGrabAtScreenPosition. Physical pawn GRIP grab, not IDIVEProxyDrive."))
-	bool TryBeginProxyDriveAtScreenPosition(const FVector2D& ScreenPosition, APlayerController* PlayerController);
-
-	/** Updates the session continuous slot or ticks pawn GRIP while Physical drag is active. */
-	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	/** Ticks the session continuous slot (Interact hold). Pawn GRIP ticks on the provider. */
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Session")
 	void UpdateActiveInteraction(const FDIVEInteractionUpdate& Update);
 
 	UFUNCTION(BlueprintCallable, Category = "DIVE|Session")
 	void EndSessionGesture(bool bCommit);
 
-	/** @deprecated Use EndSessionGesture. Not IDIVEProxyDrive::EndProxyDrive. */
-	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive", meta = (
-		DeprecatedFunction,
-		DeprecationMessage = "Use EndSessionGesture. Ends the session gesture (Interact hold or Physical pawn GRIP), not IDIVEProxyDrive."))
-	void EndProxyDrive(bool bCommit);
-
-	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Session")
 	void HandleActivePawnPhysicalManualRotatePressed();
 
-	UFUNCTION(BlueprintCallable, Category = "DIVE|ProxyDrive")
+	UFUNCTION(BlueprintCallable, Category = "DIVE|Session")
 	void HandleActivePawnPhysicalManualRotateReleased();
 
 	bool TryBeginContinuousAction(UDIVEContinuousDeviceAction* Action, const FDIVEActionContext& Context);
@@ -274,7 +256,6 @@ private:
 
 	EDIVEActivePhysicalDriveKind ActivePhysicalDriveKind = EDIVEActivePhysicalDriveKind::None;
 	TWeakInterfacePtr<IDIVEPawnPhysicalDrive> ActivePawnPhysicalDrive;
-	/** Monitor continuous-action slot (shared mutex with pawn GRIP via ActivePhysicalDriveKind). */
 	FDIVEContinuousActionSlot ContinuousSlot;
 
 	EDIVESessionInteractionMode InteractionMode = EDIVESessionInteractionMode::Interact;

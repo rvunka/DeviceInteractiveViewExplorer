@@ -14,13 +14,13 @@ class UDIVETestPawnPhysicalDriveComponent : public UActorComponent, public IDIVE
 	GENERATED_BODY()
 
 public:
-	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) const override
+	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) const override
 	{
 		(void)Context;
 		return false;
 	}
 
-	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) override
+	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) override
 	{
 		(void)Context;
 		return false;
@@ -56,13 +56,13 @@ public:
 		AutoPossessPlayer = EAutoReceiveInput::Disabled;
 	}
 
-	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) const override
+	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) const override
 	{
 		(void)Context;
 		return false;
 	}
 
-	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) override
+	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) override
 	{
 		(void)Context;
 		return false;

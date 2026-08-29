@@ -4,8 +4,6 @@
 
 #include "Components/PrimitiveComponent.h"
 #include "DIVEDriveMapping.h"
-#include "DIVEProxyDrive.h"
-#include "DIVEProxyDriveResolve.h"
 #include "DIVESessionSubsystem.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/World.h"
@@ -184,102 +182,6 @@ bool UDIVEDeleteMeshAction::Execute_Implementation(const FDIVEActionContext& Con
 	}
 
 	return Subsystem->DeleteMeshForTarget(Context.PickTarget);
-}
-
-UDIVEProxyDriveForwardAction::UDIVEProxyDriveForwardAction()
-{
-	DisplayName = NSLOCTEXT("DIVE", "ProxyDriveForward", "Drive");
-}
-
-bool UDIVEProxyDriveForwardAction::CanExecute_Implementation(const FDIVEActionContext& Context) const
-{
-	if (!Super::CanExecute_Implementation(Context) || !Context.Target)
-	{
-		return false;
-	}
-
-	if (IDIVEProxyDrive* ProxyDrive = DIVEProxyDriveResolve::FindProxyDriveForHit(Context.Target))
-	{
-		if (UObject* ProxyObject = Cast<UObject>(ProxyDrive))
-		{
-			FDIVEProxyDriveContext DriveContext;
-			DriveContext.ScreenPosition = Context.ScreenPosition;
-			DriveContext.FocusTarget = Context.PickTarget;
-			DriveContext.HitComponent = Context.Target;
-			DriveContext.PickHit = Context.PickHit;
-			DriveContext.ViewLocation = Context.ViewLocation;
-			DriveContext.ViewRotation = Context.ViewRotation;
-			DriveContext.PickRayDir = Context.PickRayDir;
-			return IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject, DriveContext);
-		}
-	}
-	return false;
-}
-
-bool UDIVEProxyDriveForwardAction::BeginInteraction_Implementation(const FDIVEActionContext& Context)
-{
-	ActiveProxyObject.Reset();
-	if (!Context.Target)
-	{
-		return false;
-	}
-
-	IDIVEProxyDrive* ProxyDrive = DIVEProxyDriveResolve::FindProxyDriveForHit(Context.Target);
-	UObject* ProxyObject = Cast<UObject>(ProxyDrive);
-	FDIVEProxyDriveContext DriveContext;
-	DriveContext.ScreenPosition = Context.ScreenPosition;
-	DriveContext.FocusTarget = Context.PickTarget;
-	DriveContext.HitComponent = Context.Target;
-	DriveContext.PickHit = Context.PickHit;
-	DriveContext.ViewLocation = Context.ViewLocation;
-	DriveContext.ViewRotation = Context.ViewRotation;
-	DriveContext.PickRayDir = Context.PickRayDir;
-	if (!ProxyObject || !IDIVEProxyDrive::Execute_CanProxyDrive(ProxyObject, DriveContext))
-	{
-		return false;
-	}
-
-	if (!IDIVEProxyDrive::Execute_BeginProxyDrive(ProxyObject, DriveContext))
-	{
-		return false;
-	}
-
-	ActiveProxyObject = ProxyObject;
-
-	float NormalizedValue = 0.f;
-	if (IDIVEProxyDrive::Execute_GetProxyDriveNormalizedValue(ProxyObject, NormalizedValue))
-	{
-		NotifyValueChanged(NormalizedValue);
-	}
-
-	return true;
-}
-
-void UDIVEProxyDriveForwardAction::UpdateInteraction_Implementation(const FDIVEInteractionUpdate& Update)
-{
-	UObject* ProxyObject = ActiveProxyObject.Get();
-	if (!ProxyObject)
-	{
-		return;
-	}
-
-	IDIVEProxyDrive::Execute_ApplyProxyDriveUpdate(ProxyObject, Update);
-
-	float NormalizedValue = 0.f;
-	if (IDIVEProxyDrive::Execute_GetProxyDriveNormalizedValue(ProxyObject, NormalizedValue))
-	{
-		NotifyValueChanged(NormalizedValue);
-	}
-}
-
-void UDIVEProxyDriveForwardAction::EndInteraction_Implementation(bool bCommit)
-{
-	if (UObject* ProxyObject = ActiveProxyObject.Get())
-	{
-		IDIVEProxyDrive::Execute_EndProxyDrive(ProxyObject, bCommit);
-	}
-	ActiveProxyObject.Reset();
-	NotifyInteractionCompleted();
 }
 
 UDIVENotifyAction::UDIVENotifyAction()

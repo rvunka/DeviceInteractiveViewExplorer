@@ -11,8 +11,6 @@
 #include "DIVEInspectableComponent.h"
 #include "DIVEPawnPhysicalDriveResolve.h"
 #include "DIVEPlayerComponent.h"
-#include "DIVEProxyDrive.h"
-#include "DIVEProxyDriveResolve.h"
 #include "DIVESessionSubsystem.h"
 #include "DIVETypes.h"
 #include "Utils/DIVEPlayerQuery.h"
@@ -24,16 +22,13 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/DefaultPawn.h"
 #include "Tests/DIVEActionValueSinkTestTypes.h"
 #include "Tests/DIVEPawnPhysicalDriveTestTypes.h"
-#include "Tests/DIVEProxyDriveTestTypes.h"
 #include "UObject/Package.h"
 
 #if WITH_EDITOR
 #include "DIVEActionBindingValidation.h"
 #include "Misc/DataValidation.h"
-#include "UObject/UnrealType.h"
 #endif
 
 namespace
@@ -380,7 +375,6 @@ bool FDIVEPawnPhysicalDriveResolveSmokeTest::RunTest(const FString& Parameters)
 
 	TestNull(TEXT("FindOnPawn null for null pawn"), DIVEPawnPhysicalDriveResolve::FindOnPawn(nullptr));
 	TestNull(TEXT("FindOnPlayerController null for null PC"), DIVEPawnPhysicalDriveResolve::FindOnPlayerController(nullptr));
-	TestNull(TEXT("FindProxyDriveForHit null for null component"), DIVEProxyDriveResolve::FindProxyDriveForHit(nullptr));
 
 	UWorld* World = nullptr;
 	if (GEngine)
@@ -582,7 +576,7 @@ bool FDIVEActionsBindingResolveSmokeTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("MakeActionContext BindingId defaults to None"), EmptyBindingContext.BindingId.IsNone());
 	}
 
-	UDIVEContinuousDeviceAction* Continuous = NewObject<UDIVEProxyDriveForwardAction>();
+	UDIVEContinuousDeviceAction* Continuous = NewObject<UDIVEMomentaryPressAction>();
 	TestNotNull(TEXT("Continuous action instance"), Continuous);
 	if (Continuous)
 	{
@@ -738,19 +732,17 @@ bool FDIVEActionsPrimaryCanExecuteFallbackSmokeTest::RunTest(const FString& Para
 
 	Switch->ComponentTags.Add(TEXT("DIVE.Switch"));
 
-	UDIVENotifyAction* BlockedNotify = NewObject<UDIVENotifyAction>(Inspectable, TEXT("BlockedNotify"));
-	UDIVETestNeverCondition* Never = NewObject<UDIVETestNeverCondition>(BlockedNotify, TEXT("Never"));
+	// More specific Name match: blocked action → CanExecute false.
+	UDIVETestBlockedAction* Blocked =
+		NewObject<UDIVETestBlockedAction>(Inspectable, TEXT("BlockedPrimary"));
 	UDIVEMomentaryPressAction* TagPress = NewObject<UDIVEMomentaryPressAction>(Inspectable, TEXT("TagPress"));
-	TestNotNull(TEXT("Blocked Notify"), BlockedNotify);
-	TestNotNull(TEXT("Never condition"), Never);
+	TestNotNull(TEXT("Blocked primary"), Blocked);
 	TestNotNull(TEXT("Tag Press"), TagPress);
-	if (!BlockedNotify || !Never || !TagPress)
+	if (!Blocked || !TagPress)
 	{
 		Host->Destroy();
 		return false;
 	}
-
-	BlockedNotify->Condition = Never;
 
 	FDIVEActionBinding NameBinding;
 	NameBinding.BindingId = TEXT("NameBlocked");
@@ -758,7 +750,7 @@ bool FDIVEActionsPrimaryCanExecuteFallbackSmokeTest::RunTest(const FString& Para
 	NameBinding.Targets.MatchValues = { TEXT("Switch1") };
 	NameBinding.SectionId = DIVE::kSectionStandard;
 	NameBinding.PrimaryActionIndex = 0;
-	NameBinding.Actions.Add(BlockedNotify);
+	NameBinding.Actions.Add(Blocked);
 
 	FDIVEActionBinding TagBinding;
 	TagBinding.BindingId = TEXT("TagPress");
@@ -1944,8 +1936,8 @@ bool FDIVEDriveMappingSmokeTest::RunTest(const FString& Parameters)
 		FDIVEInteractionValue NoneValue;
 		NoneValue.Normalized = 0.42f;
 		const FString NoneText =
-			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Proxy")), NoneValue).ToString();
-		TestTrue(TEXT("None unit readout includes the action label"), NoneText.Contains(TEXT("Proxy")));
+			DIVE::FormatInteractionValueReadout(FText::FromString(TEXT("Sample")), NoneValue).ToString();
+		TestTrue(TEXT("None unit readout includes the action label"), NoneText.Contains(TEXT("Sample")));
 
 		FDIVEInteractionValue DegValue;
 		DegValue.Unit = EDIVEInteractionValueUnit::Degrees;
@@ -2628,116 +2620,6 @@ bool FDIVEDriveBuiltInActionsSmokeTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FDIVEProxyDriveResolveHierarchySmokeTest,
-	"DIVE.ProxyDrive.ResolveHierarchy",
-	SmokeUnitTestFlags)
-
-bool FDIVEProxyDriveResolveHierarchySmokeTest::RunTest(const FString& Parameters)
-{
-	(void)Parameters;
-
-	UWorld* World = nullptr;
-	if (GEngine)
-	{
-		for (const FWorldContext& Context : GEngine->GetWorldContexts())
-		{
-			if (UWorld* Candidate = Context.World())
-			{
-				World = Candidate;
-				break;
-			}
-		}
-	}
-
-	if (!World)
-	{
-		AddInfo(TEXT("No live Engine world — skipped proxy-drive hierarchy resolve."));
-		return true;
-	}
-
-	ADIVETestPhysicalDrivePawn* Root = SpawnSmokeHost(World);
-	ADIVETestPhysicalDrivePawn* Child = SpawnSmokeHost(World);
-	TestNotNull(TEXT("Root host"), Root);
-	TestNotNull(TEXT("Child host"), Child);
-	if (!Root || !Child)
-	{
-		if (Root)
-		{
-			Root->Destroy();
-		}
-		if (Child)
-		{
-			Child->Destroy();
-		}
-		return false;
-	}
-
-	Child->AttachToActor(Root, FAttachmentTransformRules::KeepRelativeTransform);
-
-	UDIVETestProxyDriveComponent* Drive = NewObject<UDIVETestProxyDriveComponent>(Root, TEXT("TestDrive"));
-	UDIVETestControlRegistryComponent* Registry = NewObject<UDIVETestControlRegistryComponent>(Root, TEXT("TestRegistry"));
-	TestNotNull(TEXT("Drive component"), Drive);
-	TestNotNull(TEXT("Registry component"), Registry);
-	if (!Drive || !Registry)
-	{
-		Root->Destroy();
-		Child->Destroy();
-		return false;
-	}
-
-	Registry->DriveObject = Drive;
-	Root->AddInstanceComponent(Drive);
-	Root->AddInstanceComponent(Registry);
-	if (!Drive->IsRegistered())
-	{
-		Drive->RegisterComponent();
-	}
-	if (!Registry->IsRegistered())
-	{
-		Registry->RegisterComponent();
-	}
-
-	USphereComponent* ChildSphere = MakeSphereOnHost(Child, TEXT("ChildHit"), 8.f);
-	TestNotNull(TEXT("Child hit sphere"), ChildSphere);
-	if (!ChildSphere)
-	{
-		Root->Destroy();
-		Child->Destroy();
-		return false;
-	}
-
-	IDIVEProxyDrive* Resolved = DIVEProxyDriveResolve::FindProxyDriveForHit(ChildSphere);
-	TestTrue(
-		TEXT("Registry on root resolves for child-actor hit"),
-		Resolved == Cast<IDIVEProxyDrive>(Drive));
-
-	UDIVETestControlRegistryComponent* SecondRegistry =
-		NewObject<UDIVETestControlRegistryComponent>(Root, TEXT("TestRegistry2"));
-	UDIVETestProxyDriveComponent* Drive2 = NewObject<UDIVETestProxyDriveComponent>(Root, TEXT("TestDrive2"));
-	if (SecondRegistry && Drive2)
-	{
-		SecondRegistry->DriveObject = Drive2;
-		Root->AddInstanceComponent(Drive2);
-		Root->AddInstanceComponent(SecondRegistry);
-		if (!Drive2->IsRegistered())
-		{
-			Drive2->RegisterComponent();
-		}
-		if (!SecondRegistry->IsRegistered())
-		{
-			SecondRegistry->RegisterComponent();
-		}
-		TestNull(
-			TEXT("N>1 registry results are fail-closed"),
-			DIVEProxyDriveResolve::FindProxyDriveForHit(ChildSphere));
-	}
-
-	Child->Destroy();
-	Root->Destroy();
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FDIVEPhysicalGrabOnlySmokeTest,
 	"DIVE.PawnPhysicalDrive.PhysicalGrabOnly",
 	SmokeUnitTestFlags)
@@ -2745,22 +2627,6 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FDIVEPhysicalGrabOnlySmokeTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
-
-	TestNull(
-		TEXT("InternalProxyDriveAction property removed from session"),
-		FindFProperty<FProperty>(UDIVESessionSubsystem::StaticClass(), TEXT("InternalProxyDriveAction")));
-
-	const UClass* ForwardClass = UDIVEProxyDriveForwardAction::StaticClass();
-	TestNotNull(TEXT("ForwardAction class"), ForwardClass);
-	if (ForwardClass)
-	{
-		TestFalse(
-			TEXT("ForwardAction is authorable in Catalog (not HideDropdown)"),
-			ForwardClass->HasAnyClassFlags(CLASS_HideDropDown));
-		TestTrue(
-			TEXT("ForwardAction is BlueprintType / EditInlineNew continuous"),
-			ForwardClass->IsChildOf(UDIVEContinuousDeviceAction::StaticClass()));
-	}
 
 	UWorld* World = nullptr;
 	if (GEngine)
@@ -2815,28 +2681,17 @@ bool FDIVEPhysicalGrabOnlySmokeTest::RunTest(const FString& Parameters)
 		Device,
 		UDIVEInspectableComponent::StaticClass(),
 		TEXT("DIVEInspectable"));
-	UDIVETestProxyDriveComponent* Drive = NewObject<UDIVETestProxyDriveComponent>(Device, TEXT("TestProxy"));
-	USphereComponent* HitSphere = MakeSphereOnHost(Device, TEXT("ProxyHit"), 16.f);
-	if (!Inspectable || !Drive || !HitSphere)
+	if (!Inspectable)
 	{
 		Device->Destroy();
 		return false;
 	}
 
 	Device->AddInstanceComponent(Inspectable);
-	Device->AddInstanceComponent(Drive);
 	if (!Inspectable->IsRegistered())
 	{
 		Inspectable->RegisterComponent();
 	}
-	if (!Drive->IsRegistered())
-	{
-		Drive->RegisterComponent();
-	}
-
-	TestTrue(
-		TEXT("Proxy resolves on the hit sphere"),
-		DIVEProxyDriveResolve::FindProxyDriveForHit(HitSphere) != nullptr);
 
 	if (!Subsystem->TryBeginSession(Device, Inspectable, FDIVESessionParams()))
 	{
@@ -2847,13 +2702,12 @@ bool FDIVEPhysicalGrabOnlySmokeTest::RunTest(const FString& Parameters)
 
 	Subsystem->SetInteractionMode(EDIVESessionInteractionMode::Physical);
 
-	// Physical must never start a continuous/proxy gesture. Pawn GRIP may still succeed when a
-	// physical-drive backend exists — that is grab, not device proxy.
+	// Physical primary is pawn GRIP only — not a catalog continuous Begin.
 	const bool bBegan = Subsystem->TryBeginPawnGrabAtScreenPosition(FVector2D(100.f, 100.f), PC);
 	if (bBegan)
 	{
 		TestTrue(
-			TEXT("Physical begin that succeeds is pawn GRIP (not continuous/proxy)"),
+			TEXT("Physical begin that succeeds is pawn GRIP"),
 			Subsystem->IsPawnPhysicalDriveActive());
 		TestTrue(TEXT("Pawn GRIP reports session gesture active"), Subsystem->IsSessionGestureActive());
 		Subsystem->EndSessionGesture(true);
@@ -2862,7 +2716,7 @@ bool FDIVEPhysicalGrabOnlySmokeTest::RunTest(const FString& Parameters)
 	else
 	{
 		TestFalse(TEXT("No drive left active after failed Physical begin"), Subsystem->IsSessionGestureActive());
-		AddInfo(TEXT("Physical begin failed (no pick and/or no pawn drive) — proxy auto-start still ruled out."));
+		AddInfo(TEXT("Physical begin failed (no pick and/or no pawn drive)."));
 	}
 
 	Subsystem->EndSession(EDIVESessionEndReason::Forced);

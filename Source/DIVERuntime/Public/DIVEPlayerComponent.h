@@ -107,8 +107,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "DIVE")
 	UDIVEPawnPhysicalDriveProvider* GetPhysicalDriveProvider() const { return PhysicalDriveProvider; }
 
-	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) const override;
-	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEProxyDriveContext& Context) override;
+	virtual bool CanBeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) const override;
+	virtual bool BeginPawnPhysicalDrive_Implementation(const FDIVEPawnPhysicalDriveContext& Context) override;
 	virtual void EndPawnPhysicalDrive_Implementation(bool bCommit) override;
 	virtual void HandlePawnPhysicalManualRotatePressed_Implementation() override;
 	virtual void HandlePawnPhysicalManualRotateReleased_Implementation() override;

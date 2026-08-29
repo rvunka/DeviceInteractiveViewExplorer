@@ -42,13 +42,14 @@ public:
 	TArray<EDIVEInteractionValueUnit> Units;
 };
 
-UCLASS()
-class UDIVETestNeverCondition : public UDIVEActionCondition
+/** Smoke-only: CanExecute always false. Hidden from Catalog / condition pickers. */
+UCLASS(NotPlaceable, HideDropdown, meta = (Hidden))
+class UDIVETestBlockedAction : public UDIVEDeviceAction
 {
 	GENERATED_BODY()
 
 public:
-	virtual bool Evaluate_Implementation(const FDIVEActionContext& Context) const override
+	virtual bool CanExecute_Implementation(const FDIVEActionContext& Context) const override
 	{
 		(void)Context;
 		return false;

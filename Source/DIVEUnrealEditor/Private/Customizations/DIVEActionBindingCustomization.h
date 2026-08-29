@@ -48,6 +48,7 @@ private:
 	void InvalidateMatchedPreview();
 	void EnsureMatchedPreview() const;
 	void CollectMatchingPrimitives(TArray<UPrimitiveComponent*>& OutPrimitives) const;
+	FText GetCollapsedHeaderText() const;
 	FText GetTargetsPreviewText() const;
 	bool CanSelectMatchingPrimitives() const;
 	FReply OnSelectMatchingPrimitives();

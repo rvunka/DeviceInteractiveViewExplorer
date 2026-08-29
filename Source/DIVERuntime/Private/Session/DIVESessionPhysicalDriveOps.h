@@ -5,9 +5,7 @@
 #include "CoreMinimal.h"
 
 class UDIVESessionSubsystem;
-struct FDIVEFocusTarget;
 struct FDIVEInteractionUpdate;
-struct FHitResult;
 
 struct FDIVESessionPhysicalDriveOps
 {
